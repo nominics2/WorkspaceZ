@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback, Fragment } from "react";
@@ -24,7 +25,9 @@ import {
   Filter,
   XCircle,
   Clock,
-  Layout
+  Layout,
+  RefreshCw,
+  BellRing
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -88,6 +91,7 @@ export default function WorkspaceAdminPage() {
   const [deactivatingMember, setDeactivatingMember] = useState<any>(null);
   const [deletingTeam, setDeletingTeam] = useState<any>(null);
   const [isStatusUpdating, setIsStatusUpdating] = useState<string | null>(null);
+  const [isRunningChecks, setIsRunningChecks] = useState(false);
   
   const supabase = createClient();
   const { toast } = useToast();
@@ -456,6 +460,42 @@ export default function WorkspaceAdminPage() {
     }
   };
 
+  const handleRunNotificationChecks = async () => {
+    if (!activeWorkspace) return;
+    setIsRunningChecks(true);
+    try {
+      const response = await fetch("/api/admin/run-notification-checks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspace_id: activeWorkspace.id }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to run checks");
+      }
+
+      toast({ 
+        title: "Success", 
+        description: "Notification checks completed successfully." 
+      });
+
+      // Refresh data to show new notifications/reminders
+      refreshWorkspaces();
+      fetchData();
+      
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Error running checks", 
+        description: err.message 
+      });
+    } finally {
+      setIsRunningChecks(false);
+    }
+  };
+
   const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin';
   const canManageMembers = hasPermission('manage_members');
   const canManageAllocations = hasPermission('manage_work_allocations');
@@ -776,6 +816,38 @@ export default function WorkspaceAdminPage() {
                 <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 rounded-lg border">
                   <div><p className="text-sm font-bold">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div>
                   <Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!userRole === 'superadmin' && !canManageMembers} />
+                </div>
+             </CardContent>
+           </Card>
+
+           <Card className="border-none shadow-sm">
+             <CardHeader className="p-4 md:p-6">
+                <div className="flex items-center gap-2">
+                  <BellRing className="w-5 h-5 text-primary" />
+                  <CardTitle className="text-lg">Notification Automation</CardTitle>
+                </div>
+                <CardDescription>Manually trigger scheduled system checks for task deadlines and reminders.</CardDescription>
+             </CardHeader>
+             <CardContent className="p-4 md:p-6 space-y-4">
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold">Process Deadlines & Reminders</p>
+                    <p className="text-[10px] text-muted-foreground max-w-md">
+                      Checks for due reminders, tasks due within 3 days, and overdue assignments to generate relevant system notifications.
+                    </p>
+                  </div>
+                  <Button 
+                    onClick={handleRunNotificationChecks} 
+                    disabled={isRunningChecks}
+                    className="w-full sm:w-auto gap-2"
+                  >
+                    {isRunningChecks ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    Run Checks
+                  </Button>
                 </div>
              </CardContent>
            </Card>
