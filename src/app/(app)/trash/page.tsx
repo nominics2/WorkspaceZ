@@ -66,20 +66,20 @@ export default function TrashPage() {
   }, [fetchTrash]);
 
   const handleRestore = async (item: any) => {
-    setActionLoading(item.id);
+    setActionLoading(item.item_id);
     try {
       let rpcName = "";
       let params: any = {};
 
       if (item.item_type === 'task') {
         rpcName = 'restore_task_from_trash';
-        params = { p_task_id: item.id };
+        params = { p_task_id: item.item_id };
       } else if (item.item_type === 'note') {
         rpcName = 'restore_note_from_trash';
-        params = { p_note_id: item.id };
+        params = { p_note_id: item.item_id };
       } else if (item.item_type === 'notification') {
         rpcName = 'restore_notification_from_trash';
-        params = { p_notification_id: item.id };
+        params = { p_notification_id: item.item_id };
       }
 
       const { error } = await supabase.rpc(rpcName, params);
@@ -95,20 +95,20 @@ export default function TrashPage() {
   };
 
   const handlePermanentDelete = async (item: any) => {
-    setActionLoading(item.id);
+    setActionLoading(item.item_id);
     try {
       let rpcName = "";
       let params: any = {};
 
       if (item.item_type === 'task') {
         rpcName = 'permanently_delete_task';
-        params = { p_task_id: item.id };
+        params = { p_task_id: item.item_id };
       } else if (item.item_type === 'note') {
         rpcName = 'permanently_delete_note';
-        params = { p_note_id: item.id };
+        params = { p_note_id: item.item_id };
       } else if (item.item_type === 'notification') {
         rpcName = 'permanently_delete_notification';
-        params = { p_notification_id: item.id };
+        params = { p_notification_id: item.item_id };
       }
 
       const { error } = await supabase.rpc(rpcName, params);
@@ -189,8 +189,8 @@ export default function TrashPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
-              {filteredItems.map((item) => (
-                <Card key={item.id} className="border-none shadow-sm hover:shadow-md transition-all overflow-hidden group">
+              {filteredItems.map((item, index) => (
+                <Card key={`${item.item_type}-${item.item_id || index}`} className="border-none shadow-sm hover:shadow-md transition-all overflow-hidden group">
                   <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
                     <div className={cn("p-3 rounded-xl shrink-0 w-fit", getTypeColor(item.item_type))}>
                       {getTypeIcon(item.item_type)}
@@ -216,7 +216,7 @@ export default function TrashPage() {
                         disabled={!!actionLoading}
                         className="h-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 gap-2 px-2"
                       >
-                        {actionLoading === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
+                        {actionLoading === item.item_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
                         Restore
                       </Button>
                       
