@@ -293,6 +293,7 @@ export default function TasksPage() {
     const priority = (formData.get("priority") as string || "medium").toLowerCase();
     const dueDate = formData.get("due_date") as string;
     const subWsId = formData.get("sub_workspace_id") as string;
+    const assignedTo = formData.get("assigned_to") as string;
 
     setSaving(true);
     try {
@@ -305,7 +306,7 @@ export default function TasksPage() {
         status: 'to_do',
         due_date: dueDate && dueDate.trim() !== "" ? dueDate : null,
         created_by: userProfile.id,
-        assigned_to: userProfile.id,
+        assigned_to: assignedTo && assignedTo !== "none" ? assignedTo : userProfile.id,
         progress_mode: 'auto',
         manual_progress: 0
       });
@@ -817,17 +818,31 @@ export default function TasksPage() {
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" name="description" placeholder="Add more details..." disabled={saving} />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="sub_workspace_id">Assign to Team</Label>
-              <Select name="sub_workspace_id" defaultValue="none">
-                <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Workspace General (No Team)</SelectItem>
-                  {subWorkspaces.map(team => (
-                    <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="sub_workspace_id">Assign to Team</Label>
+                <Select name="sub_workspace_id" defaultValue="none">
+                  <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Workspace General</SelectItem>
+                    {subWorkspaces.map(team => (
+                      <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="assigned_to">Assign to Member</Label>
+                <Select name="assigned_to" defaultValue={userProfile?.id}>
+                  <SelectTrigger disabled={saving}><SelectValue placeholder="Select member" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Unassigned</SelectItem>
+                    {members.map(m => (
+                      <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
