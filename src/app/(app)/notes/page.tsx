@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { Plus, Search, StickyNote, MoreVertical, Link as LinkIcon, Loader2, Globe, Lock, Layout, FilterX, ShieldCheck, User, LayoutDashboard, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +29,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "next/navigation";
 
-export default function NotesPage() {
+function NotesPageContent() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const searchParams = useSearchParams();
   const [notes, setNotes] = useState<any[]>([]);
@@ -358,5 +358,17 @@ export default function NotesPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function NotesPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <NotesPageContent />
+    </Suspense>
   );
 }
