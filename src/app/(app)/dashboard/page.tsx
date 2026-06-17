@@ -41,19 +41,20 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const activityConfig: Record<string, { label: string; icon: any; color: string; bg: string }> = {
-  task_created: { label: "created task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-50" },
-  task_updated: { label: "updated task", icon: RefreshCw, color: "text-slate-500", bg: "bg-slate-50" },
-  task_completed: { label: "completed task", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
-  subtask_created: { label: "added subtask to", icon: CheckSquare, color: "text-blue-400", bg: "bg-blue-50" },
-  subtask_completed: { label: "completed subtask in", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-50" },
-  comment_added: { label: "commented on", icon: MessageSquare, color: "text-indigo-500", bg: "bg-indigo-50" },
-  attachment_uploaded: { label: "attached file to", icon: Paperclip, color: "text-slate-500", bg: "bg-slate-50" },
-  note_created: { label: "created note", icon: StickyNote, color: "text-amber-500", bg: "bg-amber-50" },
-  note_updated: { label: "updated note", icon: StickyNote, color: "text-amber-600", bg: "bg-amber-50" },
-  task_moved_to_trash: { label: "deleted task", icon: Trash2, color: "text-rose-500", bg: "bg-rose-50" },
-  task_restored_from_trash: { label: "restored task", icon: RefreshCw, color: "text-emerald-500", bg: "bg-emerald-50" },
+  task_created: { label: "created task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-500" },
+  task_updated: { label: "updated task", icon: RefreshCw, color: "text-slate-500", bg: "bg-slate-500" },
+  task_completed: { label: "completed task", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500" },
+  subtask_created: { label: "added subtask to", icon: CheckSquare, color: "text-blue-400", bg: "bg-blue-400" },
+  subtask_completed: { label: "completed subtask in", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-400" },
+  comment_added: { label: "commented on", icon: MessageSquare, color: "text-indigo-500", bg: "bg-indigo-500" },
+  attachment_uploaded: { label: "attached file to", icon: Paperclip, color: "text-slate-500", bg: "bg-slate-500" },
+  note_created: { label: "created note", icon: StickyNote, color: "text-amber-500", bg: "bg-amber-500" },
+  note_updated: { label: "updated note", icon: StickyNote, color: "text-amber-600", bg: "bg-amber-600" },
+  task_moved_to_trash: { label: "deleted task", icon: Trash2, color: "text-rose-500", bg: "bg-rose-500" },
+  task_restored_from_trash: { label: "restored task", icon: RefreshCw, color: "text-emerald-500", bg: "bg-emerald-500" },
 };
 
 export default function DashboardPage() {
@@ -121,7 +122,8 @@ export default function DashboardPage() {
 
       setTasks(myTasks || []);
 
-      // 3. Activity
+      // 3. Activity - Using standard fetch to potentially join profiles if view lacks fields, 
+      // but assuming recent_activity_view is updated for this requirement.
       const { data: recentLogs } = await supabase
         .from('recent_activity_view')
         .select('*')
@@ -305,7 +307,7 @@ export default function DashboardPage() {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
-        {/* Left Column - Tasks */}
+        {/* Left Column - Tasks & Activity */}
         <div className="lg:col-span-8 space-y-8">
           {/* Quick Actions */}
           <section className="space-y-4">
@@ -403,18 +405,31 @@ export default function DashboardPage() {
                         color: "text-slate-500", 
                         bg: "bg-slate-100" 
                       };
-                      const Icon = config.icon;
+                      const ActionIcon = config.icon;
                       const targetTitle = log.task_title || log.note_title || "";
+                      const actorName = log.actor_full_name || log.actor_username || log.actor_name || "Someone";
+                      const avatarSrc = log.actor_avatar_preset ? `/avatars/${log.actor_avatar_preset}.png` : log.actor_avatar_url;
 
                       return (
                         <div key={log.id} className="p-4 flex gap-4 group hover:bg-slate-50 transition-colors">
-                          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm", config.bg)}>
-                            <Icon className={cn("w-5 h-5", config.color)} />
+                          <div className="relative shrink-0">
+                            <Avatar className="w-10 h-10 border shadow-sm">
+                              <AvatarImage src={avatarSrc} />
+                              <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
+                                {actorName[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className={cn(
+                              "absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-sm",
+                              config.bg
+                            )}>
+                              <ActionIcon className="w-2.5 h-2.5 text-white" />
+                            </div>
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs md:text-sm text-foreground leading-relaxed">
-                              <span className="font-bold">{log.actor_name || "Someone"}</span> {config.label}
-                              {targetTitle && <span className="font-bold ml-1">"{targetTitle}"</span>}
+                              <span className="font-bold">{actorName}</span> {config.label}
+                              {targetTitle && <span className="font-bold ml-1 text-primary">"{targetTitle}"</span>}
                             </p>
                             <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
                               <Clock className="w-3 h-3" />
