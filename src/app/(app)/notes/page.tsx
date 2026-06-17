@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Plus, Search, StickyNote, MoreVertical, Link as LinkIcon, Loader2, Trash2, Globe, Lock, Layout } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Plus, Search, StickyNote, MoreVertical, Link as LinkIcon, Loader2, Globe, Lock, Layout, FilterX, ShieldCheck, User, LayoutDashboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -27,9 +27,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useSearchParams } from "next/navigation";
 
 export default function NotesPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
+  const searchParams = useSearchParams();
   const [notes, setNotes] = useState<any[]>([]);
   const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +44,13 @@ export default function NotesPage() {
     content: "",
     visibility: "workspace" as "personal" | "workspace",
     sub_workspace_id: "none"
+  });
+
+  // Filters
+  const [filters, setFilters] = useState({
+    visibility: "all",
+    teamId: "all",
+    isLinked: "all"
   });
 
   const supabase = createClient();
@@ -59,12 +68,6 @@ export default function NotesPage() {
     forceUnlockUI();
     return () => forceUnlockUI();
   }, [forceUnlockUI]);
-
-  useEffect(() => {
-    if (!isModalOpen && !saving) {
-      forceUnlockUI();
-    }
-  }, [isModalOpen, saving, forceUnlockUI]);
 
   const fetchData = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -89,73 +92,38 @@ export default function NotesPage() {
 
       setNotes(notesRes.data || []);
       setSubWorkspaces(teamsRes.data || []);
+
+      const noteId = searchParams.get('noteId');
+      if (noteId) {
+        const note = notesRes.data?.find(n => n.id === noteId);
+        if (note) handleOpenEdit(note);
+      }
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setLoading(false);
       forceUnlockUI();
     }
-  }, [activeWorkspace, supabase, toast, forceUnlockUI]);
+  }, [activeWorkspace, supabase, toast, forceUnlockUI, searchParams]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  const handleOpenCreate = (visibility: "personal" | "workspace") => {
-    setEditingNote(null);
-    setForm({ title: "", content: "", visibility, sub_workspace_id: "none" });
-    setIsModalOpen(true);
-  };
-
-  const handleOpenEdit = (note: any) => {
-    setEditingNote(note);
-    setForm({
-      title: note.title,
-      content: note.content,
-      visibility: note.visibility,
-      sub_workspace_id: note.sub_workspace_id || "none"
-    });
-    setIsModalOpen(true);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeWorkspace || !userProfile) return;
-
     setSaving(true);
     const subWsId = form.sub_workspace_id === "none" ? null : form.sub_workspace_id;
-    
     try {
       if (editingNote) {
-        const { error } = await supabase
-          .from('notes')
-          .update({
-            title: form.title,
-            content: form.content,
-            visibility: form.visibility,
-            sub_workspace_id: subWsId,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', editingNote.id);
-        if (error) throw error;
+        await supabase.from('notes').update({ title: form.title, content: form.content, visibility: form.visibility, sub_workspace_id: subWsId, updated_at: new Date().toISOString() }).eq('id', editingNote.id);
         toast({ title: "Note Updated" });
       } else {
-        const { error } = await supabase
-          .from('notes')
-          .insert({
-            workspace_id: activeWorkspace.id,
-            created_by: userProfile.id,
-            title: form.title,
-            content: form.content,
-            visibility: form.visibility,
-            sub_workspace_id: subWsId
-          });
-        if (error) throw error;
+        await supabase.from('notes').insert({ workspace_id: activeWorkspace.id, created_by: userProfile.id, title: form.title, content: form.content, visibility: form.visibility, sub_workspace_id: subWsId });
         toast({ title: "Note Created" });
       }
-      
       setIsModalOpen(false);
-      setEditingNote(null);
       await fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
@@ -165,26 +133,28 @@ export default function NotesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('notes')
-        .update({ is_deleted: true })
-        .eq('id', id);
-      if (error) throw error;
-      toast({ title: "Note moved to trash" });
-      fetchData();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
-    } finally {
-      forceUnlockUI();
-    }
+  const handleOpenEdit = (note: any) => {
+    setEditingNote(note);
+    setForm({ title: note.title, content: note.content, visibility: note.visibility, sub_workspace_id: note.sub_workspace_id || "none" });
+    setIsModalOpen(true);
   };
 
-  const filteredNotes = notes.filter(n => 
-    n.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    n.content.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredNotes = useMemo(() => {
+    return notes.filter(n => {
+      const matchesSearch = n.title.toLowerCase().includes(searchTerm.toLowerCase()) || n.content.toLowerCase().includes(searchTerm.toLowerCase());
+      if (!matchesSearch) return false;
+
+      if (filters.visibility !== "all" && n.visibility !== filters.visibility) return false;
+      if (filters.teamId !== "all") {
+        if (filters.teamId === "none" && n.sub_workspace_id) return false;
+        if (filters.teamId !== "none" && n.sub_workspace_id !== filters.teamId) return false;
+      }
+      if (filters.isLinked === "yes" && !n.task_id) return false;
+      if (filters.isLinked === "no" && n.task_id) return false;
+
+      return true;
+    });
+  }, [notes, searchTerm, filters]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -194,38 +164,95 @@ export default function NotesPage() {
           <p className="text-muted-foreground">Keep your thoughts and project details organized</p>
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" onClick={() => handleOpenCreate("personal")} className="flex items-center gap-2">
+           <Button variant="outline" onClick={() => { setForm({ title: "", content: "", visibility: "personal", sub_workspace_id: "none" }); setIsModalOpen(true); }} className="flex items-center gap-2">
             <Lock className="w-4 h-4" /> New Personal Note
           </Button>
-          <Button onClick={() => handleOpenCreate("workspace")} className="flex items-center gap-2 shadow-lg shadow-primary/20">
+          <Button onClick={() => { setForm({ title: "", content: "", visibility: "workspace", sub_workspace_id: "none" }); setIsModalOpen(true); }} className="flex items-center gap-2 shadow-lg shadow-primary/20">
             <Plus className="w-5 h-5" /> New Workspace Note
           </Button>
         </div>
       </div>
 
-      <div className="flex items-center gap-4 bg-white p-2 rounded-xl shadow-sm border max-w-2xl">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            className="pl-10 border-none shadow-none focus-visible:ring-0" 
-            placeholder="Search notes..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input 
+              className="pl-10 border-none shadow-none focus-visible:ring-0" 
+              placeholder="Search notes..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap px-2">
+             <Select value={filters.visibility} onValueChange={v => setFilters(f => ({...f, visibility: v}))}>
+               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 text-xs rounded-lg">
+                 <ShieldCheck className="w-3 h-3 mr-2" />
+                 <SelectValue placeholder="Visibility" />
+               </SelectTrigger>
+               <SelectContent>
+                 <SelectItem value="all">All Visibility</SelectItem>
+                 <SelectItem value="personal">Personal Only</SelectItem>
+                 <SelectItem value="workspace">Workspace Shared</SelectItem>
+               </SelectContent>
+             </Select>
+
+             <Select value={filters.teamId} onValueChange={v => setFilters(f => ({...f, teamId: v}))}>
+               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 text-xs rounded-lg">
+                 <Layout className="w-3 h-3 mr-2" />
+                 <SelectValue placeholder="Team" />
+               </SelectTrigger>
+               <SelectContent>
+                 <SelectItem value="all">All Teams</SelectItem>
+                 <SelectItem value="none">No Team</SelectItem>
+                 {subWorkspaces.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+               </SelectContent>
+             </Select>
+
+             <Select value={filters.isLinked} onValueChange={v => setFilters(f => ({...f, isLinked: v}))}>
+               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 text-xs rounded-lg">
+                 <LinkIcon className="w-3 h-3 mr-2" />
+                 <SelectValue placeholder="Linked" />
+               </SelectTrigger>
+               <SelectContent>
+                 <SelectItem value="all">Linked (All)</SelectItem>
+                 <SelectItem value="yes">Task Linked</SelectItem>
+                 <SelectItem value="no">Not Linked</SelectItem>
+               </SelectContent>
+             </Select>
+
+             {(filters.visibility !== 'all' || filters.teamId !== 'all' || filters.isLinked !== 'all') && (
+               <Button variant="ghost" size="sm" onClick={() => setFilters({visibility: 'all', teamId: 'all', isLinked: 'all'})} className="h-8 px-2 text-rose-500 hover:text-rose-600">
+                 <FilterX className="w-4 h-4" />
+               </Button>
+             )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+           <Badge variant={filters.visibility === 'personal' ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setFilters(f => ({...f, visibility: f.visibility === 'personal' ? 'all' : 'personal'}))}>
+             <User className="w-3 h-3 mr-1" /> My Personal Notes
+           </Badge>
+           <Badge variant={filters.visibility === 'workspace' ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setFilters(f => ({...f, visibility: f.visibility === 'workspace' ? 'all' : 'workspace'}))}>
+             <LayoutDashboard className="w-3 h-3 mr-1" /> Workspace Knowledge
+           </Badge>
         </div>
       </div>
 
       {loading && !saving ? (
         <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       ) : filteredNotes.length === 0 ? (
-        <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed">
-          <StickyNote className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-          <p className="text-muted-foreground">No notes found. Create your first note!</p>
+        <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed flex flex-col items-center gap-4">
+          <StickyNote className="w-12 h-12 text-slate-300" />
+          <div>
+            <p className="font-bold text-lg">No notes found</p>
+            <p className="text-muted-foreground text-sm">Adjust filters or create your first note.</p>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredNotes.map((note) => (
-            <Card key={note.id} className="border-none shadow-sm hover:shadow-md transition-all group relative">
+            <Card key={note.id} className="border-none shadow-sm hover:shadow-md transition-all group relative h-full flex flex-col">
               <CardHeader className="flex flex-row items-start justify-between pb-2">
                 <div className="p-2 bg-primary/5 rounded-lg">
                   <StickyNote className="w-5 h-5 text-primary" />
@@ -243,18 +270,17 @@ export default function NotesPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleOpenEdit(note)}>Edit Note</DropdownMenuItem>
-                      <DropdownMenuItem className="text-rose-500" onClick={() => handleDelete(note.id)}>Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
               </CardHeader>
-              <CardContent className="cursor-pointer" onClick={() => handleOpenEdit(note)}>
+              <CardContent className="cursor-pointer flex-1" onClick={() => handleOpenEdit(note)}>
                 <h3 className="font-bold text-lg mb-2 line-clamp-1">{note.title}</h3>
                 <p className="text-sm text-muted-foreground line-clamp-4 min-h-[5rem] whitespace-pre-wrap">
                   {note.content}
                 </p>
               </CardContent>
-              <CardFooter className="flex flex-col items-start gap-2 pt-0 border-t mt-4 pt-4">
+              <CardFooter className="flex flex-col items-start gap-2 pt-0 border-t mt-auto pt-4">
                 <div className="flex items-center justify-between w-full">
                   <span className="text-[10px] font-bold text-muted-foreground">
                     {new Date(note.created_at).toLocaleDateString()}
@@ -280,60 +306,34 @@ export default function NotesPage() {
 
       <Dialog open={isModalOpen} onOpenChange={(open) => {
         setIsModalOpen(open);
-        if (!open) {
-          setEditingNote(null);
-          forceUnlockUI();
-        }
+        if (!open) { setEditingNote(null); forceUnlockUI(); }
       }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingNote ? 'Edit Note' : 'Create New Note'}</DialogTitle>
-            <DialogDescription>
-              {form.visibility === 'personal' ? 'This note will only be visible to you.' : 'This note will be shared with the workspace team.'}
-            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Title</Label>
-              <Input 
-                value={form.title} 
-                onChange={e => setForm({...form, title: e.target.value})} 
-                placeholder="Note title..."
-                required
-                disabled={saving}
-              />
+              <Input value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Note title..." required disabled={saving} />
             </div>
-            {form.visibility === 'workspace' && (
-              <div className="space-y-2">
-                <Label>Link to Team (Optional)</Label>
-                <Select value={form.sub_workspace_id} onValueChange={v => setForm({...form, sub_workspace_id: v})}>
-                  <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No Team Link</SelectItem>
-                    {subWorkspaces.map(team => (
-                      <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-2">
+              <Label>Visibility</Label>
+              <Select value={form.visibility} onValueChange={(v: any) => setForm({...form, visibility: v})}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="personal">Personal (Private)</SelectItem>
+                  <SelectItem value="workspace">Workspace (Shared)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label>Content</Label>
-              <Textarea 
-                value={form.content} 
-                onChange={e => setForm({...form, content: e.target.value})} 
-                placeholder="Write something..."
-                rows={8}
-                required
-                disabled={saving}
-              />
+              <Textarea value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Write something..." rows={8} required disabled={saving} />
             </div>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => { setIsModalOpen(false); forceUnlockUI(); }} disabled={saving}>Cancel</Button>
-              <Button type="submit" disabled={saving}>
-                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                {editingNote ? 'Save Changes' : 'Create Note'}
-              </Button>
+              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" disabled={saving}>{saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save Note</Button>
             </DialogFooter>
           </form>
         </DialogContent>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { 
   Plus, 
   Search, 
@@ -17,7 +17,15 @@ import {
   FileIcon,
   X,
   Eye,
-  Layout
+  Layout,
+  Check,
+  User,
+  AlertCircle,
+  CalendarDays,
+  UserCheck,
+  UserPlus,
+  Ban,
+  FilterX
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +38,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { 
   Dialog, 
@@ -54,13 +65,15 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Slider } from "@/components/ui/slider";
+import { useSearchParams } from "next/navigation";
 
 export default function TasksPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
+  const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<any[]>([]);
   const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [teamFilter, setTeamFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -73,6 +86,19 @@ export default function TasksPage() {
   const [newComment, setNewComment] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+
+  // Advanced Filters
+  const [filters, setFilters] = useState({
+    status: [] as string[],
+    priority: [] as string[],
+    teamId: "all",
+    assignedTo: "all",
+    overdue: false,
+    dueSoon: false,
+    createdByMe: false,
+    assignedToMe: false,
+    noDueDate: false
+  });
 
   const supabase = createClient();
   const { toast } = useToast();
@@ -94,7 +120,7 @@ export default function TasksPage() {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const [tasksRes, teamsRes] = await Promise.all([
+      const [tasksRes, teamsRes, membersRes] = await Promise.all([
         supabase
           .from('my_tasks_view')
           .select('*')
@@ -104,20 +130,38 @@ export default function TasksPage() {
           .from('sub_workspaces')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
-          .order('name', { ascending: true })
+          .order('name', { ascending: true }),
+        supabase
+          .from('workspace_members')
+          .select('user_id, profiles(full_name)')
+          .eq('workspace_id', activeWorkspace.id)
+          .eq('status', 'active')
       ]);
 
       if (tasksRes.error) throw tasksRes.error;
       if (teamsRes.error) throw teamsRes.error;
+      if (membersRes.error) throw membersRes.error;
 
       setTasks(tasksRes.data || []);
       setSubWorkspaces(teamsRes.data || []);
+      setMembers(membersRes.data || []);
+
+      // Handle deep linking from Search
+      const taskId = searchParams.get('taskId');
+      if (taskId) {
+        const task = tasksRes.data?.find(t => t.id === taskId);
+        if (task) handleOpenDetail(task);
+      }
+      
+      const teamId = searchParams.get('teamId');
+      if (teamId) setFilters(f => ({ ...f, teamId }));
+
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setLoading(false);
     }
-  }, [activeWorkspace, supabase, toast]);
+  }, [activeWorkspace, supabase, toast, searchParams]);
 
   useEffect(() => {
     fetchData();
@@ -198,14 +242,9 @@ export default function TasksPage() {
     try {
       const { data, error } = await supabase.storage
         .from('workspace-attachments')
-        .createSignedUrl(attachment.file_path, 600); // 10 minutes expiry
-
+        .createSignedUrl(attachment.file_path, 600);
       if (error) throw error;
-      if (data?.signedUrl) {
-        window.open(data.signedUrl, '_blank');
-      } else {
-        throw new Error("Could not generate access URL.");
-      }
+      if (data?.signedUrl) window.open(data.signedUrl, '_blank');
     } catch (err: any) {
       toast({ variant: "destructive", title: "Open failed", description: err.message });
     }
@@ -216,9 +255,7 @@ export default function TasksPage() {
       const { data, error } = await supabase.storage
         .from('workspace-attachments')
         .download(attachment.file_path);
-
       if (error) throw error;
-
       const url = window.URL.createObjectURL(data);
       const link = document.createElement('a');
       link.href = url;
@@ -234,15 +271,10 @@ export default function TasksPage() {
 
   const handleDeleteAttachment = async (attachment: any) => {
     try {
-      const { error: storageError } = await supabase.storage
-        .from('workspace-attachments')
-        .remove([attachment.file_path]);
-
+      const { error: storageError } = await supabase.storage.from('workspace-attachments').remove([attachment.file_path]);
       if (storageError) throw storageError;
-
       const { error: dbError } = await supabase.from('attachments').delete().eq('id', attachment.id);
       if (dbError) throw dbError;
-
       toast({ title: "File deleted" });
       fetchTaskDetails(selectedTask.id);
     } catch (err: any) {
@@ -261,9 +293,6 @@ export default function TasksPage() {
 
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
       const { error } = await supabase.from('tasks').insert({
         workspace_id: activeWorkspace?.id,
         sub_workspace_id: subWsId && subWsId !== "none" ? subWsId : null,
@@ -272,8 +301,8 @@ export default function TasksPage() {
         priority: priority,
         status: 'to_do',
         due_date: dueDate && dueDate.trim() !== "" ? dueDate : null,
-        created_by: user.id,
-        assigned_to: user.id,
+        created_by: userProfile.id,
+        assigned_to: userProfile.id,
         progress_mode: 'auto',
         manual_progress: 0
       });
@@ -282,60 +311,18 @@ export default function TasksPage() {
 
       toast({ title: "Success", description: "Task created successfully" });
       setIsCreateOpen(false);
-      forceUnlockUI();
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
       forceUnlockUI();
-    }
-  };
-
-  const handleAddSubtask = async () => {
-    if (!newSubtaskTitle.trim() || !selectedTask) return;
-    setSaving(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const { error } = await supabase.from('subtasks').insert({
-        task_id: selectedTask.id,
-        title: newSubtaskTitle,
-        created_by: user.id,
-        is_completed: false
-      });
-
-      if (error) throw error;
-
-      toast({ title: "Success", description: "Subtask added." });
-      setNewSubtaskTitle("");
-      fetchTaskDetails(selectedTask.id);
-      fetchData();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
-    } finally {
-      setSaving(false);
     }
   };
 
   const handleToggleSubtask = async (subtask: any) => {
     try {
-      const { error } = await supabase.from('subtasks').update({
-        is_completed: !subtask.is_completed
-      }).eq('id', subtask.id);
-      if (error) throw error;
-      fetchTaskDetails(selectedTask.id);
-      fetchData();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
-    }
-  };
-
-  const handleDeleteSubtask = async (id: string) => {
-    try {
-      const { error } = await supabase.from('subtasks').delete().eq('id', id);
-      if (error) throw error;
+      await supabase.from('subtasks').update({ is_completed: !subtask.is_completed }).eq('id', subtask.id);
       fetchTaskDetails(selectedTask.id);
       fetchData();
     } catch (err: any) {
@@ -347,15 +334,11 @@ export default function TasksPage() {
     if (!newComment.trim() || !selectedTask) return;
     setSaving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
-
-      const { error } = await supabase.from('task_comments').insert({
+      await supabase.from('task_comments').insert({
         task_id: selectedTask.id,
-        user_id: user.id,
+        user_id: userProfile.id,
         comment: newComment
       });
-      if (error) throw error;
       setNewComment("");
       fetchTaskDetails(selectedTask.id);
     } catch (err: any) {
@@ -368,18 +351,55 @@ export default function TasksPage() {
   const handleUpdateManualProgress = async (val: number[]) => {
     if (!selectedTask) return;
     try {
-      const { error } = await supabase.from('tasks').update({
-        manual_progress: val[0],
-        progress_mode: 'manual'
-      }).eq('id', selectedTask.id);
-      
-      if (error) throw error;
+      await supabase.from('tasks').update({ manual_progress: val[0], progress_mode: 'manual' }).eq('id', selectedTask.id);
       setSelectedTask({...selectedTask, manual_progress: val[0], progress_mode: 'manual'});
       fetchData();
     } catch (err: any) {
       console.error(err);
     }
   };
+
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(t => {
+      const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) || t.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      if (!matchesSearch) return false;
+
+      if (filters.status.length > 0 && !filters.status.includes(t.status)) return false;
+      if (filters.priority.length > 0 && !filters.priority.includes(t.priority)) return false;
+      if (filters.teamId !== "all") {
+        if (filters.teamId === "none" && t.sub_workspace_id) return false;
+        if (filters.teamId !== "none" && t.sub_workspace_id !== filters.teamId) return false;
+      }
+      if (filters.assignedTo !== "all" && t.assigned_to !== filters.assignedTo) return false;
+      
+      const now = new Date();
+      if (filters.overdue && (!t.due_date || new Date(t.due_date) > now || t.status === 'completed')) return false;
+      if (filters.dueSoon) {
+        if (!t.due_date) return false;
+        const due = new Date(t.due_date);
+        const soon = new Date();
+        soon.setDate(soon.getDate() + 3);
+        if (due > soon || due < now) return false;
+      }
+      if (filters.createdByMe && t.created_by !== userProfile?.id) return false;
+      if (filters.assignedToMe && t.assigned_to !== userProfile?.id) return false;
+      if (filters.noDueDate && t.due_date) return false;
+
+      return true;
+    });
+  }, [tasks, searchTerm, filters, userProfile?.id]);
+
+  const resetFilters = () => setFilters({
+    status: [],
+    priority: [],
+    teamId: "all",
+    assignedTo: "all",
+    overdue: false,
+    dueSoon: false,
+    createdByMe: false,
+    assignedToMe: false,
+    noDueDate: false
+  });
 
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -388,15 +408,6 @@ export default function TasksPage() {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
-
-  const filteredTasks = tasks.filter(t => {
-    const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         t.description?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    if (teamFilter === "all") return matchesSearch;
-    if (teamFilter === "none") return matchesSearch && !t.sub_workspace_id;
-    return matchesSearch && t.sub_workspace_id === teamFilter;
-  });
 
   return (
     <div className="space-y-6">
@@ -413,34 +424,164 @@ export default function TasksPage() {
         </Button>
       </div>
 
-      <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
-        <div className="relative flex-1 w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input 
-            className="pl-10 border-none shadow-none focus-visible:ring-0" 
-            placeholder="Search tasks..." 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
+          <div className="relative flex-1 w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input 
+              className="pl-10 border-none shadow-none focus-visible:ring-0" 
+              placeholder="Search tasks..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-2 w-full md:w-auto px-2">
+             <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+                <DropdownMenuTrigger asChild>
+                   <Button variant="outline" size="sm" className="gap-2 border-none bg-slate-50 hover:bg-slate-100">
+                      <Filter className="w-4 h-4" /> 
+                      Filters
+                      {(filters.status.length > 0 || filters.priority.length > 0 || filters.overdue || filters.dueSoon || filters.teamId !== 'all') && (
+                        <Badge variant="default" className="h-4 w-4 p-0 flex items-center justify-center text-[8px] bg-primary">
+                          !
+                        </Badge>
+                      )}
+                   </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                   <DropdownMenuLabel>Status</DropdownMenuLabel>
+                   {['to_do', 'in_progress', 'completed', 'waiting'].map(s => (
+                     <DropdownMenuCheckboxItem 
+                       key={s} 
+                       checked={filters.status.includes(s)}
+                       onCheckedChange={(checked) => setFilters(f => ({
+                         ...f, 
+                         status: checked ? [...f.status, s] : f.status.filter(x => x !== s)
+                       }))}
+                       className="capitalize"
+                     >
+                       {s.replace('_', ' ')}
+                     </DropdownMenuCheckboxItem>
+                   ))}
+                   <DropdownMenuSeparator />
+                   <DropdownMenuLabel>Priority</DropdownMenuLabel>
+                   {['low', 'medium', 'high', 'urgent'].map(p => (
+                     <DropdownMenuCheckboxItem 
+                       key={p} 
+                       checked={filters.priority.includes(p)}
+                       onCheckedChange={(checked) => setFilters(f => ({
+                         ...f, 
+                         priority: checked ? [...f.priority, p] : f.priority.filter(x => x !== p)
+                       }))}
+                       className="capitalize"
+                     >
+                       {p}
+                     </DropdownMenuCheckboxItem>
+                   ))}
+                   <DropdownMenuSeparator />
+                   <DropdownMenuCheckboxItem 
+                     checked={filters.overdue} 
+                     onCheckedChange={(c) => setFilters(f => ({...f, overdue: c}))}
+                   >
+                     Overdue
+                   </DropdownMenuCheckboxItem>
+                   <DropdownMenuCheckboxItem 
+                     checked={filters.dueSoon} 
+                     onCheckedChange={(c) => setFilters(f => ({...f, dueSoon: c}))}
+                   >
+                     Due Soon (3 Days)
+                   </DropdownMenuCheckboxItem>
+                   <DropdownMenuCheckboxItem 
+                     checked={filters.noDueDate} 
+                     onCheckedChange={(c) => setFilters(f => ({...f, noDueDate: c}))}
+                   >
+                     No Due Date
+                   </DropdownMenuCheckboxItem>
+                   <DropdownMenuSeparator />
+                   <DropdownMenuItem onClick={resetFilters} className="text-rose-500 gap-2">
+                     <FilterX className="w-4 h-4" /> Reset Filters
+                   </DropdownMenuItem>
+                </DropdownMenuContent>
+             </DropdownMenu>
+
+             <Separator orientation="vertical" className="h-6 mx-2 hidden md:block" />
+
+             <Select value={filters.teamId} onValueChange={(v) => setFilters(f => ({...f, teamId: v}))}>
+               <SelectTrigger className="w-[140px] border-none shadow-none bg-slate-50 text-xs h-8 rounded-lg">
+                 <Layout className="w-3 h-3 mr-2" />
+                 <SelectValue placeholder="Team" />
+               </SelectTrigger>
+               <SelectContent>
+                 <SelectItem value="all">All Teams</SelectItem>
+                 <SelectItem value="none">No Team</SelectItem>
+                 {subWorkspaces.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+               </SelectContent>
+             </Select>
+
+             <Select value={filters.assignedTo} onValueChange={(v) => setFilters(f => ({...f, assignedTo: v}))}>
+               <SelectTrigger className="w-[140px] border-none shadow-none bg-slate-50 text-xs h-8 rounded-lg">
+                 <User className="w-3 h-3 mr-2" />
+                 <SelectValue placeholder="Assignee" />
+               </SelectTrigger>
+               <SelectContent>
+                 <SelectItem value="all">All Users</SelectItem>
+                 {members.map(m => (
+                   <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>
+                 ))}
+               </SelectContent>
+             </Select>
+          </div>
         </div>
-        <div className="flex items-center gap-2 w-full md:w-auto border-t md:border-t-0 pt-2 md:pt-0">
-          <Layout className="w-4 h-4 text-muted-foreground" />
-          <Select value={teamFilter} onValueChange={setTeamFilter}>
-            <SelectTrigger className="w-[180px] border-none shadow-none focus:ring-0">
-              <SelectValue placeholder="All Teams" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Teams</SelectItem>
-              <SelectItem value="none">No Team</SelectItem>
-              {subWorkspaces.map(team => (
-                <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Separator orientation="vertical" className="h-6 mx-2 hidden md:block" />
-          <Button variant="ghost" className="flex items-center gap-2">
-            <Filter className="w-4 h-4" /> Filter
-          </Button>
+
+        <div className="flex flex-wrap items-center gap-2">
+           <Button 
+            variant={filters.assignedToMe ? "default" : "secondary"} 
+            size="sm" 
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
+            onClick={() => setFilters(f => ({...f, assignedToMe: !f.assignedToMe}))}
+           >
+            <UserCheck className="w-3 h-3 mr-1.5" /> Assigned to Me
+           </Button>
+           <Button 
+            variant={filters.overdue ? "destructive" : "secondary"} 
+            size="sm" 
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
+            onClick={() => setFilters(f => ({...f, overdue: !f.overdue}))}
+           >
+            <AlertCircle className="w-3 h-3 mr-1.5" /> Overdue
+           </Button>
+           <Button 
+            variant={filters.dueSoon ? "default" : "secondary"} 
+            size="sm" 
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider bg-amber-500 hover:bg-amber-600 text-white"
+            onClick={() => setFilters(f => ({...f, dueSoon: !f.dueSoon}))}
+           >
+            <Clock className="w-3 h-3 mr-1.5" /> Due Soon
+           </Button>
+           <Button 
+            variant={filters.priority.includes('urgent') ? "destructive" : "secondary"} 
+            size="sm" 
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
+            onClick={() => setFilters(f => ({...f, priority: f.priority.includes('urgent') ? f.priority.filter(x => x !== 'urgent') : [...f.priority, 'urgent']}))}
+           >
+            Urgent Only
+           </Button>
+           <Button 
+            variant={filters.noDueDate ? "default" : "secondary"} 
+            size="sm" 
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
+            onClick={() => setFilters(f => ({...f, noDueDate: !f.noDueDate}))}
+           >
+            No Due Date
+           </Button>
+           <Button 
+            variant={filters.status.includes('completed') ? "default" : "secondary"} 
+            size="sm" 
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider bg-emerald-500 hover:bg-emerald-600 text-white"
+            onClick={() => setFilters(f => ({...f, status: f.status.includes('completed') ? f.status.filter(x => x !== 'completed') : [...f.status, 'completed']}))}
+           >
+            Completed
+           </Button>
         </div>
       </div>
 
@@ -448,8 +589,15 @@ export default function TasksPage() {
         {loading && !saving ? (
           <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : filteredTasks.length === 0 ? (
-          <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed">
-            <p className="text-muted-foreground">No tasks found in this view.</p>
+          <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed flex flex-col items-center gap-4">
+            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm">
+              <Ban className="w-8 h-8 text-slate-300" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-bold text-lg">No tasks found</p>
+              <p className="text-muted-foreground text-sm max-w-xs">Try adjusting your filters or search terms to find what you're looking for.</p>
+            </div>
+            <Button variant="outline" onClick={resetFilters}>Clear All Filters</Button>
           </div>
         ) : (
           filteredTasks.map((task) => (
@@ -481,7 +629,10 @@ export default function TasksPage() {
 
                     <div className="flex items-center gap-8 min-w-[300px]">
                       <div className="space-y-1">
-                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                        <p className={cn(
+                          "text-xs font-medium flex items-center gap-1",
+                          task.is_overdue ? "text-rose-500 font-bold" : "text-muted-foreground"
+                        )}>
                           <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
                         </p>
                         <div className="flex items-center gap-2">
@@ -510,10 +661,7 @@ export default function TasksPage() {
         )}
       </div>
 
-      <Dialog open={isCreateOpen} onOpenChange={(open) => { 
-        setIsCreateOpen(open);
-        if (!open) forceUnlockUI();
-      }}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) forceUnlockUI(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Create New Task</DialogTitle>
@@ -569,10 +717,7 @@ export default function TasksPage() {
         </DialogContent>
       </Dialog>
 
-      <Sheet open={isDetailOpen} onOpenChange={(open) => { 
-        setIsDetailOpen(open);
-        if (!open) forceUnlockUI();
-      }}>
+      <Sheet open={isDetailOpen} onOpenChange={(open) => { setIsDetailOpen(open); if (!open) forceUnlockUI(); }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           {selectedTask && (
             <div className="space-y-8 pt-6">
@@ -634,15 +779,6 @@ export default function TasksPage() {
                           />
                           <span className={cn("text-sm", st.is_completed && "line-through text-muted-foreground")}>{st.title}</span>
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 opacity-0 group-hover:opacity-100 text-rose-500"
-                          onClick={() => handleDeleteSubtask(st.id)}
-                          disabled={saving}
-                        >
-                          <Plus className="w-4 h-4 rotate-45" />
-                        </Button>
                       </div>
                     ))}
                     <div className="flex items-center gap-2 mt-2">
@@ -654,80 +790,7 @@ export default function TasksPage() {
                         className="h-9 text-sm"
                         disabled={saving}
                       />
-                      <Button size="sm" variant="secondary" onClick={handleAddSubtask} disabled={saving}>Add</Button>
                     </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-bold flex items-center gap-2">
-                      <Paperclip className="w-4 h-4 text-primary" /> Attachments
-                    </h4>
-                    <Label htmlFor="file-upload" className="cursor-pointer">
-                      <div className={cn(
-                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors bg-primary/10 text-primary hover:bg-primary/20",
-                        isUploading && "opacity-50 pointer-events-none"
-                      )}>
-                        {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                        Upload File
-                      </div>
-                      <input 
-                        id="file-upload" 
-                        type="file" 
-                        className="hidden" 
-                        onChange={handleFileUpload}
-                        disabled={isUploading}
-                      />
-                    </Label>
-                  </div>
-                  <div className="space-y-2">
-                    {attachments.length === 0 ? (
-                      <p className="text-sm text-muted-foreground italic">No files attached yet.</p>
-                    ) : (
-                      attachments.map((file) => (
-                        <div key={file.id} className="flex items-center justify-between p-3 bg-white border rounded-lg group hover:border-primary/50 transition-colors">
-                          <div className="flex items-center gap-3 overflow-hidden">
-                            <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center shrink-0">
-                              <FileIcon className="w-4 h-4 text-slate-500" />
-                            </div>
-                            <div className="overflow-hidden">
-                              <p className="text-xs font-bold truncate">{file.file_name}</p>
-                              <p className="text-[10px] text-muted-foreground">{formatFileSize(file.file_size_bytes)}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-primary"
-                              onClick={() => handleOpenAttachment(file)}
-                              title="View File"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-primary"
-                              onClick={() => handleDownloadAttachment(file)}
-                              title="Download File"
-                            >
-                              <Download className="w-4 h-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="h-8 w-8 text-rose-500"
-                              onClick={() => handleDeleteAttachment(file)}
-                              title="Delete Attachment"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))
-                    )}
                   </div>
                 </div>
 
@@ -761,19 +824,6 @@ export default function TasksPage() {
                       />
                       <Button onClick={handleAddComment} disabled={saving}>Post</Button>
                     </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 border-t pt-4">
-                  <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-widest">Recent Activity</h4>
-                  <div className="space-y-3">
-                    {activityLogs.map((log) => (
-                      <div key={log.id} className="text-xs flex gap-2">
-                        <Clock className="w-3 h-3 text-muted-foreground mt-0.5" />
-                        <span className="text-muted-foreground">{log.action}</span>
-                        <span className="text-[10px] text-muted-foreground ml-auto">{new Date(log.created_at).toLocaleDateString()}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
               </div>

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Plus, Loader2, Clock, Calendar as CalendarIcon, User, Layout } from "lucide-react";
+import { Loader2, Calendar as CalendarIcon, User, Layout, Filter, FilterX, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -13,16 +13,25 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export default function CalendarPage() {
   const { activeWorkspace } = useWorkspace();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [tasks, setTasks] = useState<any[]>([]);
   const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
-  const [teamFilter, setTeamFilter] = useState("all");
+  const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  
+  const [filters, setFilters] = useState({
+    teamId: "all",
+    assignedTo: "all",
+    status: [] as string[],
+    priority: [] as string[]
+  });
+
   const supabase = createClient();
   const { toast } = useToast();
 
@@ -40,7 +49,7 @@ export default function CalendarPage() {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const [tasksRes, teamsRes] = await Promise.all([
+      const [tasksRes, teamsRes, membersRes] = await Promise.all([
         supabase
           .from('calendar_tasks_view')
           .select('*')
@@ -51,14 +60,21 @@ export default function CalendarPage() {
           .from('sub_workspaces')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
-          .order('name', { ascending: true })
+          .order('name', { ascending: true }),
+        supabase
+          .from('workspace_members')
+          .select('user_id, profiles(full_name)')
+          .eq('workspace_id', activeWorkspace.id)
+          .eq('status', 'active')
       ]);
 
       if (tasksRes.error) throw tasksRes.error;
       if (teamsRes.error) throw teamsRes.error;
+      if (membersRes.error) throw membersRes.error;
 
       setTasks(tasksRes.data || []);
       setSubWorkspaces(teamsRes.data || []);
+      setMembers(membersRes.data || []);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error fetching data", description: err.message });
     } finally {
@@ -70,28 +86,36 @@ export default function CalendarPage() {
     fetchData();
   }, [fetchData]);
 
-  const handleOpenDetail = (task: any) => {
-    setSelectedTask(task);
-    setIsDetailOpen(true);
-  };
+  const filteredTasks = useMemo(() => {
+    return tasks.filter(task => {
+      if (filters.teamId !== "all") {
+        if (filters.teamId === "none" && task.sub_workspace_id) return false;
+        if (filters.teamId !== "none" && task.sub_workspace_id !== filters.teamId) return false;
+      }
+      if (filters.assignedTo !== "all" && task.assigned_to !== filters.assignedTo) return false;
+      if (filters.status.length > 0 && !filters.status.includes(task.status)) return false;
+      if (filters.priority.length > 0 && !filters.priority.includes(task.priority)) return false;
+      return true;
+    });
+  }, [tasks, filters]);
 
-  // Filter tasks based on selected team and selected date
-  const filteredTasks = tasks.filter(task => {
-    if (teamFilter !== "all" && task.sub_workspace_id !== teamFilter) {
-      if (teamFilter === "none" && task.sub_workspace_id) return false;
-      if (teamFilter !== "none" && task.sub_workspace_id !== teamFilter) return false;
-    }
-    return true;
-  });
+  const selectedDateTasks = useMemo(() => {
+    return filteredTasks.filter(task => {
+      if (!date || !task.due_date) return false;
+      const taskDate = new Date(task.due_date);
+      return (
+        taskDate.getDate() === date.getDate() &&
+        taskDate.getMonth() === date.getMonth() &&
+        taskDate.getFullYear() === date.getFullYear()
+      );
+    });
+  }, [filteredTasks, date]);
 
-  const selectedDateTasks = filteredTasks.filter(task => {
-    if (!date || !task.due_date) return false;
-    const taskDate = new Date(task.due_date);
-    return (
-      taskDate.getDate() === date.getDate() &&
-      taskDate.getMonth() === date.getMonth() &&
-      taskDate.getFullYear() === date.getFullYear()
-    );
+  const resetFilters = () => setFilters({
+    teamId: "all",
+    assignedTo: "all",
+    status: [],
+    priority: []
   });
 
   return (
@@ -101,25 +125,71 @@ export default function CalendarPage() {
           <h1 className="text-3xl font-bold">Calendar</h1>
           <p className="text-muted-foreground">Keep track of your team deadlines</p>
         </div>
-        <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border">
-           <Layout className="w-4 h-4 text-muted-foreground" />
-           <Select value={teamFilter} onValueChange={setTeamFilter}>
-             <SelectTrigger className="w-[180px] border-none shadow-none focus:ring-0">
-               <SelectValue placeholder="All Teams" />
+        <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border overflow-x-auto whitespace-nowrap">
+           <Select value={filters.teamId} onValueChange={v => setFilters(f => ({...f, teamId: v}))}>
+             <SelectTrigger className="w-[140px] border-none shadow-none focus:ring-0 bg-slate-50 rounded-lg text-xs h-8">
+               <Layout className="w-3 h-3 mr-2" />
+               <SelectValue placeholder="Team" />
              </SelectTrigger>
              <SelectContent>
                <SelectItem value="all">All Teams</SelectItem>
                <SelectItem value="none">No Team</SelectItem>
-               {subWorkspaces.map(team => (
-                 <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
-               ))}
+               {subWorkspaces.map(team => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
              </SelectContent>
            </Select>
+
+           <Select value={filters.assignedTo} onValueChange={v => setFilters(f => ({...f, assignedTo: v}))}>
+             <SelectTrigger className="w-[140px] border-none shadow-none focus:ring-0 bg-slate-50 rounded-lg text-xs h-8">
+               <User className="w-3 h-3 mr-2" />
+               <SelectValue placeholder="Assignee" />
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem value="all">All Users</SelectItem>
+               {members.map(m => <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>)}
+             </SelectContent>
+           </Select>
+
+           <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-2 border-none bg-slate-50">
+                  <Filter className="w-3 h-3" /> Filters
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                {['to_do', 'in_progress', 'completed'].map(s => (
+                  <DropdownMenuCheckboxItem 
+                    key={s} 
+                    checked={filters.status.includes(s)}
+                    onCheckedChange={c => setFilters(f => ({...f, status: c ? [...f.status, s] : f.status.filter(x => x !== s)}))}
+                    className="capitalize"
+                  >
+                    {s.replace('_', ' ')}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Priority</DropdownMenuLabel>
+                {['low', 'medium', 'high', 'urgent'].map(p => (
+                  <DropdownMenuCheckboxItem 
+                    key={p} 
+                    checked={filters.priority.includes(p)}
+                    onCheckedChange={c => setFilters(f => ({...f, priority: c ? [...f.priority, p] : f.priority.filter(x => x !== p)}))}
+                    className="capitalize"
+                  >
+                    {p}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={resetFilters} className="text-rose-500 gap-2">
+                  <FilterX className="w-3 h-3" /> Reset
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+           </DropdownMenu>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <Card className="lg:col-span-2 border-none shadow-xl">
+        <Card className="lg:col-span-2 border-none shadow-xl overflow-hidden">
           <CardContent className="p-4">
             <Calendar
               mode="single"
@@ -141,30 +211,31 @@ export default function CalendarPage() {
         </Card>
 
         <div className="space-y-4">
-          <h2 className="text-xl font-bold">
+          <h2 className="text-xl font-bold flex items-center gap-2">
+            <Clock className="w-5 h-5 text-primary" />
             {date ? date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' }) : 'Deadlines'}
           </h2>
-          <div className="space-y-3">
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
             {loading ? (
               <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
             ) : selectedDateTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic py-4">No tasks due on this day.</p>
+              <p className="text-sm text-muted-foreground italic py-8 text-center bg-slate-50 rounded-xl">No tasks due on this day.</p>
             ) : (
               selectedDateTasks.map((task) => (
                 <Card 
                   key={task.id} 
-                  className="border-none shadow-sm hover:translate-x-1 transition-transform cursor-pointer"
-                  onClick={() => handleOpenDetail(task)}
+                  className="border-none shadow-sm hover:translate-x-1 transition-transform cursor-pointer group"
+                  onClick={() => { setSelectedTask(task); setIsDetailOpen(true); }}
                 >
                   <CardContent className="p-4 flex items-center justify-between">
-                    <div className="space-y-1">
-                      <p className="font-bold text-sm line-clamp-1">{task.title}</p>
+                    <div className="space-y-1 flex-1 min-w-0 mr-4">
+                      <p className="font-bold text-sm line-clamp-1 group-hover:text-primary transition-colors">{task.title}</p>
                       <div className="flex items-center gap-2">
                          <span className={cn(
                            "text-[10px] font-bold uppercase",
                            task.is_overdue ? "text-rose-500" : "text-muted-foreground"
                          )}>
-                           {task.is_overdue ? "Overdue" : task.status}
+                           {task.is_overdue ? "Overdue" : task.status.replace('_', ' ')}
                          </span>
                          {task.sub_workspace_name && (
                            <Badge variant="secondary" className="text-[8px] bg-violet-50 text-violet-600 border-none px-1 h-3.5">
@@ -173,10 +244,11 @@ export default function CalendarPage() {
                          )}
                       </div>
                     </div>
-                    <Badge className={
+                    <Badge className={cn(
+                      "text-[10px] h-5",
                       task.priority?.toLowerCase() === 'urgent' ? 'bg-rose-500' : 
                       task.priority?.toLowerCase() === 'high' ? 'bg-amber-500' : 'bg-primary'
-                    }>
+                    )}>
                       {task.priority}
                     </Badge>
                   </CardContent>
@@ -184,37 +256,10 @@ export default function CalendarPage() {
               ))
             )}
           </div>
-
-          <div className="pt-6 border-t">
-             <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Upcoming {teamFilter !== 'all' ? 'Team' : ''}</h3>
-             <div className="space-y-3">
-                {filteredTasks.slice(0, 5).map(task => (
-                  <div key={task.id} className="flex items-start gap-3 group cursor-pointer" onClick={() => handleOpenDetail(task)}>
-                    <div className={cn(
-                      "w-1 h-8 rounded-full shrink-0",
-                      task.priority?.toLowerCase() === 'urgent' ? "bg-rose-500" : "bg-primary/20"
-                    )} />
-                    <div className="overflow-hidden">
-                      <p className="text-xs font-bold group-hover:text-primary transition-colors truncate">{task.title}</p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-[10px] text-muted-foreground">{new Date(task.due_date).toLocaleDateString()}</p>
-                        {task.sub_workspace_name && (
-                           <span className="text-[8px] text-violet-500 font-bold uppercase">{task.sub_workspace_name}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-             </div>
-          </div>
         </div>
       </div>
 
-      {/* Task Detail Sheet */}
-      <Sheet open={isDetailOpen} onOpenChange={(open) => {
-        setIsDetailOpen(open);
-        if (!open) forceUnlockUI();
-      }}>
+      <Sheet open={isDetailOpen} onOpenChange={(open) => { setIsDetailOpen(open); if (!open) forceUnlockUI(); }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           {selectedTask && (
             <div className="space-y-8 pt-6">
@@ -222,9 +267,6 @@ export default function CalendarPage() {
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <Badge variant="outline" className="capitalize">{selectedTask.priority}</Badge>
                   <Badge variant="secondary" className="capitalize">{selectedTask.status?.replace('_', ' ')}</Badge>
-                  {selectedTask.sub_workspace_name && (
-                    <Badge variant="secondary" className="bg-violet-50 text-violet-600 border-none">{selectedTask.sub_workspace_name}</Badge>
-                  )}
                 </div>
                 <SheetTitle className="text-2xl font-bold">{selectedTask.title}</SheetTitle>
                 <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>
