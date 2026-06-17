@@ -31,6 +31,7 @@ export default function NotesPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [notes, setNotes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<any>(null);
@@ -87,6 +88,7 @@ export default function NotesPage() {
     e.preventDefault();
     if (!activeWorkspace || !userProfile) return;
 
+    setSaving(true);
     try {
       if (editingNote) {
         const { error } = await supabase
@@ -114,9 +116,12 @@ export default function NotesPage() {
         toast({ title: "Note Created" });
       }
       setIsModalOpen(false);
-      fetchNotes();
+      setEditingNote(null);
+      await fetchNotes();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -128,7 +133,7 @@ export default function NotesPage() {
         .eq('id', id);
       if (error) throw error;
       toast({ title: "Note moved to trash" });
-      fetchNotes();
+      await fetchNotes();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -168,7 +173,7 @@ export default function NotesPage() {
         </div>
       </div>
 
-      {loading ? (
+      {loading && !saving ? (
         <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       ) : filteredNotes.length === 0 ? (
         <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed">
@@ -224,8 +229,9 @@ export default function NotesPage() {
         </div>
       )}
 
-      {/* Create/Edit Note Dialog */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      <Dialog open={isModalOpen} onOpenChange={(open) => {
+        if (!saving) setIsModalOpen(open);
+      }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editingNote ? 'Edit Note' : 'Create New Note'}</DialogTitle>
@@ -241,6 +247,7 @@ export default function NotesPage() {
                 onChange={e => setForm({...form, title: e.target.value})} 
                 placeholder="Note title..."
                 required
+                disabled={saving}
               />
             </div>
             <div className="space-y-2">
@@ -251,11 +258,15 @@ export default function NotesPage() {
                 placeholder="Write something..."
                 rows={8}
                 required
+                disabled={saving}
               />
             </div>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-              <Button type="submit">{editingNote ? 'Save Changes' : 'Create Note'}</Button>
+              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" disabled={saving}>
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                {editingNote ? 'Save Changes' : 'Create Note'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [reminders, setReminders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [newReminder, setNewReminder] = useState({ title: "", remindAt: "" });
   
@@ -51,7 +52,6 @@ export default function DashboardPage() {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      // Fetch Summary Stats
       const { data: summary } = await supabase
         .from('dashboard_task_summary_view')
         .select('*')
@@ -65,7 +65,6 @@ export default function DashboardPage() {
         { label: "Overdue", count: summary?.overdue_count || 0, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50" },
       ]);
 
-      // Fetch My Tasks (Upcoming)
       const { data: myTasks } = await supabase
         .from('my_tasks_view')
         .select('*')
@@ -74,7 +73,6 @@ export default function DashboardPage() {
         .limit(5);
       setTasks(myTasks || []);
 
-      // Fetch Recent Activity
       const { data: recentLogs } = await supabase
         .from('recent_activity_view')
         .select('*')
@@ -83,7 +81,6 @@ export default function DashboardPage() {
         .limit(5);
       setActivity(recentLogs || []);
 
-      // Fetch Notifications
       const { data: notifs } = await supabase
         .from('notifications')
         .select('*')
@@ -93,7 +90,6 @@ export default function DashboardPage() {
         .limit(3);
       setNotifications(notifs || []);
 
-      // Fetch Reminders
       const { data: rems } = await supabase
         .from('reminders')
         .select('*')
@@ -126,6 +122,7 @@ export default function DashboardPage() {
   const handleCreateReminder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeWorkspace || !userProfile) return;
+    setSaving(true);
     try {
       const { error } = await supabase.from('reminders').insert({
         workspace_id: activeWorkspace.id,
@@ -138,9 +135,11 @@ export default function DashboardPage() {
       toast({ title: "Reminder set!" });
       setIsReminderModalOpen(false);
       setNewReminder({ title: "", remindAt: "" });
-      fetchDashboardData();
+      await fetchDashboardData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -151,7 +150,7 @@ export default function DashboardPage() {
         completed_at: new Date().toISOString()
       }).eq('id', id);
       toast({ title: "Reminder completed" });
-      fetchDashboardData();
+      await fetchDashboardData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -177,7 +176,6 @@ export default function DashboardPage() {
         </Button>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.map((stat) => (
           <Card key={stat.label} className="border-none shadow-sm hover:shadow-md transition-shadow">
@@ -195,7 +193,6 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Nearest Tasks */}
         <div className="lg:col-span-2 space-y-8">
           <section className="space-y-4">
             <div className="flex items-center justify-between">
@@ -264,7 +261,6 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Reminders & Notifications */}
         <div className="space-y-8">
           <Card className="border-none shadow-sm bg-slate-50">
             <CardHeader className="pb-2">
@@ -332,8 +328,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Quick Reminder Modal */}
-      <Dialog open={isReminderModalOpen} onOpenChange={setIsReminderModalOpen}>
+      <Dialog open={isReminderModalOpen} onOpenChange={(open) => { if (!saving) setIsReminderModalOpen(open); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Set Quick Reminder</DialogTitle>
@@ -347,6 +342,7 @@ export default function DashboardPage() {
                 onChange={e => setNewReminder({...newReminder, title: e.target.value})} 
                 placeholder="e.g. Call client"
                 required
+                disabled={saving}
               />
             </div>
             <div className="space-y-2">
@@ -356,11 +352,15 @@ export default function DashboardPage() {
                 value={newReminder.remindAt} 
                 onChange={e => setNewReminder({...newReminder, remindAt: e.target.value})} 
                 required
+                disabled={saving}
               />
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => setIsReminderModalOpen(false)}>Cancel</Button>
-              <Button type="submit">Set Reminder</Button>
+              <Button type="button" variant="ghost" onClick={() => setIsReminderModalOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" disabled={saving}>
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Set Reminder
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

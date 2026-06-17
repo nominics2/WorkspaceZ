@@ -49,12 +49,11 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [converting, setConverting] = useState(false);
   const { toast } = useToast();
   const supabase = createClient();
-  const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Task creation state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<any>(null);
   const [taskForm, setTaskForm] = useState({
@@ -65,17 +64,17 @@ export default function ChatPage() {
     assignedTo: ""
   });
 
-  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior });
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (messages.length > 0) {
       scrollToBottom();
     }
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
   const fetchMembers = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -85,7 +84,7 @@ export default function ChatPage() {
       .eq('workspace_id', activeWorkspace.id)
       .eq('status', 'active');
     
-    setMembers(data?.map(m => m.profiles) || []);
+    setMembers(data?.map(m => (m.profiles as any)) || []);
   }, [activeWorkspace, supabase]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
@@ -101,14 +100,13 @@ export default function ChatPage() {
     if (msgError) throw msgError;
     setMessages(msgs || []);
     setTimeout(() => scrollToBottom("auto"), 100);
-  }, [activeWorkspace, supabase]);
+  }, [activeWorkspace, supabase, scrollToBottom]);
 
   const fetchChannel = useCallback(async () => {
     if (!activeWorkspace || !userProfile) return;
     setLoading(true);
 
     try {
-      // Find workspace channel
       let { data: channels, error: channelError } = await supabase
         .from('chat_channels')
         .select('*')
@@ -118,7 +116,6 @@ export default function ChatPage() {
 
       let currentChannel = channels?.[0];
 
-      // Create channel if it doesn't exist
       if (!currentChannel && !channelError) {
         const { data: newChannel, error: createError } = await supabase
           .from('chat_channels')
@@ -136,8 +133,6 @@ export default function ChatPage() {
       }
 
       setChannel(currentChannel);
-
-      // Fetch messages
       if (currentChannel) {
         await fetchMessages(currentChannel.id);
       }
@@ -153,7 +148,6 @@ export default function ChatPage() {
     fetchMembers();
   }, [fetchChannel, fetchMembers]);
 
-  // Realtime subscription
   useEffect(() => {
     if (!channel) return;
 
@@ -165,7 +159,6 @@ export default function ChatPage() {
         table: 'chat_messages',
         filter: `channel_id=eq.${channel.id}`
       }, async (payload) => {
-        // Fetch full message with profile when a new one arrives
         const { data } = await supabase
           .from('chat_messages')
           .select('*, profiles:sender_id(full_name, username, avatar_url)')
@@ -215,7 +208,6 @@ export default function ChatPage() {
 
       if (error) throw error;
       
-      // Optimistic/Immediate update
       if (newMessage) {
         setMessages(prev => {
           if (prev.some(m => m.id === newMessage.id)) return prev;
@@ -224,7 +216,7 @@ export default function ChatPage() {
       }
       
       setInput("");
-      scrollToBottom();
+      setTimeout(() => scrollToBottom(), 50);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -239,7 +231,6 @@ export default function ChatPage() {
     }
 
     setSelectedMessage(msg);
-    // Prefill title with first line or first 50 chars
     const title = msg.message.split('\n')[0].substring(0, 50);
     setTaskForm({
       title,
@@ -255,8 +246,8 @@ export default function ChatPage() {
     e.preventDefault();
     if (!selectedMessage || !activeWorkspace || !userProfile) return;
 
+    setConverting(true);
     try {
-      // 1. Create Task
       const { data: task, error: taskError } = await supabase
         .from('tasks')
         .insert({
@@ -276,13 +267,11 @@ export default function ChatPage() {
 
       if (taskError) throw taskError;
 
-      // 2. Update message
       await supabase
         .from('chat_messages')
         .update({ created_task_id: task.id })
         .eq('id', selectedMessage.id);
 
-      // 3. Link message to task
       await supabase
         .from('task_message_links')
         .insert({
@@ -294,11 +283,13 @@ export default function ChatPage() {
 
       toast({ title: "Task Created", description: "The message has been successfully converted into a task." });
       setIsTaskModalOpen(false);
+      setSelectedMessage(null);
       
-      // Update the message in state to show the "Task Created" badge
       setMessages(prev => prev.map(m => m.id === selectedMessage.id ? { ...m, created_task_id: task.id } : m));
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setConverting(false);
     }
   };
 
@@ -312,7 +303,6 @@ export default function ChatPage() {
       </div>
 
       <Card className="flex-1 flex flex-col border-none shadow-xl overflow-hidden relative">
-        {/* Chat Header */}
         <div className="p-4 border-b bg-white flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
@@ -328,7 +318,6 @@ export default function ChatPage() {
           </Button>
         </div>
 
-        {/* Messages */}
         <ScrollArea className="flex-1 bg-slate-50/50">
           <div className="p-6 space-y-6">
             {loading ? (
@@ -369,7 +358,6 @@ export default function ChatPage() {
                             </div>
                           )}
                         </div>
-                        {/* Floating Message Action */}
                         {!msg.created_task_id && (
                           <div className={cn(
                             "absolute top-0 opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-2",
@@ -396,7 +384,6 @@ export default function ChatPage() {
           </div>
         </ScrollArea>
 
-        {/* Input area */}
         <div className="p-4 bg-white border-t">
           <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200">
             <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary shrink-0">
@@ -425,8 +412,7 @@ export default function ChatPage() {
         </div>
       </Card>
 
-      {/* Create Task Dialog */}
-      <Dialog open={isTaskModalOpen} onOpenChange={setIsTaskModalOpen}>
+      <Dialog open={isTaskModalOpen} onOpenChange={(open) => { if (!converting) setIsTaskModalOpen(open); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Create Task from Message</DialogTitle>
@@ -440,6 +426,7 @@ export default function ChatPage() {
                 value={taskForm.title} 
                 onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
                 required 
+                disabled={converting}
               />
             </div>
             <div className="space-y-2">
@@ -449,12 +436,13 @@ export default function ChatPage() {
                 value={taskForm.description} 
                 onChange={e => setTaskForm({...taskForm, description: e.target.value})} 
                 rows={4}
+                disabled={converting}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Priority</Label>
-                <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})}>
+                <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})} disabled={converting}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="low">Low</SelectItem>
@@ -470,12 +458,13 @@ export default function ChatPage() {
                   type="date" 
                   value={taskForm.dueDate} 
                   onChange={e => setTaskForm({...taskForm, dueDate: e.target.value})} 
+                  disabled={converting}
                 />
               </div>
             </div>
             <div className="space-y-2">
               <Label>Assigned To</Label>
-              <Select value={taskForm.assignedTo} onValueChange={v => setTaskForm({...taskForm, assignedTo: v})}>
+              <Select value={taskForm.assignedTo} onValueChange={v => setTaskForm({...taskForm, assignedTo: v})} disabled={converting}>
                 <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
                 <SelectContent>
                   {members.map(m => (
@@ -485,8 +474,11 @@ export default function ChatPage() {
               </Select>
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => setIsTaskModalOpen(false)}>Cancel</Button>
-              <Button type="submit">Convert to Task</Button>
+              <Button type="button" variant="ghost" onClick={() => setIsTaskModalOpen(false)} disabled={converting}>Cancel</Button>
+              <Button type="submit" disabled={converting}>
+                {converting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Convert to Task
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

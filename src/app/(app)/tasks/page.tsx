@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
@@ -53,6 +52,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -90,11 +90,9 @@ export default function TasksPage() {
 
   const fetchTaskDetails = async (taskId: string) => {
     try {
-      // Subtasks
       const { data: st } = await supabase.from('subtasks').select('*').eq('task_id', taskId).order('created_at', { ascending: true });
       setSubtasks(st || []);
 
-      // Comments: Fetching from task_comments with profiles join
       const { data: c } = await supabase
         .from('task_comments')
         .select('*, profiles(full_name)')
@@ -102,7 +100,6 @@ export default function TasksPage() {
         .order('created_at', { ascending: true });
       setComments(c || []);
 
-      // Activity
       const { data: al } = await supabase.from('task_activity_logs').select('*').eq('task_id', taskId).order('created_at', { ascending: false });
       setActivityLogs(al || []);
     } catch (err: any) {
@@ -124,6 +121,7 @@ export default function TasksPage() {
     const priority = (formData.get("priority") as string || "medium").toLowerCase();
     const dueDate = formData.get("due_date") as string;
 
+    setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
@@ -145,26 +143,21 @@ export default function TasksPage() {
 
       toast({ title: "Success", description: "Task created successfully" });
       setIsCreateOpen(false);
-      fetchTasks();
       (e.target as HTMLFormElement).reset();
+      await fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleAddSubtask = async () => {
     if (!newSubtaskTitle.trim() || !selectedTask) return;
+    setSaving(true);
     try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Not authenticated.",
-        });
-        return;
-      }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
 
       const { error } = await supabase.from('subtasks').insert({
         task_id: selectedTask.id,
@@ -173,21 +166,16 @@ export default function TasksPage() {
         is_completed: false
       });
 
-      if (error) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: error.message,
-        });
-        return;
-      }
+      if (error) throw error;
 
       toast({ title: "Success", description: "Subtask added." });
       setNewSubtaskTitle("");
-      fetchTaskDetails(selectedTask.id);
-      fetchTasks();
+      await fetchTaskDetails(selectedTask.id);
+      await fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -197,8 +185,8 @@ export default function TasksPage() {
         is_completed: !subtask.is_completed
       }).eq('id', subtask.id);
       if (error) throw error;
-      fetchTaskDetails(selectedTask.id);
-      fetchTasks();
+      await fetchTaskDetails(selectedTask.id);
+      await fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -208,8 +196,8 @@ export default function TasksPage() {
     try {
       const { error } = await supabase.from('subtasks').delete().eq('id', id);
       if (error) throw error;
-      fetchTaskDetails(selectedTask.id);
-      fetchTasks();
+      await fetchTaskDetails(selectedTask.id);
+      await fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -217,6 +205,7 @@ export default function TasksPage() {
 
   const handleAddComment = async () => {
     if (!newComment.trim() || !selectedTask) return;
+    setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
@@ -228,22 +217,25 @@ export default function TasksPage() {
       });
       if (error) throw error;
       setNewComment("");
-      fetchTaskDetails(selectedTask.id);
+      await fetchTaskDetails(selectedTask.id);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleUpdateManualProgress = async (val: number[]) => {
     if (!selectedTask) return;
     try {
-      await supabase.from('tasks').update({
+      const { error } = await supabase.from('tasks').update({
         manual_progress: val[0],
         progress_mode: 'manual'
       }).eq('id', selectedTask.id);
       
+      if (error) throw error;
       setSelectedTask({...selectedTask, manual_progress: val[0], progress_mode: 'manual'});
-      fetchTasks();
+      await fetchTasks();
     } catch (err: any) {
       console.error(err);
     }
@@ -285,7 +277,7 @@ export default function TasksPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {loading ? (
+        {loading && !saving ? (
           <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : filteredTasks.length === 0 ? (
           <p className="text-center py-12 text-muted-foreground">No tasks found in this workspace.</p>
@@ -346,8 +338,7 @@ export default function TasksPage() {
         )}
       </div>
 
-      {/* Create Task Dialog */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { if (!saving) setIsCreateOpen(open); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Create New Task</DialogTitle>
@@ -356,17 +347,17 @@ export default function TasksPage() {
           <form onSubmit={handleCreateTask} className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="title">Task Title</Label>
-              <Input id="title" name="title" placeholder="What needs to be done?" required />
+              <Input id="title" name="title" placeholder="What needs to be done?" required disabled={saving} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
-              <Textarea id="description" name="description" placeholder="Add more details..." />
+              <Textarea id="description" name="description" placeholder="Add more details..." disabled={saving} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="priority">Priority</Label>
                 <Select name="priority" defaultValue="medium">
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
@@ -377,19 +368,21 @@ export default function TasksPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="due_date">Due Date</Label>
-                <Input id="due_date" name="due_date" type="date" />
+                <Input id="due_date" name="due_date" type="date" disabled={saving} />
               </div>
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-              <Button type="submit">Create Task</Button>
+              <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="submit" disabled={saving}>
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Create Task
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Task Detail Sheet */}
-      <Sheet open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+      <Sheet open={isDetailOpen} onOpenChange={(open) => { if (!saving) setIsDetailOpen(open); }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           {selectedTask && (
             <div className="space-y-8 pt-6">
@@ -403,7 +396,6 @@ export default function TasksPage() {
               </SheetHeader>
 
               <div className="space-y-6">
-                {/* Progress Tracking */}
                 <div className="space-y-3 p-4 bg-slate-50 rounded-xl">
                    <div className="flex items-center justify-between mb-2">
                      <Label className="text-sm font-bold">Progress Tracking</Label>
@@ -418,6 +410,7 @@ export default function TasksPage() {
                          onValueChange={handleUpdateManualProgress} 
                          max={100} 
                          step={1} 
+                         disabled={saving}
                        />
                        <p className="text-xs text-center font-bold text-primary">{selectedTask.manual_progress}% Complete</p>
                      </div>
@@ -429,7 +422,6 @@ export default function TasksPage() {
                    )}
                 </div>
 
-                {/* Subtasks */}
                 <div className="space-y-4">
                   <h4 className="font-bold flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-primary" /> Subtasks
@@ -443,6 +435,7 @@ export default function TasksPage() {
                             checked={st.is_completed} 
                             onChange={() => handleToggleSubtask(st)}
                             className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                            disabled={saving}
                           />
                           <span className={cn("text-sm", st.is_completed && "line-through text-muted-foreground")}>{st.title}</span>
                         </div>
@@ -451,6 +444,7 @@ export default function TasksPage() {
                           size="icon" 
                           className="h-8 w-8 opacity-0 group-hover:opacity-100 text-rose-500"
                           onClick={() => handleDeleteSubtask(st.id)}
+                          disabled={saving}
                         >
                           <Plus className="w-4 h-4 rotate-45" />
                         </Button>
@@ -463,19 +457,18 @@ export default function TasksPage() {
                         onChange={(e) => setNewSubtaskTitle(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask()}
                         className="h-9 text-sm"
+                        disabled={saving}
                       />
-                      <Button size="sm" variant="secondary" onClick={handleAddSubtask}>Add</Button>
+                      <Button size="sm" variant="secondary" onClick={handleAddSubtask} disabled={saving}>Add</Button>
                     </div>
                   </div>
                 </div>
 
-                {/* Comments */}
                 <div className="space-y-4">
                   <h4 className="font-bold flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-primary" /> Comments
                   </h4>
                   <div className="space-y-4">
-                    {/* Comments List above Input */}
                     <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
                       {comments.length === 0 ? (
                         <p className="text-sm text-muted-foreground italic">No comments yet.</p>
@@ -491,20 +484,19 @@ export default function TasksPage() {
                         ))
                       )}
                     </div>
-                    {/* Comment Input at bottom */}
                     <div className="flex gap-2 pt-2 border-t mt-4">
                       <Input 
                         placeholder="Add a comment..." 
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
+                        disabled={saving}
                       />
-                      <Button onClick={handleAddComment}>Post</Button>
+                      <Button onClick={handleAddComment} disabled={saving}>Post</Button>
                     </div>
                   </div>
                 </div>
 
-                {/* Activity Log */}
                 <div className="space-y-4 border-t pt-4">
                   <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-widest">Recent Activity</h4>
                   <div className="space-y-3">
