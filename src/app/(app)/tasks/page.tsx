@@ -94,8 +94,12 @@ export default function TasksPage() {
       const { data: st } = await supabase.from('subtasks').select('*').eq('task_id', taskId).order('created_at', { ascending: true });
       setSubtasks(st || []);
 
-      // Comments
-      const { data: c } = await supabase.from('task_comments_view').select('*').eq('task_id', taskId).order('created_at', { ascending: false });
+      // Comments: Fetching from task_comments with profiles join
+      const { data: c } = await supabase
+        .from('task_comments')
+        .select('*, profiles(full_name)')
+        .eq('task_id', taskId)
+        .order('created_at', { ascending: true });
       setComments(c || []);
 
       // Activity
@@ -471,24 +475,31 @@ export default function TasksPage() {
                     <MessageSquare className="w-4 h-4 text-primary" /> Comments
                   </h4>
                   <div className="space-y-4">
-                    <div className="flex gap-2">
+                    {/* Comments List above Input */}
+                    <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                      {comments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic">No comments yet.</p>
+                      ) : (
+                        comments.map((c) => (
+                          <div key={c.id} className="bg-slate-50 p-3 rounded-lg space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-xs font-bold">{(c.profiles as any)?.full_name || 'User'}</span>
+                              <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
+                            </div>
+                            <p className="text-sm">{c.comment}</p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    {/* Comment Input at bottom */}
+                    <div className="flex gap-2 pt-2 border-t mt-4">
                       <Input 
                         placeholder="Add a comment..." 
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
                       />
                       <Button onClick={handleAddComment}>Post</Button>
-                    </div>
-                    <div className="space-y-4">
-                      {comments.map((c) => (
-                        <div key={c.id} className="bg-slate-50 p-3 rounded-lg space-y-1">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-bold">{c.full_name}</span>
-                            <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
-                          </div>
-                          <p className="text-sm">{c.comment}</p>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 </div>
