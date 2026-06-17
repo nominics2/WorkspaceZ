@@ -44,15 +44,21 @@ export default function NotesPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
-  const forceUnlockUI = () => {
+  // Helper to force unlock UI by resetting body pointer events
+  const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
-      document.body.style.pointerEvents = "";
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+        console.log("UI Force Unlocked");
+      }, 0);
     }
-  };
-
-  useEffect(() => {
-    return () => forceUnlockUI();
   }, []);
+
+  // Safety cleanup on mount/unmount
+  useEffect(() => {
+    forceUnlockUI();
+    return () => forceUnlockUI();
+  }, [forceUnlockUI]);
 
   const fetchNotes = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -150,6 +156,8 @@ export default function NotesPage() {
       fetchNotes();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      forceUnlockUI();
     }
   };
 
@@ -244,9 +252,10 @@ export default function NotesPage() {
       )}
 
       <Dialog open={isModalOpen} onOpenChange={(open) => {
-        if (!saving) {
-          setIsModalOpen(open);
-          if (!open) forceUnlockUI();
+        setIsModalOpen(open);
+        if (!open) {
+          setEditingNote(null);
+          forceUnlockUI();
         }
       }}>
         <DialogContent className="max-w-lg">
