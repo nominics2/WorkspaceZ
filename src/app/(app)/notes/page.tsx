@@ -46,24 +46,25 @@ export default function NotesPage() {
 
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
+      // We use a slight delay to ensure it runs after Radix's cleanup cycle
       setTimeout(() => {
         document.body.style.pointerEvents = "";
-      }, 0);
+      }, 100);
     }
   }, []);
 
-  // Global safety cleanup
+  // Global safety cleanup on mount/unmount
   useEffect(() => {
     forceUnlockUI();
     return () => forceUnlockUI();
   }, [forceUnlockUI]);
 
-  // Safety fix: restore pointer events whenever modal closes
+  // Specific safety fix: restore pointer events whenever the modal is confirmed closed
   useEffect(() => {
-    if (!isModalOpen) {
+    if (!isModalOpen && !saving) {
       forceUnlockUI();
     }
-  }, [isModalOpen, forceUnlockUI]);
+  }, [isModalOpen, saving, forceUnlockUI]);
 
   const fetchNotes = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -82,8 +83,9 @@ export default function NotesPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setLoading(false);
+      forceUnlockUI();
     }
-  }, [activeWorkspace, supabase, toast]);
+  }, [activeWorkspace, supabase, toast, forceUnlockUI]);
 
   useEffect(() => {
     fetchNotes();
@@ -139,8 +141,7 @@ export default function NotesPage() {
       
       setIsModalOpen(false);
       setEditingNote(null);
-      forceUnlockUI();
-      fetchNotes();
+      await fetchNotes();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -219,7 +220,7 @@ export default function NotesPage() {
                     {note.visibility === 'workspace' ? <Globe className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
                     {note.visibility}
                   </Badge>
-                  <DropdownMenu>
+                  <DropdownMenu onOpenChange={(open) => { if (!open) forceUnlockUI(); }}>
                     <DropdownMenuTrigger asChild>
                       <button className="text-muted-foreground hover:text-foreground">
                         <MoreVertical className="w-4 h-4" />
