@@ -1,6 +1,7 @@
 import { SidebarNav } from "@/components/dashboard/SidebarNav";
 import { WorkspaceProvider } from "@/components/providers/WorkspaceProvider";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import { Menu } from "lucide-react";
 import { 
   Sheet, 
@@ -46,7 +47,8 @@ export default function AppLayout({
               <GlobalSearch />
             </div>
             
-            <div className="flex items-center gap-4 ml-4 shrink-0">
+            <div className="flex items-center gap-2 md:gap-4 ml-4 shrink-0">
+               <NotificationBell />
                <div className="hidden sm:block text-right">
                   <p className="text-xs font-bold leading-none mb-1">WorkspaceZ</p>
                   <p className="text-[10px] text-muted-foreground">Productivity Suite</p>
