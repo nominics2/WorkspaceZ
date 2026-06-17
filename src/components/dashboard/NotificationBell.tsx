@@ -16,6 +16,7 @@ import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useRouter } from "next/navigation";
 
 export function NotificationBell() {
   const { activeWorkspace, userProfile } = useWorkspace();
@@ -24,6 +25,7 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const supabase = createClient();
   const { toast } = useToast();
+  const router = useRouter();
 
   const fetchNotifications = useCallback(async () => {
     if (!userProfile) return;
@@ -62,6 +64,47 @@ export function NotificationBell() {
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const channel = supabase
+      .channel(`realtime:notifications:${userProfile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userProfile.id}`,
+        },
+        (payload) => {
+          const newNotif = payload.new;
+          
+          // Check if notification belongs to active workspace or is global
+          const belongsToWorkspace = !newNotif.workspace_id || newNotif.workspace_id === activeWorkspace?.id;
+          
+          if (belongsToWorkspace) {
+            setNotifications((prev) => {
+              if (prev.some(n => n.id === newNotif.id)) return prev;
+              return [newNotif, ...prev].slice(0, 10);
+            });
+            setUnreadCount((prev) => prev + 1);
+            
+            toast({
+              title: newNotif.title || "New Notification",
+              description: newNotif.message,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userProfile, activeWorkspace, supabase, toast]);
 
   const handleMarkAsRead = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -110,6 +153,34 @@ export function NotificationBell() {
         title: "Error",
         description: err.message || "Failed to mark all notifications as read"
       });
+    }
+  };
+
+  const handleNotificationClick = async (notification: any) => {
+    // 1. Mark as read if unread
+    if (!notification.is_read) {
+      try {
+        await supabase.rpc("mark_notification_read", {
+          p_notification_id: notification.id
+        });
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === notification.id ? { ...n, is_read: true } : n))
+        );
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      } catch (err) {
+        console.error("Error marking as read on click:", err);
+      }
+    }
+
+    // 2. Navigate
+    if (notification.related_task_id) {
+      router.push(`/tasks?taskId=${notification.related_task_id}`);
+    } else if (notification.related_note_id) {
+      router.push(`/notes?noteId=${notification.related_note_id}`);
+    } else if (notification.related_message_id) {
+      router.push(`/chat`);
+    } else if (notification.related_reminder_id) {
+      router.push(`/dashboard`);
     }
   };
 
@@ -163,8 +234,9 @@ export function NotificationBell() {
               {notifications.map((notification) => (
                 <div 
                   key={notification.id}
+                  onClick={() => handleNotificationClick(notification)}
                   className={cn(
-                    "relative group p-4 transition-colors hover:bg-slate-50/80 flex gap-3",
+                    "relative group p-4 transition-colors hover:bg-slate-50/80 flex gap-3 cursor-pointer",
                     !notification.is_read && "bg-primary/[0.02]"
                   )}
                 >
