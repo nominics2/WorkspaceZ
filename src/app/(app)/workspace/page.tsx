@@ -160,44 +160,20 @@ export default function WorkspaceAdminPage() {
       return;
     }
 
-    const targetMember = members.find(m => m.user_id === memberUserId);
-    const oldRole = targetMember?.role;
-
-    // Protection for last superadmin
-    if (newRole !== 'superadmin') {
-      const superadmins = members.filter(m => m.role === 'superadmin');
-      if (superadmins.length === 1 && superadmins[0].user_id === memberUserId) {
-        toast({ 
-          variant: "destructive", 
-          title: "Action Denied", 
-          description: "Cannot downgrade the last superadmin. The workspace must have at least one superadmin." 
-        });
-        return;
-      }
-    }
-
     setUpdatingRole(memberUserId);
     try {
-      const { error } = await supabase
-        .from('workspace_members')
-        .update({ role: newRole })
-        .eq('workspace_id', activeWorkspace?.id)
-        .eq('user_id', memberUserId);
+      const { error } = await supabase.rpc('update_workspace_member_role', {
+        p_workspace_id: activeWorkspace?.id,
+        p_member_user_id: memberUserId,
+        p_new_role: newRole
+      });
       
       if (error) throw error;
       
-      // Audit Log
-      await supabase.rpc('create_admin_audit_log', {
-        p_workspace_id: activeWorkspace?.id,
-        p_action: 'role_changed',
-        p_target_user_id: memberUserId,
-        p_details: { from: oldRole, to: newRole }
-      });
-
-      toast({ title: "Role Updated", description: "The member's role has been successfully changed." });
+      toast({ title: "Role Updated", description: `The member's role has been changed to ${newRole}.` });
       fetchData();
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Update Failed", description: err.message });
+      toast({ variant: "destructive", title: "Update Failed", description: err.message || "Failed to update member role." });
     } finally {
       setUpdatingRole(null);
       forceUnlockUI();
@@ -225,7 +201,7 @@ export default function WorkspaceAdminPage() {
 
       if (error) throw error;
 
-      // Audit Log
+      // Audit Log for allocations still using RPC logging helper
       await supabase.rpc('create_admin_audit_log', {
         p_workspace_id: activeWorkspace.id,
         p_action: 'work_allocation_created',
@@ -273,26 +249,15 @@ export default function WorkspaceAdminPage() {
     setUpdatingPerm(id);
 
     try {
-      const { error } = await supabase
-        .from('workspace_role_permissions')
-        .upsert({
-          workspace_id: activeWorkspace.id,
-          role,
-          permission_key: permissionKey,
-          enabled: !currentEnabled,
-          updated_by: userProfile.id
-        }, { onConflict: 'workspace_id,role,permission_key' });
+      const { error } = await supabase.rpc('set_workspace_role_permission', {
+        p_workspace_id: activeWorkspace.id,
+        p_role: role,
+        p_permission_key: permissionKey,
+        p_enabled: !currentEnabled
+      });
 
       if (error) throw error;
       
-      // Audit Log
-      await supabase.rpc('create_admin_audit_log', {
-        p_workspace_id: activeWorkspace.id,
-        p_action: 'permission_updated',
-        p_target_user_id: null,
-        p_details: { role, permission_key: permissionKey, enabled: !currentEnabled }
-      });
-
       toast({ title: "Permission Updated" });
       fetchData();
     } catch (err: any) {
@@ -429,15 +394,19 @@ export default function WorkspaceAdminPage() {
                     <div className="flex items-center gap-6">
                       <div className="text-right hidden sm:block">
                         <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
-                        <Badge 
-                          variant={member.role === 'superadmin' ? 'default' : member.role === 'admin' ? 'secondary' : 'outline'} 
-                          className="capitalize mt-1"
-                        >
-                          {member.role}
-                        </Badge>
+                        {member.role === 'superadmin' ? (
+                          <Badge variant="default" className="mt-1">Superadmin - Full Access</Badge>
+                        ) : (
+                          <Badge 
+                            variant={member.role === 'admin' ? 'secondary' : 'outline'} 
+                            className="capitalize mt-1"
+                          >
+                            {member.role}
+                          </Badge>
+                        )}
                       </div>
 
-                      {isSuper && (
+                      {isSuper && member.role !== 'superadmin' && (
                         <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                           <DropdownMenuTrigger asChild>
                             <Button 
@@ -450,7 +419,7 @@ export default function WorkspaceAdminPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Manage Roles</DropdownMenuLabel>
+                            <DropdownMenuLabel>Change Role</DropdownMenuLabel>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
                               <Shield className="w-3.5 h-3.5" /> Admin
@@ -461,17 +430,6 @@ export default function WorkspaceAdminPage() {
                             <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
                               <Users className="w-3.5 h-3.5" /> Member
                             </DropdownMenuItem>
-                            {member.role !== 'superadmin' && (
-                              <>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  onClick={() => handleUpdateRole(member.user_id, 'superadmin')} 
-                                  className="text-amber-600 gap-2 font-medium"
-                                >
-                                  <ShieldAlert className="w-3.5 h-3.5" /> Promote to Superadmin
-                                </DropdownMenuItem>
-                              </>
-                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
@@ -574,7 +532,7 @@ export default function WorkspaceAdminPage() {
                             <td className="p-4 text-center">
                               <div className="flex justify-center">
                                 <Badge variant="secondary" className="gap-1.5 opacity-60">
-                                  <Lock className="w-2.5 h-2.5" /> Full Access
+                                  <Lock className="w-2.5 h-2.5" /> Full Access - Locked
                                 </Badge>
                               </div>
                             </td>
