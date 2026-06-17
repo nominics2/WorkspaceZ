@@ -21,7 +21,9 @@ import {
   Info,
   UserX,
   UserCheck,
-  Filter
+  Filter,
+  XCircle,
+  Clock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -65,19 +67,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 
 export default function WorkspaceAdminPage() {
-  const { activeWorkspace, userProfile, userRole, hasPermission } = useWorkspace();
+  const { activeWorkspace, workspaces, refreshWorkspaces, userProfile, userRole, hasPermission } = useWorkspace();
   const [members, setMembers] = useState<any[]>([]);
   const [allocations, setAllocations] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [storage, setStorage] = useState<any>(null);
   const [permissionDefs, setPermissionDefs] = useState<any[]>([]);
   const [wsPermissions, setWsPermissions] = useState<any[]>([]);
+  const [workspaceInfo, setWorkspaceInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [updatingPerm, setUpdatingPerm] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "pending">("active");
   const [deactivatingMember, setDeactivatingMember] = useState<any>(null);
   const [isStatusUpdating, setIsStatusUpdating] = useState<string | null>(null);
   
@@ -88,7 +91,7 @@ export default function WorkspaceAdminPage() {
     if (typeof document !== 'undefined') {
       setTimeout(() => {
         document.body.style.pointerEvents = "";
-      }, 0);
+      }, 100);
     }
   }, []);
 
@@ -102,14 +105,22 @@ export default function WorkspaceAdminPage() {
     setLoading(true);
 
     try {
-      // 1. Fetch members
+      // 1. Fetch workspace settings
+      const { data: wsData } = await supabase
+        .from('workspaces')
+        .select('*')
+        .eq('id', activeWorkspace.id)
+        .single();
+      setWorkspaceInfo(wsData);
+
+      // 2. Fetch members
       const { data: membersList } = await supabase
         .from('workspace_members')
         .select('*, profiles(full_name, username, avatar_url, email)')
         .eq('workspace_id', activeWorkspace.id);
       setMembers(membersList || []);
 
-      // 2. Fetch storage usage
+      // 3. Fetch storage usage
       const { data: storageInfo } = await supabase
         .from('workspace_storage_usage')
         .select('*')
@@ -117,7 +128,7 @@ export default function WorkspaceAdminPage() {
         .maybeSingle();
       setStorage(storageInfo);
 
-      // 3. Fetch work allocations
+      // 4. Fetch work allocations
       const { data: allocList } = await supabase
         .from('work_allocations')
         .select('*, profiles!work_allocations_user_id_fkey(full_name), creator:profiles!work_allocations_assigned_by_fkey(full_name)')
@@ -125,21 +136,21 @@ export default function WorkspaceAdminPage() {
         .order('created_at', { ascending: false });
       setAllocations(allocList || []);
 
-      // 4. Fetch Permission Definitions
+      // 5. Fetch Permission Definitions
       const { data: defs } = await supabase
         .from('role_permission_definitions')
         .select('*')
         .order('category', { ascending: true });
       setPermissionDefs(defs || []);
 
-      // 5. Fetch Workspace Role Permissions
+      // 6. Fetch Workspace Role Permissions
       const { data: perms } = await supabase
         .from('workspace_role_permissions')
         .select('*')
         .eq('workspace_id', activeWorkspace.id);
       setWsPermissions(perms || []);
 
-      // 6. Fetch Audit Logs
+      // 7. Fetch Audit Logs
       const { data: logs } = await supabase
         .from('admin_audit_logs')
         .select('*, actor:profiles!actor_id(full_name), target:profiles!target_user_id(full_name)')
@@ -164,6 +175,21 @@ export default function WorkspaceAdminPage() {
     if (activeWorkspace?.join_code) {
       navigator.clipboard.writeText(activeWorkspace.join_code);
       toast({ title: "Join code copied!" });
+    }
+  };
+
+  const handleToggleJoinApproval = async (required: boolean) => {
+    if (!hasPermission('manage_members') && userRole !== 'superadmin') return;
+    try {
+      const { error } = await supabase.rpc('set_workspace_join_approval', {
+        p_workspace_id: activeWorkspace?.id,
+        p_required: required
+      });
+      if (error) throw error;
+      toast({ title: "Setting Updated", description: required ? "Join requests now require approval." : "Users can now join immediately." });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
     }
   };
 
@@ -228,6 +254,42 @@ export default function WorkspaceAdminPage() {
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Action Failed", description: err.message });
+    } finally {
+      setIsStatusUpdating(null);
+      forceUnlockUI();
+    }
+  };
+
+  const handleApproveJoin = async (memberUserId: string) => {
+    setIsStatusUpdating(memberUserId);
+    try {
+      const { error } = await supabase.rpc("approve_workspace_join_request", {
+        p_workspace_id: activeWorkspace?.id,
+        p_member_user_id: memberUserId,
+      });
+      if (error) throw error;
+      toast({ title: "Request Approved", description: "User has been admitted to the workspace." });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Approval Failed", description: err.message });
+    } finally {
+      setIsStatusUpdating(null);
+      forceUnlockUI();
+    }
+  };
+
+  const handleRejectJoin = async (memberUserId: string) => {
+    setIsStatusUpdating(memberUserId);
+    try {
+      const { error } = await supabase.rpc("reject_workspace_join_request", {
+        p_workspace_id: activeWorkspace?.id,
+        p_member_user_id: memberUserId,
+      });
+      if (error) throw error;
+      toast({ title: "Request Rejected", description: "User request has been removed." });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Rejection Failed", description: err.message });
     } finally {
       setIsStatusUpdating(null);
       forceUnlockUI();
@@ -372,7 +434,7 @@ export default function WorkspaceAdminPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground font-medium">Total Members</p>
-              <p className="text-2xl font-bold">{members.length}</p>
+              <p className="text-2xl font-bold">{members.filter(m => m.status === 'active').length}</p>
             </div>
           </CardContent>
         </Card>
@@ -437,6 +499,14 @@ export default function WorkspaceAdminPage() {
                 Active
               </Button>
               <Button 
+                variant={statusFilter === "pending" ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setStatusFilter("pending")}
+                className="text-xs h-8"
+              >
+                Pending {members.filter(m => m.status === 'pending').length > 0 && <Badge className="ml-1 h-4 w-4 p-0 flex items-center justify-center bg-primary text-[8px]">{members.filter(m => m.status === 'pending').length}</Badge>}
+              </Button>
+              <Button 
                 variant={statusFilter === "inactive" ? "secondary" : "ghost"} 
                 size="sm" 
                 onClick={() => setStatusFilter("inactive")}
@@ -477,7 +547,9 @@ export default function WorkspaceAdminPage() {
                               {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
                               <Badge variant={member.status === 'active' ? 'default' : 'outline'} className={cn(
                                 "text-[10px] h-4",
-                                member.status === 'active' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-slate-50 text-slate-400"
+                                member.status === 'active' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : 
+                                member.status === 'pending' ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
+                                "bg-slate-50 text-slate-400"
                               )}>
                                 {member.status}
                               </Badge>
@@ -492,6 +564,8 @@ export default function WorkspaceAdminPage() {
                           <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
                           {member.role === 'superadmin' ? (
                             <Badge variant="default" className="mt-1">Superadmin - Full Access</Badge>
+                          ) : member.status === 'pending' ? (
+                            <Badge variant="outline" className="mt-1">Requesting Access</Badge>
                           ) : (
                             <Badge 
                               variant={member.role === 'admin' ? 'secondary' : 'outline'} 
@@ -503,61 +577,88 @@ export default function WorkspaceAdminPage() {
                         </div>
 
                         {(isSuper || canManageMembers) && (
-                          <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
-                            <DropdownMenuTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="text-muted-foreground hover:text-foreground"
-                                disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}
-                              >
-                                {updatingRole === member.user_id || isStatusUpdating === member.user_id ? 
-                                  <Loader2 className="w-4 h-4 animate-spin" /> : 
-                                  <MoreVertical className="w-4 h-4" />
-                                }
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
-                              {isSuper && member.role !== 'superadmin' && (
-                                <>
-                                  <DropdownMenuLabel>Change Role</DropdownMenuLabel>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
-                                    <Shield className="w-3.5 h-3.5" /> Admin
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
-                                    <Briefcase className="w-3.5 h-3.5" /> Manager
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
-                                    <Users className="w-3.5 h-3.5" /> Member
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                </>
-                              )}
-                              
-                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                              {member.status === 'active' ? (
-                                <DropdownMenuItem 
-                                  className="text-rose-500 gap-2"
-                                  onClick={() => setDeactivatingMember(member)}
-                                  disabled={
-                                    member.user_id === userProfile?.id || 
-                                    member.role === 'superadmin' || 
-                                    (member.role === 'admin' && !isSuper)
-                                  }
+                          <div className="flex items-center gap-2">
+                            {member.status === 'pending' ? (
+                              <>
+                                <Button 
+                                  size="sm" 
+                                  variant="default" 
+                                  className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700"
+                                  onClick={() => handleApproveJoin(member.user_id)}
+                                  disabled={isStatusUpdating === member.user_id}
                                 >
-                                  <UserX className="w-3.5 h-3.5" /> Deactivate
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem 
-                                  className="text-emerald-500 gap-2"
-                                  onClick={() => handleReactivate(member.user_id)}
+                                  {isStatusUpdating === member.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
+                                  Approve
+                                </Button>
+                                <Button 
+                                  size="sm" 
+                                  variant="outline" 
+                                  className="h-8 gap-1 text-rose-600 border-rose-200 hover:bg-rose-50"
+                                  onClick={() => handleRejectJoin(member.user_id)}
+                                  disabled={isStatusUpdating === member.user_id}
                                 >
-                                  <UserCheck className="w-3.5 h-3.5" /> Reactivate
-                                </DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                  {isStatusUpdating === member.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                                  Reject
+                                </Button>
+                              </>
+                            ) : (
+                              <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+                                <DropdownMenuTrigger asChild>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="text-muted-foreground hover:text-foreground"
+                                    disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}
+                                  >
+                                    {updatingRole === member.user_id || isStatusUpdating === member.user_id ? 
+                                      <Loader2 className="w-4 h-4 animate-spin" /> : 
+                                      <MoreVertical className="w-4 h-4" />
+                                    }
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-56">
+                                  {isSuper && member.role !== 'superadmin' && (
+                                    <>
+                                      <DropdownMenuLabel>Change Role</DropdownMenuLabel>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
+                                        <Shield className="w-3.5 h-3.5" /> Admin
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
+                                        <Briefcase className="w-3.5 h-3.5" /> Manager
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
+                                        <Users className="w-3.5 h-3.5" /> Member
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                    </>
+                                  )}
+                                  
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  {member.status === 'active' ? (
+                                    <DropdownMenuItem 
+                                      className="text-rose-500 gap-2"
+                                      onClick={() => setDeactivatingMember(member)}
+                                      disabled={
+                                        member.user_id === userProfile?.id || 
+                                        member.role === 'superadmin' || 
+                                        (member.role === 'admin' && !isSuper)
+                                      }
+                                    >
+                                      <UserX className="w-3.5 h-3.5" /> Deactivate
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem 
+                                      className="text-emerald-500 gap-2"
+                                      onClick={() => handleReactivate(member.user_id)}
+                                    >
+                                      <UserCheck className="w-3.5 h-3.5" /> Reactivate
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </div>
                         )}
                       </div>
                     </CardContent>
@@ -759,18 +860,34 @@ export default function WorkspaceAdminPage() {
                <CardDescription>Configure how users access this workspace</CardDescription>
              </CardHeader>
              <CardContent className="space-y-6">
-                <div className="p-4 bg-slate-50 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-4">
-                   <div>
-                     <p className="text-sm font-bold">Join Code Access</p>
-                     <p className="text-xs text-muted-foreground">Members can join using this unique code.</p>
-                   </div>
-                   <div className="flex items-center gap-3">
-                      <div className="px-6 py-2 bg-white border rounded-lg font-bold font-mono text-primary tracking-widest">
-                        {activeWorkspace?.join_code}
+                <div className="p-6 bg-slate-50 rounded-xl border space-y-4">
+                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-bold">Join Code Access</p>
+                        <p className="text-xs text-muted-foreground">Members can join using this unique code.</p>
                       </div>
-                      <Button variant="outline" size="icon" onClick={handleCopyJoinCode}>
-                        <Copy className="w-4 h-4" />
-                      </Button>
+                      <div className="flex items-center gap-3">
+                         <div className="px-6 py-2 bg-white border rounded-lg font-bold font-mono text-primary tracking-widest">
+                           {activeWorkspace?.join_code}
+                         </div>
+                         <Button variant="outline" size="icon" onClick={handleCopyJoinCode}>
+                           <Copy className="w-4 h-4" />
+                         </Button>
+                      </div>
+                   </div>
+                   
+                   <div className="pt-4 border-t flex items-center justify-between gap-4">
+                      <div className="space-y-0.5">
+                        <Label className="text-sm font-bold">Require Join Approval</Label>
+                        <p className="text-xs text-muted-foreground">
+                          New members must be manually approved before joining.
+                        </p>
+                      </div>
+                      <Switch 
+                        checked={workspaceInfo?.require_join_approval || false} 
+                        onCheckedChange={handleToggleJoinApproval}
+                        disabled={!isAdminOrSuper && !canManageMembers}
+                      />
                    </div>
                 </div>
 
@@ -786,8 +903,8 @@ export default function WorkspaceAdminPage() {
                     <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center mb-2">
                       <UserPlus className="w-5 h-5 text-blue-600" />
                     </div>
-                    <p className="font-bold text-sm">Open Invites</p>
-                    <p className="text-xs text-muted-foreground">Anyone with the code can join as a standard Member.</p>
+                    <p className="font-bold text-sm">Invite Only Mode</p>
+                    <p className="text-xs text-muted-foreground">When join approval is on, code access is restricted.</p>
                   </div>
                 </div>
              </CardContent>
@@ -807,7 +924,7 @@ export default function WorkspaceAdminPage() {
                <Select name="user_id" required>
                  <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
                  <SelectContent>
-                   {members.map(m => (
+                   {members.filter(m => m.status === 'active').map(m => (
                      <SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>
                    ))}
                  </SelectContent>

@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { PlusCircle, Users, Loader2, ArrowLeft } from "lucide-react";
+import { PlusCircle, Users, Loader2, ArrowLeft, Clock, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 export default function WorkspaceSetupPage() {
-  const [mode, setMode] = useState<"choice" | "create" | "join">("choice");
+  const [mode, setMode] = useState<"choice" | "create" | "join" | "pending">("choice");
   const [workspaceName, setWorkspaceName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -22,7 +22,6 @@ export default function WorkspaceSetupPage() {
 
   useEffect(() => {
     async function checkUser() {
-      // getSession is better for initial load to check persistence
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error || !session?.user) {
         router.push("/");
@@ -33,6 +32,11 @@ export default function WorkspaceSetupPage() {
     }
     checkUser();
   }, [router, supabase.auth]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace("/");
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,7 +54,6 @@ export default function WorkspaceSetupPage() {
         return;
       }
 
-      // Using RPC to create workspace to avoid RLS issues with direct inserts
       const { data, error } = await supabase.rpc("create_workspace", {
         p_name: workspaceName,
       });
@@ -74,15 +77,22 @@ export default function WorkspaceSetupPage() {
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       if (!currentUser) throw new Error("Not authenticated");
 
-      const { data, error } = await supabase.rpc('join_workspace_by_code', {
+      const { data, error } = await supabase.rpc('request_join_workspace_by_code', {
         p_join_code: joinCode
       });
 
       if (error) throw error;
       
-      toast({ title: "Welcome!", description: "You have joined the workspace." });
-      router.replace("/dashboard");
-      return;
+      // data should be the membership status returned by the RPC
+      if (data === 'active') {
+        toast({ title: "Welcome!", description: "You have joined the workspace." });
+        router.replace("/dashboard");
+      } else if (data === 'pending') {
+        setMode("pending");
+        toast({ title: "Request Sent", description: "Your join request is pending approval." });
+      } else {
+        throw new Error("Unexpected join status: " + data);
+      }
     } catch (err: any) {
       toast({ 
         variant: "destructive", 
@@ -98,6 +108,33 @@ export default function WorkspaceSetupPage() {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (mode === "pending") {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
+        <Card className="w-full max-w-md shadow-xl border-none">
+          <CardHeader className="text-center pt-8">
+            <div className="mx-auto w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mb-4">
+              <Clock className="text-amber-500 w-8 h-8 animate-pulse" />
+            </div>
+            <CardTitle className="text-2xl font-bold">Request Pending</CardTitle>
+            <CardDescription className="pt-2">
+              Your request to join the workspace has been sent to the administrators. 
+              You will be able to access the dashboard once your request is approved.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 pb-8">
+            <Button variant="outline" className="w-full" onClick={() => setMode("choice")}>
+              Try another code
+            </Button>
+            <Button variant="ghost" className="w-full text-muted-foreground" onClick={handleLogout}>
+              <LogOut className="w-4 h-4 mr-2" /> Sign Out
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
