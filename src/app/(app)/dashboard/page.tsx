@@ -220,28 +220,31 @@ export default function DashboardPage() {
                   No upcoming tasks.
                 </Card>
               ) : (
-                tasks.map((task) => (
-                  <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-shadow group">
-                    <CardContent className="p-3 md:p-4 flex items-center gap-3 md:gap-4">
-                      <div className={`w-1 md:w-1.5 h-10 md:h-12 rounded-full shrink-0 ${task.priority === 'urgent' ? 'bg-rose-500' : 'bg-primary'}`} />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm md:text-base text-foreground group-hover:text-primary transition-colors truncate">{task.title}</h3>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-[10px] md:text-xs text-muted-foreground flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
-                          </p>
-                          <Badge variant="secondary" className="text-[9px] py-0 px-1 capitalize h-3.5">{task.status}</Badge>
+                tasks.map((task) => {
+                  const taskProgress = task.progress_mode === 'manual' ? (task.manual_progress || 0) : (task.calculated_progress || 0);
+                  return (
+                    <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-shadow group">
+                      <CardContent className="p-3 md:p-4 flex items-center gap-3 md:gap-4">
+                        <div className={`w-1 md:w-1.5 h-10 md:h-12 rounded-full shrink-0 ${task.priority === 'urgent' ? 'bg-rose-500' : 'bg-primary'}`} />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-semibold text-sm md:text-base text-foreground group-hover:text-primary transition-colors truncate">{task.title}</h3>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[10px] md:text-xs text-muted-foreground flex items-center gap-1">
+                              <Clock className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                            </p>
+                            <Badge variant="secondary" className="text-[9px] py-0 px-1 capitalize h-3.5">{task.status}</Badge>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-[10px] md:text-xs font-medium text-muted-foreground mb-1">
-                          {Math.round(task.calculated_progress || task.manual_progress || 0)}%
-                        </p>
-                        <Progress value={task.calculated_progress || task.manual_progress || 0} className="w-12 md:w-16 h-1" />
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
+                        <div className="text-right shrink-0">
+                          <p className="text-[10px] md:text-xs font-medium text-muted-foreground mb-1">
+                            {Math.round(taskProgress)}%
+                          </p>
+                          <Progress value={taskProgress} className="w-12 md:w-16 h-1" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
               )}
             </div>
           </section>

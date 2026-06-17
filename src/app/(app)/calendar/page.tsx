@@ -51,7 +51,7 @@ export default function CalendarPage() {
     try {
       const [tasksRes, teamsRes, membersRes] = await Promise.all([
         supabase
-          .from('calendar_tasks_view')
+          .from('my_tasks_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
           .not('due_date', 'is', null)
@@ -292,10 +292,15 @@ export default function CalendarPage() {
 
                 <div className="space-y-3">
                    <div className="flex items-center justify-between mb-2">
-                     <span className="text-sm font-bold">Progress</span>
-                     <span className="text-xs font-bold text-primary">{Math.round(selectedTask.calculated_progress || 0)}%</span>
+                     <span className="text-sm font-bold">Progress ({selectedTask.progress_mode})</span>
+                     <span className="text-xs font-bold text-primary">
+                       {Math.round(selectedTask.progress_mode === 'manual' ? (selectedTask.manual_progress || 0) : (selectedTask.calculated_progress || 0))}%
+                     </span>
                    </div>
-                   <Progress value={selectedTask.calculated_progress || 0} className="h-2" />
+                   <Progress 
+                    value={selectedTask.progress_mode === 'manual' ? (selectedTask.manual_progress || 0) : (selectedTask.calculated_progress || 0)} 
+                    className="h-2" 
+                   />
                 </div>
               </div>
             </div>

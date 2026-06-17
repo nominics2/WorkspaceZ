@@ -26,7 +26,8 @@ import {
   UserPlus,
   Ban,
   FilterX,
-  Circle
+  Circle,
+  Settings2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -352,7 +353,7 @@ export default function TasksPage() {
   const handleToggleSubtask = async (subtask: any) => {
     try {
       await supabase.from('subtasks').update({ is_completed: !subtask.is_completed }).eq('id', subtask.id);
-      fetchTaskDetails(selectedTask.id);
+      await fetchTaskDetails(selectedTask.id);
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
@@ -411,13 +412,32 @@ export default function TasksPage() {
   const handleUpdateManualProgress = async (val: number[]) => {
     if (!selectedTask) return;
     try {
-      await supabase.from('tasks').update({ manual_progress: val[0], progress_mode: 'manual' }).eq('id', selectedTask.id);
-      setSelectedTask({...selectedTask, manual_progress: val[0], progress_mode: 'manual'});
+      await supabase.from('tasks').update({ manual_progress: val[0] }).eq('id', selectedTask.id);
+      setSelectedTask({...selectedTask, manual_progress: val[0]});
       fetchData();
     } catch (err: any) {
       console.error(err);
     }
   };
+
+  const handleSwitchProgressMode = async (mode: 'auto' | 'manual') => {
+    if (!selectedTask) return;
+    try {
+      await supabase.from('tasks').update({ progress_mode: mode }).eq('id', selectedTask.id);
+      setSelectedTask({...selectedTask, progress_mode: mode});
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error updating mode", description: err.message });
+    }
+  };
+
+  const detailProgress = useMemo(() => {
+    if (!selectedTask) return 0;
+    if (selectedTask.progress_mode === 'manual') return selectedTask.manual_progress || 0;
+    if (subtasks.length === 0) return 0;
+    const completed = subtasks.filter(s => s.is_completed).length;
+    return Math.round((completed / subtasks.length) * 100);
+  }, [selectedTask, subtasks]);
 
   const filteredTasks = useMemo(() => {
     return tasks.filter(t => {
@@ -660,82 +680,85 @@ export default function TasksPage() {
             <Button variant="outline" onClick={resetFilters}>Clear All Filters</Button>
           </div>
         ) : (
-          filteredTasks.map((task) => (
-            <Card 
-              key={task.id} 
-              className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden cursor-pointer"
-              onClick={() => handleOpenDetail(task)}
-            >
-              <CardContent className="p-0">
-                <div className="flex flex-col md:flex-row">
-                  <div className={cn(
-                    "w-full md:w-1.5 h-1.5 md:h-auto",
-                    task.priority?.toLowerCase() === 'urgent' ? "bg-rose-500" : 
-                    task.priority?.toLowerCase() === 'high' ? "bg-amber-500" : "bg-primary"
-                  )} />
-                  <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center gap-6">
-                    <div className="flex items-center gap-4 shrink-0">
-                      <button 
-                        onClick={(e) => handleToggleStatus(task, e)}
-                        className="hover:scale-110 transition-transform"
-                      >
-                        {task.status === 'completed' ? (
-                          <CheckCircle2 className="w-6 h-6 text-emerald-500 fill-emerald-50" />
-                        ) : (
-                          <Circle className="w-6 h-6 text-slate-300" />
-                        )}
-                      </button>
-                    </div>
-                    
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className={cn(
-                          "font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize",
-                          task.status === 'completed' && "line-through text-muted-foreground"
-                        )}>
-                          {task.title}
-                        </h3>
-                        <Badge variant="outline" className="text-[10px] rounded-sm capitalize border-slate-200">{task.priority}</Badge>
-                        {task.sub_workspace_name && (
-                           <Badge variant="secondary" className="text-[10px] bg-violet-50 text-violet-600 border-none">
-                             <Layout className="w-2.5 h-2.5 mr-1" /> {task.sub_workspace_name}
-                           </Badge>
-                        )}
+          filteredTasks.map((task) => {
+            const taskProgress = task.progress_mode === 'manual' ? (task.manual_progress || 0) : (task.calculated_progress || 0);
+            return (
+              <Card 
+                key={task.id} 
+                className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden cursor-pointer"
+                onClick={() => handleOpenDetail(task)}
+              >
+                <CardContent className="p-0">
+                  <div className="flex flex-col md:flex-row">
+                    <div className={cn(
+                      "w-full md:w-1.5 h-1.5 md:h-auto",
+                      task.priority?.toLowerCase() === 'urgent' ? "bg-rose-500" : 
+                      task.priority?.toLowerCase() === 'high' ? "bg-amber-500" : "bg-primary"
+                    )} />
+                    <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center gap-6">
+                      <div className="flex items-center gap-4 shrink-0">
+                        <button 
+                          onClick={(e) => handleToggleStatus(task, e)}
+                          className="hover:scale-110 transition-transform"
+                        >
+                          {task.status === 'completed' ? (
+                            <CheckCircle2 className="w-6 h-6 text-emerald-500 fill-emerald-50" />
+                          ) : (
+                            <Circle className="w-6 h-6 text-slate-300" />
+                          )}
+                        </button>
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-1">{task.description || 'No description'}</p>
-                    </div>
+                      
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className={cn(
+                            "font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize",
+                            task.status === 'completed' && "line-through text-muted-foreground"
+                          )}>
+                            {task.title}
+                          </h3>
+                          <Badge variant="outline" className="text-[10px] rounded-sm capitalize border-slate-200">{task.priority}</Badge>
+                          {task.sub_workspace_name && (
+                             <Badge variant="secondary" className="text-[10px] bg-violet-50 text-violet-600 border-none">
+                               <Layout className="w-2.5 h-2.5 mr-1" /> {task.sub_workspace_name}
+                             </Badge>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground line-clamp-1">{task.description || 'No description'}</p>
+                      </div>
 
-                    <div className="flex items-center gap-8 min-w-[300px]">
-                      <div className="space-y-1">
-                        <p className={cn(
-                          "text-xs font-medium flex items-center gap-1",
-                          task.is_overdue ? "text-rose-500 font-bold" : "text-muted-foreground"
-                        )}>
-                          <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-primary/10 border flex items-center justify-center">
-                            <span className="text-[10px] font-bold text-primary">
-                              {task.assigned_to_name?.[0] || '?'}
-                            </span>
+                      <div className="flex items-center gap-8 min-w-[300px]">
+                        <div className="space-y-1">
+                          <p className={cn(
+                            "text-xs font-medium flex items-center gap-1",
+                            task.is_overdue ? "text-rose-500 font-bold" : "text-muted-foreground"
+                          )}>
+                            <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-primary/10 border flex items-center justify-center">
+                              <span className="text-[10px] font-bold text-primary">
+                                {task.assigned_to_name?.[0] || '?'}
+                              </span>
+                            </div>
+                            <span className="text-xs text-foreground font-medium">{task.assigned_to_name || 'Unassigned'}</span>
                           </div>
-                          <span className="text-xs text-foreground font-medium">{task.assigned_to_name || 'Unassigned'}</span>
                         </div>
-                      </div>
 
-                      <div className="flex-1">
-                        <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Progress</span>
-                          <span className="text-xs font-bold text-primary">{Math.round(task.calculated_progress || task.manual_progress || 0)}%</span>
+                        <div className="flex-1">
+                          <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Progress</span>
+                            <span className="text-xs font-bold text-primary">{Math.round(taskProgress)}%</span>
+                          </div>
+                          <Progress value={taskProgress} className="h-1.5" />
                         </div>
-                        <Progress value={task.calculated_progress || task.manual_progress || 0} className="h-1.5" />
                       </div>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
 
@@ -838,15 +861,28 @@ export default function TasksPage() {
               </SheetHeader>
 
               <div className="space-y-6">
-                <div className="space-y-3 p-4 bg-slate-50 rounded-xl">
+                <div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
                    <div className="flex items-center justify-between mb-2">
-                     <Label className="text-sm font-bold">Progress Tracking</Label>
-                     <Badge variant={selectedTask.progress_mode === 'auto' ? 'default' : 'secondary'}>
-                       {selectedTask.progress_mode === 'auto' ? 'Auto (Subtasks)' : 'Manual'}
-                     </Badge>
+                     <div className="flex items-center gap-2">
+                        <Settings2 className="w-4 h-4 text-primary" />
+                        <Label className="text-sm font-bold">Progress Tracking</Label>
+                     </div>
+                     <Select 
+                      value={selectedTask.progress_mode} 
+                      onValueChange={(v: any) => handleSwitchProgressMode(v)}
+                     >
+                       <SelectTrigger className="w-[140px] h-8 text-[10px] bg-white border-slate-200">
+                         <SelectValue />
+                       </SelectTrigger>
+                       <SelectContent>
+                         <SelectItem value="auto">Auto (Subtasks)</SelectItem>
+                         <SelectItem value="manual">Manual Slider</SelectItem>
+                       </SelectContent>
+                     </Select>
                    </div>
+                   
                    {selectedTask.progress_mode === 'manual' ? (
-                     <div className="space-y-4">
+                     <div className="space-y-4 pt-2">
                        <Slider 
                          value={[selectedTask.manual_progress || 0]} 
                          onValueChange={handleUpdateManualProgress} 
@@ -857,9 +893,12 @@ export default function TasksPage() {
                        <p className="text-xs text-center font-bold text-primary">{selectedTask.manual_progress}% Complete</p>
                      </div>
                    ) : (
-                     <div className="space-y-2">
-                       <Progress value={selectedTask.calculated_progress || 0} className="h-2" />
-                       <p className="text-xs text-center font-bold text-primary">{Math.round(selectedTask.calculated_progress || 0)}% Complete</p>
+                     <div className="space-y-2 pt-2">
+                       <Progress value={detailProgress} className="h-2" />
+                       <div className="flex justify-between items-center text-[10px] font-bold text-primary uppercase">
+                         <span>Auto Mode</span>
+                         <span>{detailProgress}% Complete</span>
+                       </div>
                      </div>
                    )}
                 </div>
