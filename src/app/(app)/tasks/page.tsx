@@ -166,7 +166,7 @@ export default function TasksPage() {
         task_id: selectedTask.id,
         title: newSubtaskTitle,
         created_by: user.id,
-        completed: false
+        is_completed: false
       });
 
       if (error) {
@@ -190,7 +190,7 @@ export default function TasksPage() {
   const handleToggleSubtask = async (subtask: any) => {
     try {
       const { error } = await supabase.from('subtasks').update({
-        completed: !subtask.completed
+        is_completed: !subtask.is_completed
       }).eq('id', subtask.id);
       if (error) throw error;
       fetchTaskDetails(selectedTask.id);
@@ -436,11 +436,11 @@ export default function TasksPage() {
                         <div className="flex items-center gap-3">
                           <input 
                             type="checkbox" 
-                            checked={st.completed} 
+                            checked={st.is_completed} 
                             onChange={() => handleToggleSubtask(st)}
                             className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
                           />
-                          <span className={cn("text-sm", st.completed && "line-through text-muted-foreground")}>{st.title}</span>
+                          <span className={cn("text-sm", st.is_completed && "line-through text-muted-foreground")}>{st.title}</span>
                         </div>
                         <Button 
                           variant="ghost" 

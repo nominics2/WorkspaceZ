@@ -1,3 +1,4 @@
+
 export const ROLES = {
   SUPERADMIN: 'Superadmin',
   ADMIN: 'Admin',
@@ -39,7 +40,7 @@ export interface Task {
   subWorkspaceId?: string;
   progressMode: 'auto' | 'manual';
   progress: number;
-  subtasks: { id: string; title: string; completed: boolean }[];
+  subtasks: { id: string; title: string; is_completed: boolean }[];
   attachments: { id: string; name: string; size: number }[];
   comments: { id: string; user: string; text: string; date: string }[];
 }
@@ -91,8 +92,8 @@ export const MOCK_TASKS: Task[] = [
     progressMode: 'auto',
     progress: 0,
     subtasks: [
-      { id: 'st1', title: 'Register service worker', completed: false },
-      { id: 'st2', title: 'Cache static assets', completed: false },
+      { id: 'st1', title: 'Register service worker', is_completed: false },
+      { id: 'st2', title: 'Cache static assets', is_completed: false },
     ],
     attachments: [],
     comments: [],
