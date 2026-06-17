@@ -44,21 +44,46 @@ export default function LoginPage() {
           description: "Please check your email to verify your account." 
         });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
-        if (error) throw error;
+
+        if (error) {
+          throw error;
+        }
+
+        if (!data.user) {
+          throw new Error("Login failed. Please try again.");
+        }
+
+        // Check if user has an active workspace membership
+        const { data: memberData, error: memberError } = await supabase
+          .from('workspace_members')
+          .select('workspace_id')
+          .eq('user_id', data.user.id)
+          .limit(1);
+
+        if (memberError) {
+          // If we fail to check workspace membership but login succeeded, 
+          // we still proceed to a page that can handle it (WorkspaceProvider)
+          console.error('Error checking workspace membership:', memberError);
+          router.push("/dashboard");
+        } else if (!memberData || memberData.length === 0) {
+          // No workspaces found, go to setup
+          router.push("/workspace-setup");
+        } else {
+          // Found workspace, go to dashboard
+          router.push("/dashboard");
+        }
         
-        // Success login
         router.refresh();
-        router.push("/dashboard");
       }
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: error.message,
+        description: error.message || "An unexpected error occurred",
       });
     } finally {
       setLoading(false);
@@ -67,6 +92,9 @@ export default function LoginPage() {
 
   const toggleMode = () => {
     setIsRegister(!isRegister);
+    // Clear fields when toggling to avoid confusion
+    setEmail("");
+    setPassword("");
   };
 
   return (
@@ -139,7 +167,7 @@ export default function LoginPage() {
           </CardContent>
           <CardFooter className="flex flex-col gap-4">
             <Button type="submit" className="w-full py-6 text-lg font-semibold" disabled={loading}>
-              {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
+              {loading && <Loader2 className="w-5 h-5 animate-spin mr-2" />}
               {isRegister ? "Sign Up" : "Sign In"}
             </Button>
             <p className="text-sm text-center text-muted-foreground">
