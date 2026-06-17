@@ -211,9 +211,9 @@ export default function WorkspaceAdminPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
             <Layers className="w-8 h-8 text-primary" />
-            Workspace Management
+            Admin Panel
           </h1>
-          <p className="text-muted-foreground">Manage your team and resources for {activeWorkspace?.name}</p>
+          <p className="text-muted-foreground">Manage workspace settings, members, roles, allocations, and storage.</p>
         </div>
         {isAdmin && (
           <div className="flex items-center gap-2 bg-white p-2 pr-4 rounded-xl border shadow-sm">
@@ -290,11 +290,11 @@ export default function WorkspaceAdminPage() {
                         <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
                       )}
                     </div>
+                    <div className="font-bold text-foreground flex items-center gap-2">
+                      <span>{member.profiles?.full_name}</span>
+                      {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
+                    </div>
                     <div>
-                      <div className="font-bold text-foreground flex items-center gap-2">
-                        <span>{member.profiles?.full_name}</span>
-                        {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
-                      </div>
                       <p className="text-xs text-muted-foreground">{member.profiles?.username} • {member.profiles?.email}</p>
                     </div>
                   </div>

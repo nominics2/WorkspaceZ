@@ -31,7 +31,7 @@ const navItems = [
   { label: "Chat", icon: MessageSquare, href: "/chat" },
   { label: "Calendar", icon: Calendar, href: "/calendar" },
   { label: "Notes", icon: StickyNote, href: "/notes" },
-  { label: "Workspace", icon: Layers, href: "/workspace" },
+  { label: "Admin Panel", icon: Layers, href: "/workspace" },
 ];
 
 export function SidebarNav() {
