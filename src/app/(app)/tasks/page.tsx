@@ -798,7 +798,7 @@ export default function TasksPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="sub_workspace_id">Assign to Team</Label>
-              <協Select name="sub_workspace_id" defaultValue="none">
+              <Select name="sub_workspace_id" defaultValue="none">
                 <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Workspace General (No Team)</SelectItem>
