@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -306,7 +305,7 @@ export default function DashboardPage() {
                 const Content = (
                   <Card className="border-none shadow-sm hover:translate-y-[-2px] transition-all cursor-pointer group">
                     <CardContent className="p-4 flex flex-col items-center justify-center gap-2">
-                      <div className={cn("p-3 rounded-full text-white shadow-lg shadow-black/10", action.color)}>
+                      <div className={cn("p-3 rounded-xl text-white shadow-lg shadow-black/10", action.color)}>
                         <action.icon className="w-5 h-5" />
                       </div>
                       <span className="text-xs font-bold">{action.label}</span>
