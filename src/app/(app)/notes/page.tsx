@@ -50,6 +50,10 @@ export default function NotesPage() {
     }
   };
 
+  useEffect(() => {
+    return () => forceUnlockUI();
+  }, []);
+
   const fetchNotes = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
@@ -131,6 +135,7 @@ export default function NotesPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
+      forceUnlockUI();
     }
   };
 

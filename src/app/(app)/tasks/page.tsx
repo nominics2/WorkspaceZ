@@ -66,11 +66,14 @@ export default function TasksPage() {
   const { toast } = useToast();
 
   const forceUnlockUI = () => {
-    console.log("Forcing UI unlock...");
     if (typeof document !== 'undefined') {
       document.body.style.pointerEvents = "";
     }
   };
+
+  useEffect(() => {
+    return () => forceUnlockUI();
+  }, []);
 
   const fetchTasks = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -156,6 +159,7 @@ export default function TasksPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
+      forceUnlockUI();
     }
   };
 

@@ -29,6 +29,10 @@ export default function CalendarPage() {
     }
   };
 
+  useEffect(() => {
+    return () => forceUnlockUI();
+  }, []);
+
   const fetchCalendarTasks = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);

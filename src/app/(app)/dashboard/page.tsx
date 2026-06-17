@@ -54,6 +54,10 @@ export default function DashboardPage() {
     }
   };
 
+  useEffect(() => {
+    return () => forceUnlockUI();
+  }, []);
+
   const fetchDashboardData = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
@@ -148,6 +152,7 @@ export default function DashboardPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
+      forceUnlockUI();
     }
   };
 

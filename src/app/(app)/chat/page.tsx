@@ -70,6 +70,10 @@ export default function ChatPage() {
     }
   };
 
+  useEffect(() => {
+    return () => forceUnlockUI();
+  }, []);
+
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior });
@@ -297,6 +301,7 @@ export default function ChatPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setConverting(false);
+      forceUnlockUI();
     }
   };
 
