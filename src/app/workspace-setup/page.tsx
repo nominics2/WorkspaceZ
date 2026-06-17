@@ -50,19 +50,16 @@ export default function WorkspaceSetupPage() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('workspaces')
-        .insert({
-          name: workspaceName,
-          created_by: currentUser.id
-        })
-        .select()
-        .single();
+      // Using RPC to create workspace to avoid RLS issues with direct inserts
+      const { data, error } = await supabase.rpc("create_workspace", {
+        p_name: workspaceName,
+      });
 
       if (error) throw error;
       
       toast({ title: "Success", description: "Workspace created successfully!" });
-      router.push("/dashboard");
+      router.replace("/dashboard");
+      return;
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -84,7 +81,8 @@ export default function WorkspaceSetupPage() {
       if (error) throw error;
       
       toast({ title: "Welcome!", description: "You have joined the workspace." });
-      router.push("/dashboard");
+      router.replace("/dashboard");
+      return;
     } catch (err: any) {
       toast({ 
         variant: "destructive", 
