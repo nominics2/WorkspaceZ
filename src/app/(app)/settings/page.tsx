@@ -47,7 +47,7 @@ export default function SettingsPage() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   
-  // Profile Form State
+  // Profile Form State initialized with empty strings to avoid uncontrolled input warnings
   const [profileForm, setProfileForm] = useState({
     full_name: "",
     username: ""
@@ -63,8 +63,8 @@ export default function SettingsPage() {
   useEffect(() => {
     if (userProfile) {
       setProfileForm({
-        full_name: userProfile.full_name || "",
-        username: userProfile.username || ""
+        full_name: userProfile.full_name ?? "",
+        username: userProfile.username ?? ""
       });
     }
   }, [userProfile]);
@@ -312,7 +312,7 @@ export default function SettingsPage() {
                         <Label htmlFor="full_name">Full Name</Label>
                         <Input 
                           id="full_name" 
-                          value={profileForm.full_name} 
+                          value={profileForm.full_name ?? ""} 
                           onChange={(e) => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
                           placeholder="Your real name"
                           disabled={savingProfile}
@@ -322,7 +322,7 @@ export default function SettingsPage() {
                         <Label htmlFor="username">Username</Label>
                         <Input 
                           id="username" 
-                          value={profileForm.username} 
+                          value={profileForm.username ?? ""} 
                           onChange={(e) => setProfileForm(f => ({ ...f, username: e.target.value }))}
                           placeholder="unique_handle"
                           disabled={savingProfile}
@@ -333,7 +333,7 @@ export default function SettingsPage() {
 
                     <div className="space-y-2">
                       <Label>Email Address</Label>
-                      <Input value={userProfile?.email} disabled className="bg-slate-50 cursor-not-allowed" />
+                      <Input value={userProfile?.email ?? ""} disabled className="bg-slate-50 cursor-not-allowed" />
                       <p className="text-[10px] text-muted-foreground italic">Email change is managed by workspace administrators.</p>
                     </div>
 
