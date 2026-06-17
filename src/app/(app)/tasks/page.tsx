@@ -25,7 +25,8 @@ import {
   UserCheck,
   UserPlus,
   Ban,
-  FilterX
+  FilterX,
+  Circle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -246,7 +247,7 @@ export default function TasksPage() {
       if (error) throw error;
       if (data?.signedUrl) window.open(data.signedUrl, '_blank');
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Open failed", description: err.message });
+      toast({ variant: "destructive", title: "Error opening file", description: err.message });
     }
   };
 
@@ -317,6 +318,34 @@ export default function TasksPage() {
     } finally {
       setSaving(false);
       forceUnlockUI();
+    }
+  };
+
+  const handleToggleStatus = async (task: any, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const newStatus = task.status === 'completed' ? 'to_do' : 'completed';
+    const newProgress = newStatus === 'completed' ? 100 : task.manual_progress;
+    
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ status: newStatus, manual_progress: newProgress })
+        .eq('id', task.id);
+
+      if (error) throw error;
+      
+      toast({ title: newStatus === 'completed' ? "Task marked as complete" : "Task marked as incomplete" });
+      
+      if (selectedTask?.id === task.id) {
+        setSelectedTask({ ...selectedTask, status: newStatus, manual_progress: newProgress });
+      }
+      
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
     }
   };
 
@@ -614,9 +643,27 @@ export default function TasksPage() {
                     task.priority?.toLowerCase() === 'high' ? "bg-amber-500" : "bg-primary"
                   )} />
                   <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center gap-6">
+                    <div className="flex items-center gap-4 shrink-0">
+                      <button 
+                        onClick={(e) => handleToggleStatus(task, e)}
+                        className="hover:scale-110 transition-transform"
+                      >
+                        {task.status === 'completed' ? (
+                          <CheckCircle2 className="w-6 h-6 text-emerald-500 fill-emerald-50" />
+                        ) : (
+                          <Circle className="w-6 h-6 text-slate-300" />
+                        )}
+                      </button>
+                    </div>
+                    
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize">{task.title}</h3>
+                        <h3 className={cn(
+                          "font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize",
+                          task.status === 'completed' && "line-through text-muted-foreground"
+                        )}>
+                          {task.title}
+                        </h3>
                         <Badge variant="outline" className="text-[10px] rounded-sm capitalize border-slate-200">{task.priority}</Badge>
                         {task.sub_workspace_name && (
                            <Badge variant="secondary" className="text-[10px] bg-violet-50 text-violet-600 border-none">
@@ -731,8 +778,32 @@ export default function TasksPage() {
                     </Badge>
                   )}
                 </div>
-                <SheetTitle className="text-2xl font-bold">{selectedTask.title}</SheetTitle>
-                <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <SheetTitle className={cn(
+                      "text-2xl font-bold",
+                      selectedTask.status === 'completed' && "line-through text-muted-foreground"
+                    )}>
+                      {selectedTask.title}
+                    </SheetTitle>
+                    <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>
+                  </div>
+                  <Button 
+                    variant={selectedTask.status === 'completed' ? "outline" : "default"}
+                    size="sm"
+                    className="shrink-0 gap-2"
+                    onClick={() => handleToggleStatus(selectedTask)}
+                  >
+                    {selectedTask.status === 'completed' ? (
+                      <>Reopen Task</>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Mark Complete
+                      </>
+                    )}
+                  </Button>
+                </div>
               </SheetHeader>
 
               <div className="space-y-6">
@@ -750,7 +821,7 @@ export default function TasksPage() {
                          onValueChange={handleUpdateManualProgress} 
                          max={100} 
                          step={1} 
-                         disabled={saving}
+                         disabled={saving || selectedTask.status === 'completed'}
                        />
                        <p className="text-xs text-center font-bold text-primary">{selectedTask.manual_progress}% Complete</p>
                      </div>
@@ -833,4 +904,8 @@ export default function TasksPage() {
       </Sheet>
     </div>
   );
+}
+
+function handleAddSubtask() {
+  throw new Error("Function not implemented.");
 }
