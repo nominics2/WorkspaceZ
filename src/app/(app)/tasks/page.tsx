@@ -16,7 +16,8 @@ import {
   Download,
   Trash2,
   FileIcon,
-  X
+  X,
+  Eye
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -149,7 +150,6 @@ export default function TasksPage() {
 
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}-${file.name}`;
       const filePath = `${activeWorkspace.id}/${fileName}`;
 
@@ -181,18 +181,20 @@ export default function TasksPage() {
     }
   };
 
-  const handleDownloadAttachment = async (attachment: any) => {
+  const handleOpenAttachment = async (attachment: any) => {
     try {
       const { data, error } = await supabase.storage
         .from('workspace-attachments')
-        .createSignedUrl(attachment.file_path, 60);
+        .createSignedUrl(attachment.file_path, 600); // 10 minutes expiry
 
       if (error) throw error;
       if (data?.signedUrl) {
         window.open(data.signedUrl, '_blank');
+      } else {
+        throw new Error("Could not generate access URL.");
       }
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Download failed", description: err.message });
+      toast({ variant: "destructive", title: "Open failed", description: err.message });
     }
   };
 
@@ -622,15 +624,17 @@ export default function TasksPage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8 text-primary"
-                              onClick={() => handleDownloadAttachment(file)}
+                              onClick={() => handleOpenAttachment(file)}
+                              title="Open File"
                             >
-                              <Download className="w-4 h-4" />
+                              <Eye className="w-4 h-4" />
                             </Button>
                             <Button 
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8 text-rose-500"
                               onClick={() => handleDeleteAttachment(file)}
+                              title="Delete Attachment"
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
