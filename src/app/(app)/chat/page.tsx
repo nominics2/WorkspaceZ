@@ -64,6 +64,12 @@ export default function ChatPage() {
     assignedTo: ""
   });
 
+  const forceUnlockUI = () => {
+    if (typeof document !== 'undefined') {
+      document.body.style.pointerEvents = "";
+    }
+  };
+
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior });
@@ -284,6 +290,7 @@ export default function ChatPage() {
       toast({ title: "Task Created", description: "The message has been successfully converted into a task." });
       setIsTaskModalOpen(false);
       setSelectedMessage(null);
+      forceUnlockUI();
       
       setMessages(prev => prev.map(m => m.id === selectedMessage.id ? { ...m, created_task_id: task.id } : m));
     } catch (err: any) {
@@ -412,7 +419,12 @@ export default function ChatPage() {
         </div>
       </Card>
 
-      <Dialog open={isTaskModalOpen} onOpenChange={(open) => { if (!converting) setIsTaskModalOpen(open); }}>
+      <Dialog open={isTaskModalOpen} onOpenChange={(open) => { 
+        if (!converting) {
+          setIsTaskModalOpen(open);
+          if (!open) forceUnlockUI();
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Create Task from Message</DialogTitle>
@@ -474,7 +486,7 @@ export default function ChatPage() {
               </Select>
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => setIsTaskModalOpen(false)} disabled={converting}>Cancel</Button>
+              <Button type="button" variant="ghost" onClick={() => { setIsTaskModalOpen(false); forceUnlockUI(); }} disabled={converting}>Cancel</Button>
               <Button type="submit" disabled={converting}>
                 {converting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Convert to Task

@@ -23,6 +23,12 @@ export default function CalendarPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  const forceUnlockUI = () => {
+    if (typeof document !== 'undefined') {
+      document.body.style.pointerEvents = "";
+    }
+  };
+
   const fetchCalendarTasks = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
@@ -155,7 +161,10 @@ export default function CalendarPage() {
       </div>
 
       {/* Task Detail Sheet */}
-      <Sheet open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+      <Sheet open={isDetailOpen} onOpenChange={(open) => {
+        setIsDetailOpen(open);
+        if (!open) forceUnlockUI();
+      }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           {selectedTask && (
             <div className="space-y-8 pt-6">
@@ -188,7 +197,7 @@ export default function CalendarPage() {
 
                 <div className="space-y-3">
                    <div className="flex items-center justify-between mb-2">
-                     <Label className="text-sm font-bold">Progress</Label>
+                     <span className="text-sm font-bold">Progress</span>
                      <span className="text-xs font-bold text-primary">{Math.round(selectedTask.calculated_progress || 0)}%</span>
                    </div>
                    <Progress value={selectedTask.calculated_progress || 0} className="h-2" />
@@ -200,8 +209,4 @@ export default function CalendarPage() {
       </Sheet>
     </div>
   );
-}
-
-function Label({ children, className }: { children: React.ReactNode, className?: string }) {
-  return <span className={cn("text-sm font-medium", className)}>{children}</span>;
 }

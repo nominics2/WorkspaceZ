@@ -44,6 +44,12 @@ export default function NotesPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  const forceUnlockUI = () => {
+    if (typeof document !== 'undefined') {
+      document.body.style.pointerEvents = "";
+    }
+  };
+
   const fetchNotes = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
@@ -90,7 +96,6 @@ export default function NotesPage() {
     if (!activeWorkspace || !userProfile) return;
 
     setSaving(true);
-    console.log("Saving note start...");
     try {
       if (editingNote) {
         const { error } = await supabase
@@ -118,18 +123,14 @@ export default function NotesPage() {
         toast({ title: "Note Created" });
       }
       
-      console.log("Save successful, closing modal...");
       setIsModalOpen(false);
       setEditingNote(null);
-      
-      // Do not await the refetch to prevent blocking UI release
+      forceUnlockUI();
       fetchNotes();
     } catch (err: any) {
-      console.error("Save error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
-      console.log("Saving state reset to false");
     }
   };
 
@@ -238,7 +239,10 @@ export default function NotesPage() {
       )}
 
       <Dialog open={isModalOpen} onOpenChange={(open) => {
-        if (!saving) setIsModalOpen(open);
+        if (!saving) {
+          setIsModalOpen(open);
+          if (!open) forceUnlockUI();
+        }
       }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -270,7 +274,7 @@ export default function NotesPage() {
               />
             </div>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="button" variant="ghost" onClick={() => { setIsModalOpen(false); forceUnlockUI(); }} disabled={saving}>Cancel</Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 {editingNote ? 'Save Changes' : 'Create Note'}

@@ -48,6 +48,12 @@ export default function DashboardPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  const forceUnlockUI = () => {
+    if (typeof document !== 'undefined') {
+      document.body.style.pointerEvents = "";
+    }
+  };
+
   const fetchDashboardData = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
@@ -123,7 +129,6 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!activeWorkspace || !userProfile) return;
     setSaving(true);
-    console.log("Saving reminder...");
     try {
       const { error } = await supabase.from('reminders').insert({
         workspace_id: activeWorkspace.id,
@@ -135,17 +140,14 @@ export default function DashboardPage() {
       if (error) throw error;
       
       toast({ title: "Reminder set!" });
-      console.log("Reminder saved, closing modal...");
       setIsReminderModalOpen(false);
       setNewReminder({ title: "", remindAt: "" });
-      
+      forceUnlockUI();
       fetchDashboardData();
     } catch (err: any) {
-      console.error("Reminder save error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
-      console.log("Saving state reset");
     }
   };
 
@@ -334,7 +336,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <Dialog open={isReminderModalOpen} onOpenChange={(open) => { if (!saving) setIsReminderModalOpen(open); }}>
+      <Dialog open={isReminderModalOpen} onOpenChange={(open) => { 
+        if (!saving) {
+          setIsReminderModalOpen(open);
+          if (!open) forceUnlockUI();
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Set Quick Reminder</DialogTitle>
@@ -362,7 +369,7 @@ export default function DashboardPage() {
               />
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => setIsReminderModalOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="button" variant="ghost" onClick={() => { setIsReminderModalOpen(false); forceUnlockUI(); }} disabled={saving}>Cancel</Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Set Reminder

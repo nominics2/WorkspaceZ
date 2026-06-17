@@ -65,6 +65,13 @@ export default function TasksPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  const forceUnlockUI = () => {
+    console.log("Forcing UI unlock...");
+    if (typeof document !== 'undefined') {
+      document.body.style.pointerEvents = "";
+    }
+  };
+
   const fetchTasks = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
@@ -122,7 +129,6 @@ export default function TasksPage() {
     const dueDate = formData.get("due_date") as string;
 
     setSaving(true);
-    console.log("Creating task...");
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
@@ -143,17 +149,13 @@ export default function TasksPage() {
       if (error) throw error;
 
       toast({ title: "Success", description: "Task created successfully" });
-      console.log("Task created, closing modal...");
       setIsCreateOpen(false);
-      
-      // Refresh without blocking closure
+      forceUnlockUI();
       fetchTasks();
     } catch (err: any) {
-      console.error("Create task error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
-      console.log("Saving state reset");
     }
   };
 
@@ -343,7 +345,12 @@ export default function TasksPage() {
         )}
       </div>
 
-      <Dialog open={isCreateOpen} onOpenChange={(open) => { if (!saving) setIsCreateOpen(open); }}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { 
+        if (!saving) {
+          setIsCreateOpen(open);
+          if (!open) forceUnlockUI();
+        }
+      }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Create New Task</DialogTitle>
@@ -377,7 +384,7 @@ export default function TasksPage() {
               </div>
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)} disabled={saving}>Cancel</Button>
+              <Button type="button" variant="ghost" onClick={() => { setIsCreateOpen(false); forceUnlockUI(); }} disabled={saving}>Cancel</Button>
               <Button type="submit" disabled={saving}>
                 {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Create Task
@@ -387,7 +394,12 @@ export default function TasksPage() {
         </DialogContent>
       </Dialog>
 
-      <Sheet open={isDetailOpen} onOpenChange={(open) => { if (!saving) setIsDetailOpen(open); }}>
+      <Sheet open={isDetailOpen} onOpenChange={(open) => { 
+        if (!saving) {
+          setIsDetailOpen(open);
+          if (!open) forceUnlockUI();
+        }
+      }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           {selectedTask && (
             <div className="space-y-8 pt-6">
