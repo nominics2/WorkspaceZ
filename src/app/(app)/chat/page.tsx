@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -90,7 +91,7 @@ export default function ChatPage() {
     if (!activeWorkspace) return;
     const { data } = await supabase
       .from('workspace_members')
-      .select('user_id, profiles(id, full_name, avatar_url)')
+      .select('user_id, profiles(id, full_name, avatar_url, avatar_preset)')
       .eq('workspace_id', activeWorkspace.id)
       .eq('status', 'active');
     
@@ -101,7 +102,7 @@ export default function ChatPage() {
     if (!activeWorkspace) return;
     const { data: msgs, error: msgError } = await supabase
       .from('chat_messages')
-      .select('*, profiles:sender_id(full_name, username, avatar_url)')
+      .select('*, profiles:sender_id(full_name, username, avatar_url, avatar_preset)')
       .eq('channel_id', channelId)
       .eq('workspace_id', activeWorkspace.id)
       .eq('is_deleted', false)
@@ -171,7 +172,7 @@ export default function ChatPage() {
       }, async (payload) => {
         const { data } = await supabase
           .from('chat_messages')
-          .select('*, profiles:sender_id(full_name, username, avatar_url)')
+          .select('*, profiles:sender_id(full_name, username, avatar_url, avatar_preset)')
           .eq('id', payload.new.id)
           .single();
         
@@ -212,7 +213,7 @@ export default function ChatPage() {
         })
         .select(`
           *,
-          profiles:sender_id(full_name, username, avatar_url)
+          profiles:sender_id(full_name, username, avatar_url, avatar_preset)
         `)
         .single();
 
@@ -340,10 +341,12 @@ export default function ChatPage() {
               messages.map((msg) => {
                 const isMe = msg.sender_id === userProfile?.id;
                 const profile = msg.profiles;
+                const avatarSrc = profile?.avatar_preset ? `/avatars/${profile.avatar_preset}.png` : profile?.avatar_url;
+
                 return (
                   <div key={msg.id} className={cn("flex gap-3 group", isMe ? "flex-row-reverse" : "")}>
                     <Avatar className="w-10 h-10 border shadow-sm">
-                      <AvatarImage src={profile?.avatar_url} />
+                      <AvatarImage src={avatarSrc} />
                       <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
                         {profile?.full_name?.[0] || 'U'}
                       </AvatarFallback>

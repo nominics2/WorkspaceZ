@@ -69,6 +69,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function WorkspaceAdminPage() {
   const { activeWorkspace, workspaces, refreshWorkspaces, userProfile, userRole, hasPermission } = useWorkspace();
@@ -123,7 +124,7 @@ export default function WorkspaceAdminPage() {
 
       const { data: membersList } = await supabase
         .from('workspace_members')
-        .select('*, profiles(full_name, username, avatar_url, email)')
+        .select('*, profiles(full_name, username, avatar_url, avatar_preset, email)')
         .eq('workspace_id', activeWorkspace.id);
       setMembers(membersList || []);
 
@@ -481,7 +482,6 @@ export default function WorkspaceAdminPage() {
         description: "Notification checks completed successfully." 
       });
 
-      // Refresh data to show new notifications/reminders
       refreshWorkspaces();
       fetchData();
       
@@ -631,11 +631,12 @@ export default function WorkspaceAdminPage() {
                     <CardContent className="p-3 md:p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
                         <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm shrink-0 overflow-hidden">
-                          {member.profiles?.avatar_url ? (
-                            <img src={member.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
-                          )}
+                          <Avatar className="w-full h-full border-none shadow-none">
+                            <AvatarImage src={member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url} />
+                            <AvatarFallback className="bg-primary/5 text-primary text-sm font-bold">
+                              {member.profiles?.full_name?.[0]}
+                            </AvatarFallback>
+                          </Avatar>
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -854,7 +855,6 @@ export default function WorkspaceAdminPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Responsive Dialogs */}
       <Dialog open={isAllocating} onOpenChange={(open) => { setIsAllocating(open); if (!open) forceUnlockUI(); }}>
         <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl">
           <DialogHeader><DialogTitle>New Allocation</DialogTitle></DialogHeader>

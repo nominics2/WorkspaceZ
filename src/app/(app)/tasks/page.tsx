@@ -69,6 +69,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Slider } from "@/components/ui/slider";
 import { useSearchParams } from "next/navigation";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function TasksPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
@@ -136,7 +137,7 @@ export default function TasksPage() {
           .order('name', { ascending: true }),
         supabase
           .from('workspace_members')
-          .select('user_id, profiles(full_name)')
+          .select('user_id, profiles(full_name, avatar_url, avatar_preset)')
           .eq('workspace_id', activeWorkspace.id)
           .eq('status', 'active')
       ]);
@@ -149,7 +150,6 @@ export default function TasksPage() {
       setSubWorkspaces(teamsRes.data || []);
       setMembers(membersRes.data || []);
 
-      // Handle deep linking from Search
       const taskId = searchParams.get('taskId');
       if (taskId) {
         const task = tasksRes.data?.find(t => t.id === taskId);
@@ -179,7 +179,7 @@ export default function TasksPage() {
         { data: att }
       ] = await Promise.all([
         supabase.from('subtasks').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
-        supabase.from('task_comments').select('*, profiles(full_name)').eq('task_id', taskId).order('created_at', { ascending: true }),
+        supabase.from('task_comments').select('*, profiles(full_name, avatar_url, avatar_preset)').eq('task_id', taskId).order('created_at', { ascending: true }),
         supabase.from('task_activity_logs').select('*').eq('task_id', taskId).order('created_at', { ascending: false }),
         supabase.from('attachments').select('*').eq('task_id', taskId).order('created_at', { ascending: false })
       ]);
@@ -522,12 +522,10 @@ export default function TasksPage() {
     noDueDate: false
   });
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  const getAssigneeAvatar = (task: any) => {
+    const member = members.find(m => m.user_id === task.assigned_to);
+    if (!member) return null;
+    return member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url;
   };
 
   return (
@@ -723,6 +721,8 @@ export default function TasksPage() {
         ) : (
           filteredTasks.map((task) => {
             const taskProgress = task.progress_mode === 'manual' ? (task.manual_progress || 0) : (task.calculated_progress || 0);
+            const avatarSrc = getAssigneeAvatar(task);
+
             return (
               <Card 
                 key={task.id} 
@@ -777,11 +777,12 @@ export default function TasksPage() {
                             <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
                           </p>
                           <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full bg-primary/10 border flex items-center justify-center">
-                              <span className="text-[10px] font-bold text-primary">
+                            <Avatar className="w-6 h-6 border shadow-sm">
+                              <AvatarImage src={avatarSrc || undefined} />
+                              <AvatarFallback className="bg-primary/10 text-[8px] font-bold text-primary">
                                 {task.assigned_to_name?.[0] || '?'}
-                              </span>
-                            </div>
+                              </AvatarFallback>
+                            </Avatar>
                             <span className="text-xs text-foreground font-medium">{task.assigned_to_name || 'Unassigned'}</span>
                           </div>
                         </div>
@@ -945,9 +946,12 @@ export default function TasksPage() {
                       <User className="w-3 h-3" /> Assignee
                     </Label>
                     <div className="flex items-center gap-2 h-9 px-3 bg-white rounded-md border border-slate-200 opacity-60">
-                       <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                         <span className="text-[10px] font-bold text-primary">{selectedTask.assigned_to_name?.[0] || '?'}</span>
-                       </div>
+                       <Avatar className="w-5 h-5 border shadow-sm">
+                         <AvatarImage src={getAssigneeAvatar(selectedTask) || undefined} />
+                         <AvatarFallback className="bg-primary/10 text-[8px] font-bold text-primary">
+                           {selectedTask.assigned_to_name?.[0] || '?'}
+                         </AvatarFallback>
+                       </Avatar>
                        <span className="text-sm truncate">{selectedTask.assigned_to_name || 'Unassigned'}</span>
                     </div>
                   </div>
@@ -1036,15 +1040,24 @@ export default function TasksPage() {
                       {comments.length === 0 ? (
                         <p className="text-sm text-muted-foreground italic">No comments yet.</p>
                       ) : (
-                        comments.map((c) => (
-                          <div key={c.id} className="bg-slate-50 p-3 rounded-lg space-y-1">
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs font-bold">{(c.profiles as any)?.full_name || 'User'}</span>
-                              <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
+                        comments.map((c) => {
+                          const cAvatar = c.profiles?.avatar_preset ? `/avatars/${c.profiles.avatar_preset}.png` : c.profiles?.avatar_url;
+                          return (
+                            <div key={c.id} className="bg-slate-50 p-3 rounded-lg space-y-2">
+                              <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2">
+                                  <Avatar className="w-5 h-5 border shadow-sm">
+                                    <AvatarImage src={cAvatar} />
+                                    <AvatarFallback className="text-[8px]">{c.profiles?.full_name?.[0]}</AvatarFallback>
+                                  </Avatar>
+                                  <span className="text-xs font-bold">{(c.profiles as any)?.full_name || 'User'}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
+                              </div>
+                              <p className="text-sm pl-7">{c.comment}</p>
                             </div>
-                            <p className="text-sm">{c.comment}</p>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                     <div className="flex gap-2 pt-2 border-t mt-4">

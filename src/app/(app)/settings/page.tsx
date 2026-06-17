@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -15,7 +16,8 @@ import {
   Check,
   LogOut,
   Send,
-  Save
+  Save,
+  UserCircle
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -38,6 +40,8 @@ import { Separator } from "@/components/ui/separator";
 
 type TabType = 'profile' | 'notifications';
 
+const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`);
+
 export default function SettingsPage() {
   const { activeWorkspace, userProfile, refreshWorkspaces } = useWorkspace();
   const [activeTab, setActiveTab] = useState<TabType>('profile');
@@ -47,13 +51,12 @@ export default function SettingsPage() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   
-  // Profile Form State initialized with empty strings to avoid uncontrolled input warnings
   const [profileForm, setProfileForm] = useState({
     full_name: "",
-    username: ""
+    username: "",
+    avatar_preset: "" as string | null
   });
 
-  // Notification Filters
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
@@ -64,7 +67,8 @@ export default function SettingsPage() {
     if (userProfile) {
       setProfileForm({
         full_name: userProfile.full_name ?? "",
-        username: userProfile.username ?? ""
+        username: userProfile.username ?? "",
+        avatar_preset: userProfile.avatar_preset ?? null
       });
     }
   }, [userProfile]);
@@ -122,7 +126,6 @@ export default function SettingsPage() {
     e.preventDefault();
     if (!userProfile) return;
 
-    // Validation
     const usernameRegex = /^[a-z0-9_]{3,20}$/;
     if (!usernameRegex.test(profileForm.username)) {
       toast({
@@ -140,6 +143,7 @@ export default function SettingsPage() {
         .update({
           full_name: profileForm.full_name,
           username: profileForm.username.toLowerCase(),
+          avatar_preset: profileForm.avatar_preset,
           updated_at: new Date().toISOString()
         })
         .eq('id', userProfile.id);
@@ -209,6 +213,11 @@ export default function SettingsPage() {
   const usedMB = (storageUsage.used / (1024 * 1024)).toFixed(2);
   const totalGB = (storageUsage.limit / (1024 * 1024 * 1024)).toFixed(1);
 
+  const currentDisplayAvatar = useMemo(() => {
+    if (profileForm.avatar_preset) return `/avatars/${profileForm.avatar_preset}.png`;
+    return userProfile?.avatar_url;
+  }, [profileForm.avatar_preset, userProfile?.avatar_url]);
+
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -275,23 +284,16 @@ export default function SettingsPage() {
                   <CardDescription>Update your personal information visible to your team.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-6">
-                  <form onSubmit={handleUpdateProfile} className="space-y-6">
+                  <form onSubmit={handleUpdateProfile} className="space-y-8">
                     <div className="flex flex-col sm:flex-row items-center gap-6">
                       <div className="relative group">
                         <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center border-4 border-white shadow-xl overflow-hidden shrink-0">
-                          {userProfile?.avatar_url ? (
-                            <img src={userProfile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                          {currentDisplayAvatar ? (
+                            <img src={currentDisplayAvatar} alt="Profile" className="w-full h-full object-cover" />
                           ) : (
                             <span className="text-primary font-bold text-3xl">{userProfile?.full_name?.[0]}</span>
                           )}
                         </div>
-                        <button 
-                          type="button" 
-                          disabled 
-                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex items-center justify-center cursor-not-allowed"
-                        >
-                          <span className="text-[10px] text-white font-bold text-center px-2">Upload coming soon</span>
-                        </button>
                       </div>
                       
                       <div className="space-y-1 text-center sm:text-left flex-1">
@@ -303,6 +305,37 @@ export default function SettingsPage() {
                           </Badge>
                         </div>
                       </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Label className="text-sm font-bold">Profile Icon</Label>
+                      <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-11 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setProfileForm(f => ({ ...f, avatar_preset: null }))}
+                          className={cn(
+                            "aspect-square rounded-xl border-2 flex items-center justify-center transition-all hover:scale-105 shadow-sm",
+                            profileForm.avatar_preset === null ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-slate-100 bg-white"
+                          )}
+                          title="Use Initials"
+                        >
+                          <UserCircle className={cn("w-6 h-6", profileForm.avatar_preset === null ? "text-primary" : "text-slate-400")} />
+                        </button>
+                        {AVATAR_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setProfileForm(f => ({ ...f, avatar_preset: preset }))}
+                            className={cn(
+                              "aspect-square rounded-xl border-2 overflow-hidden transition-all hover:scale-105 shadow-sm",
+                              profileForm.avatar_preset === preset ? "border-primary ring-2 ring-primary/20" : "border-slate-100"
+                            )}
+                          >
+                            <img src={`/avatars/${preset}.png`} alt={preset} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Select a character icon or use your initials.</p>
                     </div>
 
                     <Separator />
