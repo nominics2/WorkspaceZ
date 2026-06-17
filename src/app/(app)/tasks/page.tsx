@@ -127,6 +127,7 @@ export default function TasksPage() {
           .from('my_tasks_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
+          .eq('is_deleted', false)
           .order('created_at', { ascending: false }),
         supabase
           .from('sub_workspaces')
@@ -319,6 +320,24 @@ export default function TasksPage() {
     } finally {
       setSaving(false);
       forceUnlockUI();
+    }
+  };
+
+  const handleDeleteTask = async () => {
+    if (!selectedTask) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc('move_task_to_trash', {
+        p_task_id: selectedTask.id
+      });
+      if (error) throw error;
+      toast({ title: "Task moved to trash" });
+      setIsDetailOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -779,7 +798,7 @@ export default function TasksPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="sub_workspace_id">Assign to Team</Label>
-              <Select name="sub_workspace_id" defaultValue="none">
+              <協Select name="sub_workspace_id" defaultValue="none">
                 <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Workspace General (No Team)</SelectItem>
@@ -823,14 +842,25 @@ export default function TasksPage() {
           {selectedTask && (
             <div className="space-y-8 pt-6">
               <SheetHeader>
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <Badge variant="outline" className="capitalize">{selectedTask.priority}</Badge>
-                  <Badge variant="secondary" className="capitalize">{selectedTask.status?.replace('_', ' ')}</Badge>
-                  {selectedTask.sub_workspace_name && (
-                    <Badge variant="secondary" className="bg-violet-50 text-violet-600 border-none">
-                      {selectedTask.sub_workspace_name}
-                    </Badge>
-                  )}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="capitalize">{selectedTask.priority}</Badge>
+                    <Badge variant="secondary" className="capitalize">{selectedTask.status?.replace('_', ' ')}</Badge>
+                    {selectedTask.sub_workspace_name && (
+                      <Badge variant="secondary" className="bg-violet-50 text-violet-600 border-none">
+                        {selectedTask.sub_workspace_name}
+                      </Badge>
+                    )}
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="text-rose-500 hover:bg-rose-50 hover:text-rose-600"
+                    onClick={handleDeleteTask}
+                    disabled={saving}
+                  >
+                    <Trash2 className="w-5 h-5" />
+                  </Button>
                 </div>
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">

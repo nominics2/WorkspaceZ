@@ -12,7 +12,8 @@ import {
   Settings, 
   LogOut,
   Layers,
-  ChevronDown
+  ChevronDown,
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ const navItems = [
 export function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeWorkspace, workspaces, switchWorkspace, hasPermission } = useWorkspace();
+  const { activeWorkspace, workspaces, switchWorkspace, hasPermission, userRole } = useWorkspace();
   const [mounted, setMounted] = useState(false);
   const supabase = createClient();
 
@@ -51,6 +52,7 @@ export function SidebarNav() {
   };
 
   const canViewAdminPanel = hasPermission('view_admin_panel');
+  const canViewTrash = hasPermission('manage_trash') || userRole === 'superadmin' || userRole === 'admin';
 
   return (
     <div className="flex flex-col h-full bg-white w-64 max-w-full">
@@ -113,6 +115,21 @@ export function SidebarNav() {
             </Link>
           );
         })}
+        
+        {canViewTrash && (
+          <Link href="/trash">
+            <span className={cn(
+              "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
+              pathname === "/trash" 
+                ? "bg-rose-50 text-rose-600" 
+                : "text-muted-foreground hover:bg-rose-50 hover:text-rose-600"
+            )}>
+              <Trash2 className="w-5 h-5" />
+              Trash
+            </span>
+          </Link>
+        )}
+
         {canViewAdminPanel && (
           <Link href="/workspace">
             <span className={cn(

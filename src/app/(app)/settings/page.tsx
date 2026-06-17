@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -74,6 +73,7 @@ export default function SettingsPage() {
         .from("notifications")
         .select("*")
         .eq("user_id", userProfile.id)
+        .eq("is_deleted", false)
         .order("created_at", { ascending: false });
 
       if (activeWorkspace) {
@@ -118,12 +118,12 @@ export default function SettingsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleMoveToTrash = async (id: string) => {
     try {
-      const { error } = await supabase.rpc("delete_user_notification", { p_notification_id: id });
+      const { error } = await supabase.rpc("move_notification_to_trash", { p_notification_id: id });
       if (error) throw error;
       setNotifications(prev => prev.filter(n => n.id !== id));
-      toast({ title: "Notification deleted" });
+      toast({ title: "Notification moved to trash" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -356,7 +356,7 @@ export default function SettingsPage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8 text-primary hover:bg-primary/5"
-                              onClick={() => handleMarkRead(n.id)}
+                              onClick={() => handleMarkRead(id)}
                               title="Mark as read"
                             >
                               <CheckCircle2 className="w-4 h-4" />
@@ -366,8 +366,8 @@ export default function SettingsPage() {
                             variant="ghost" 
                             size="icon" 
                             className="h-8 w-8 text-rose-500 hover:bg-rose-50"
-                            onClick={() => handleDelete(n.id)}
-                            title="Delete notification"
+                            onClick={() => handleMoveToTrash(n.id)}
+                            title="Move to trash"
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>

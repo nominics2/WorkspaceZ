@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Plus, Search, StickyNote, MoreVertical, Link as LinkIcon, Loader2, Globe, Lock, Layout, FilterX, ShieldCheck, User, LayoutDashboard } from "lucide-react";
+import { Plus, Search, StickyNote, MoreVertical, Link as LinkIcon, Loader2, Globe, Lock, Layout, FilterX, ShieldCheck, User, LayoutDashboard, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -130,6 +130,22 @@ export default function NotesPage() {
     } finally {
       setSaving(false);
       forceUnlockUI();
+    }
+  };
+
+  const handleMoveToTrash = async (note: any) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc('move_note_to_trash', {
+        p_note_id: note.id
+      });
+      if (error) throw error;
+      toast({ title: "Note moved to trash" });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -270,6 +286,9 @@ export default function NotesPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleOpenEdit(note)}>Edit Note</DropdownMenuItem>
+                      <DropdownMenuItem className="text-rose-500" onClick={() => handleMoveToTrash(note)}>
+                        <Trash2 className="w-4 h-4 mr-2" /> Move to Trash
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
