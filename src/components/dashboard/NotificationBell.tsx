@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 export function NotificationBell() {
   const { activeWorkspace, userProfile } = useWorkspace();
@@ -22,6 +23,7 @@ export function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const supabase = createClient();
+  const { toast } = useToast();
 
   const fetchNotifications = useCallback(async () => {
     if (!userProfile) return;
@@ -61,12 +63,14 @@ export function NotificationBell() {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const handleMarkAsRead = async (id: string) => {
+  const handleMarkAsRead = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     try {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true, read_at: new Date().toISOString() })
-        .eq("id", id);
+      const { error } = await supabase.rpc("mark_notification_read", {
+        p_notification_id: id
+      });
 
       if (error) throw error;
       
@@ -74,26 +78,38 @@ export function NotificationBell() {
         prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error marking notification as read:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err.message || "Failed to mark notification as read"
+      });
     }
   };
 
-  const handleMarkAllAsRead = async () => {
+  const handleMarkAllAsRead = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
     if (!userProfile) return;
     try {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true, read_at: new Date().toISOString() })
-        .eq("user_id", userProfile.id)
-        .eq("is_read", false);
+      const { error } = await supabase.rpc("mark_all_notifications_read", {
+        p_workspace_id: activeWorkspace?.id
+      });
 
       if (error) throw error;
       
       setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
       setUnreadCount(0);
-    } catch (err) {
+      fetchNotifications();
+    } catch (err: any) {
       console.error("Error marking all as read:", err);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: err.message || "Failed to mark all notifications as read"
+      });
     }
   };
 
@@ -122,7 +138,7 @@ export function NotificationBell() {
             <Button 
               variant="ghost" 
               size="sm" 
-              onClick={handleMarkAllAsRead}
+              onClick={(e) => handleMarkAllAsRead(e)}
               className="h-7 text-[10px] font-bold text-primary hover:text-primary hover:bg-primary/5 uppercase tracking-wider"
             >
               Mark all as read
@@ -179,7 +195,7 @@ export function NotificationBell() {
                   </div>
                   {!notification.is_read && (
                     <button 
-                      onClick={() => handleMarkAsRead(notification.id)}
+                      onClick={(e) => handleMarkAsRead(e, notification.id)}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-primary p-1 hover:bg-primary/10 rounded-lg shrink-0 h-fit"
                       title="Mark as read"
                     >
