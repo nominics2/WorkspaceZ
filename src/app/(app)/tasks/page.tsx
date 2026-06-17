@@ -545,7 +545,7 @@ function TasksPageContent() {
       <div className="flex flex-col gap-4">
         <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
           <div className="relative flex-1 w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
             <Input 
               className="pl-10 border-none shadow-none focus-visible:ring-0" 
               placeholder="Search tasks..." 
