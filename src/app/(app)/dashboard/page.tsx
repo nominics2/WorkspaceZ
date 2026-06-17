@@ -478,10 +478,10 @@ export default function DashboardPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-4 pt-2 space-y-4">
-                {workload.map((w) => (
-                  <div key={w.member_id} className="space-y-2">
+                {workload.map((w, index) => (
+                  <div key={w.user_id || `workload-${index}`} className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold truncate max-w-[120px]">{w.member_name}</span>
+                      <span className="font-bold truncate max-w-[120px]">{w.full_name || w.email || "Unknown Member"}</span>
                       <div className="flex items-center gap-2">
                         {w.overdue_tasks > 0 && <Badge variant="destructive" className="h-4 text-[8px]">{w.overdue_tasks} overdue</Badge>}
                         <span className="text-muted-foreground">{w.active_tasks} active</span>
