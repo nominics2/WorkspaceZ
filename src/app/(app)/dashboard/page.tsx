@@ -22,7 +22,8 @@ import {
   Users,
   RefreshCw,
   Zap,
-  CalendarDays
+  CalendarDays,
+  CheckSquare
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
