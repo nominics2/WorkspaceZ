@@ -121,6 +121,9 @@ export default function TasksPage() {
     const dueDate = formData.get("due_date") as string;
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
       const { error } = await supabase.from('tasks').insert({
         workspace_id: activeWorkspace?.id,
         title,
@@ -128,8 +131,8 @@ export default function TasksPage() {
         priority: priority,
         status: 'to_do',
         due_date: dueDate && dueDate.trim() !== "" ? dueDate : null,
-        created_by: userProfile?.id,
-        assigned_to: userProfile?.id,
+        created_by: user.id,
+        assigned_to: user.id,
         progress_mode: 'auto',
         manual_progress: 0
       });
@@ -148,11 +151,34 @@ export default function TasksPage() {
   const handleAddSubtask = async () => {
     if (!newSubtaskTitle.trim() || !selectedTask) return;
     try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: "Not authenticated.",
+        });
+        return;
+      }
+
       const { error } = await supabase.from('subtasks').insert({
         task_id: selectedTask.id,
-        title: newSubtaskTitle
+        title: newSubtaskTitle,
+        created_by: user.id,
+        completed: false
       });
-      if (error) throw error;
+
+      if (error) {
+        toast({
+          variant: "destructive",
+          title: "Error",
+          description: error.message,
+        });
+        return;
+      }
+
+      toast({ title: "Success", description: "Subtask added." });
       setNewSubtaskTitle("");
       fetchTaskDetails(selectedTask.id);
       fetchTasks();
@@ -188,9 +214,12 @@ export default function TasksPage() {
   const handleAddComment = async () => {
     if (!newComment.trim() || !selectedTask) return;
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
       const { error } = await supabase.from('task_comments').insert({
         task_id: selectedTask.id,
-        user_id: userProfile?.id,
+        user_id: user.id,
         comment: newComment
       });
       if (error) throw error;
