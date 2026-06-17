@@ -22,7 +22,9 @@ import {
   RefreshCw,
   Zap,
   CalendarDays,
-  CheckSquare
+  CheckSquare,
+  Trash2,
+  Paperclip
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -39,6 +41,20 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+
+const activityConfig: Record<string, { label: string; icon: any; color: string; bg: string }> = {
+  task_created: { label: "created task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-50" },
+  task_updated: { label: "updated task", icon: RefreshCw, color: "text-slate-500", bg: "bg-slate-50" },
+  task_completed: { label: "completed task", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
+  subtask_created: { label: "added subtask to", icon: CheckSquare, color: "text-blue-400", bg: "bg-blue-50" },
+  subtask_completed: { label: "completed subtask in", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-50" },
+  comment_added: { label: "commented on", icon: MessageSquare, color: "text-indigo-500", bg: "bg-indigo-50" },
+  attachment_uploaded: { label: "attached file to", icon: Paperclip, color: "text-slate-500", bg: "bg-slate-50" },
+  note_created: { label: "created note", icon: StickyNote, color: "text-amber-500", bg: "bg-amber-50" },
+  note_updated: { label: "updated note", icon: StickyNote, color: "text-amber-600", bg: "bg-amber-50" },
+  task_moved_to_trash: { label: "deleted task", icon: Trash2, color: "text-rose-500", bg: "bg-rose-50" },
+  task_restored_from_trash: { label: "restored task", icon: RefreshCw, color: "text-emerald-500", bg: "bg-emerald-50" },
+};
 
 export default function DashboardPage() {
   const { activeWorkspace, userProfile, userRole, hasPermission } = useWorkspace();
@@ -378,23 +394,36 @@ export default function DashboardPage() {
               <CardContent className="p-0">
                 <div className="divide-y">
                   {activity.length === 0 ? (
-                    <p className="text-sm text-muted-foreground italic text-center py-10">No recent activity.</p>
+                    <p className="text-sm text-muted-foreground italic text-center py-10">No recent activity yet.</p>
                   ) : (
-                    activity.map((log) => (
-                      <div key={log.id} className="p-4 flex gap-4 group hover:bg-slate-50 transition-colors">
-                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
-                          <TrendingUp className="w-4 h-4 text-slate-500" />
+                    activity.map((log) => {
+                      const config = activityConfig[log.action] || { 
+                        label: log.action_description || log.action?.replace(/_/g, ' ') || "performed an action", 
+                        icon: TrendingUp, 
+                        color: "text-slate-500", 
+                        bg: "bg-slate-100" 
+                      };
+                      const Icon = config.icon;
+                      const targetTitle = log.task_title || log.note_title || "";
+
+                      return (
+                        <div key={log.id} className="p-4 flex gap-4 group hover:bg-slate-50 transition-colors">
+                          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm", config.bg)}>
+                            <Icon className={cn("w-5 h-5", config.color)} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs md:text-sm text-foreground leading-relaxed">
+                              <span className="font-bold">{log.actor_name || "Someone"}</span> {config.label}
+                              {targetTitle && <span className="font-bold ml-1">"{targetTitle}"</span>}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {new Date(log.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs md:text-sm text-foreground">
-                            <span className="font-bold">{log.actor_name}</span> {log.action_description}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground mt-1">
-                            {new Date(log.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
-                          </p>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </CardContent>
