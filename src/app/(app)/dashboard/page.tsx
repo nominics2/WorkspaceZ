@@ -95,7 +95,7 @@ export default function DashboardPage() {
         .eq('workspace_id', activeWorkspace.id)
         .maybeSingle();
 
-      // 2. Fetch My Tasks (for calculations and lists)
+      // 2. Fetch My Tasks
       const { data: myTasks } = await supabase
         .from('my_tasks_view')
         .select('*')
@@ -122,8 +122,7 @@ export default function DashboardPage() {
 
       setTasks(myTasks || []);
 
-      // 3. Activity - Using standard fetch to potentially join profiles if view lacks fields, 
-      // but assuming recent_activity_view is updated for this requirement.
+      // 3. Activity Feed
       const { data: recentLogs } = await supabase
         .from('recent_activity_view')
         .select('*')
@@ -153,7 +152,7 @@ export default function DashboardPage() {
         .limit(5);
       setReminders(rems || []);
 
-      // 6. Workload (if permitted)
+      // 6. Workload
       if (userRole === 'superadmin' || hasPermission('view_admin_panel') || hasPermission('view_all_tasks')) {
         const { data: work } = await supabase
           .from('member_workload_view')
@@ -406,9 +405,13 @@ export default function DashboardPage() {
                         bg: "bg-slate-100" 
                       };
                       const ActionIcon = config.icon;
-                      const targetTitle = log.task_title || log.note_title || "";
-                      const actorName = log.actor_full_name || log.actor_username || log.actor_name || "Someone";
+                      
+                      // Identity mapping
+                      const actorName = log.actor_full_name || log.actor_username || log.actor_email || "Someone";
                       const avatarSrc = log.actor_avatar_preset ? `/avatars/${log.actor_avatar_preset}.png` : log.actor_avatar_url;
+                      
+                      // Target mapping
+                      const targetTitle = log.task_title || log.note_title || "";
 
                       return (
                         <div key={log.id} className="p-4 flex gap-4 group hover:bg-slate-50 transition-colors">
@@ -522,7 +525,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="p-4 pt-2 space-y-4">
                 {workload.map((w, index) => (
-                  <div key={w.user_id || `workload-${index}`} className="space-y-2">
+                  <div key={w.user_id || `${w.email}-${index}`} className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-bold truncate max-w-[120px]">{w.full_name || w.email || "Unknown Member"}</span>
                       <div className="flex items-center gap-2">
