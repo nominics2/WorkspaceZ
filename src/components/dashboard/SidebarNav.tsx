@@ -1,7 +1,8 @@
+
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { 
   LayoutDashboard, 
   CheckSquare, 
@@ -10,10 +11,19 @@ import {
   StickyNote, 
   Settings, 
   LogOut,
-  Layers
+  Layers,
+  ChevronDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { createClient } from "@/lib/supabase/client";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -21,19 +31,56 @@ const navItems = [
   { label: "Chat", icon: MessageSquare, href: "/chat" },
   { label: "Calendar", icon: Calendar, href: "/calendar" },
   { label: "Notes", icon: StickyNote, href: "/notes" },
-  { label: "Workspace", icon: Layers, href: "/workspace" },
+  { label: "Workspace", icon: Layers, href: "/workspace-setup" },
 ];
 
 export function SidebarNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace();
+  const supabase = createClient();
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.refresh();
+    router.push("/");
+  };
 
   return (
     <div className="flex flex-col h-full bg-white border-r w-64">
-      <div className="p-6 flex items-center gap-2">
-        <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-          <span className="text-white font-bold text-xl">W</span>
-        </div>
-        <h1 className="text-xl font-bold tracking-tight text-foreground">WorkspaceZ</h1>
+      <div className="p-6">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-lg">
+                    {activeWorkspace?.name?.[0] || 'W'}
+                  </span>
+                </div>
+                <div className="text-left overflow-hidden">
+                   <h1 className="text-sm font-bold truncate text-foreground">
+                     {activeWorkspace?.name || 'WorkspaceZ'}
+                   </h1>
+                   <p className="text-[10px] text-muted-foreground truncate">
+                     {activeWorkspace?.join_code || ''}
+                   </p>
+                </div>
+              </div>
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" align="start">
+            {workspaces.map((ws) => (
+              <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)}>
+                {ws.name}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem onClick={() => router.push('/workspace-setup')} className="text-primary font-medium">
+              Create/Join New
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <nav className="flex-1 px-4 space-y-1">
@@ -65,7 +112,11 @@ export function SidebarNav() {
             Settings
           </span>
         </Link>
-        <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+        <Button 
+          variant="ghost" 
+          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          onClick={handleLogout}
+        >
           <LogOut className="w-5 h-5 mr-3" />
           Logout
         </Button>

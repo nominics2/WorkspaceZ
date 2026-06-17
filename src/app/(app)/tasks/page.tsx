@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { 
   Plus, 
   Search, 
@@ -10,7 +11,8 @@ import {
   Clock, 
   MessageSquare, 
   Paperclip,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,10 +25,52 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MOCK_TASKS, TASK_PRIORITY } from "@/lib/mock-data";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 
 export default function TasksPage() {
+  const { activeWorkspace } = useWorkspace();
+  const [tasks, setTasks] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+
+  useEffect(() => {
+    if (!activeWorkspace) return;
+
+    const fetchTasks = async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('my_tasks_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id);
+        
+        if (error) throw error;
+        setTasks(data || []);
+      } catch (err) {
+        console.error('Error fetching tasks:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTasks();
+  }, [activeWorkspace]);
+
+  const filteredTasks = tasks.filter(t => 
+    t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -56,76 +100,75 @@ export default function TasksPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {MOCK_TASKS.map((task) => (
-          <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden">
-            <CardContent className="p-0">
-              <div className="flex flex-col md:flex-row">
-                <div className={cn(
-                  "w-full md:w-1.5 h-1.5 md:h-auto",
-                  task.priority === TASK_PRIORITY.URGENT ? "bg-rose-500" : 
-                  task.priority === TASK_PRIORITY.HIGH ? "bg-amber-500" : "bg-primary"
-                )} />
-                <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center gap-6">
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-bold text-lg group-hover:text-primary transition-colors">{task.title}</h3>
-                      <Badge variant="outline" className="text-[10px] rounded-sm">{task.priority}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground line-clamp-1">{task.description}</p>
-                  </div>
-
-                  <div className="flex items-center gap-8 min-w-[300px]">
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                        <CalendarIcon className="w-3 h-3" /> Due {task.dueDate}
-                      </p>
+        {filteredTasks.length === 0 ? (
+          <p className="text-center py-12 text-muted-foreground">No tasks found.</p>
+        ) : (
+          filteredTasks.map((task) => (
+            <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden">
+              <CardContent className="p-0">
+                <div className="flex flex-col md:flex-row">
+                  <div className={cn(
+                    "w-full md:w-1.5 h-1.5 md:h-auto",
+                    task.priority === 'Urgent' ? "bg-rose-500" : 
+                    task.priority === 'High' ? "bg-amber-500" : "bg-primary"
+                  )} />
+                  <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center gap-6">
+                    <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-slate-100 border flex items-center justify-center">
-                          <span className="text-[10px] font-bold">AJ</span>
+                        <h3 className="font-bold text-lg group-hover:text-primary transition-colors">{task.title}</h3>
+                        <Badge variant="outline" className="text-[10px] rounded-sm">{task.priority}</Badge>
+                        {task.sub_workspace_name && (
+                           <Badge variant="secondary" className="text-[10px] bg-slate-100">{task.sub_workspace_name}</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground line-clamp-1">{task.description}</p>
+                    </div>
+
+                    <div className="flex items-center gap-8 min-w-[300px]">
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                          <CalendarIcon className="w-3 h-3" /> Due {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-slate-100 border flex items-center justify-center">
+                            <span className="text-[10px] font-bold">
+                              {task.assigned_to_name?.[0] || '?'}
+                            </span>
+                          </div>
+                          <span className="text-xs text-foreground font-medium">{task.assigned_to_name || 'Unassigned'}</span>
                         </div>
-                        <span className="text-xs text-foreground font-medium">{task.assignedTo}</span>
                       </div>
-                    </div>
 
-                    <div className="flex-1">
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Progress</span>
-                        <span className="text-xs font-bold text-primary">{task.progress}%</span>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1.5">
+                          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Progress</span>
+                          <span className="text-xs font-bold text-primary">{task.calculated_progress || task.manual_progress || 0}%</span>
+                        </div>
+                        <Progress value={task.calculated_progress || task.manual_progress || 0} className="h-1.5" />
                       </div>
-                      <Progress value={task.progress} className="h-1.5" />
-                    </div>
 
-                    <div className="flex items-center gap-4 text-muted-foreground">
-                      <div className="flex items-center gap-1 text-xs">
-                        <MessageSquare className="w-4 h-4" /> 0
+                      <div className="flex items-center gap-4 text-muted-foreground">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="rounded-full">
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>Edit Task</DropdownMenuItem>
+                            <DropdownMenuItem className="text-emerald-600">Mark Completed</DropdownMenuItem>
+                            <DropdownMenuItem className="text-rose-600">Delete</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                      <div className="flex items-center gap-1 text-xs">
-                        <Paperclip className="w-4 h-4" /> 0
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="rounded-full">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem>Edit Task</DropdownMenuItem>
-                          <DropdownMenuItem className="text-emerald-600">Mark Completed</DropdownMenuItem>
-                          <DropdownMenuItem className="text-rose-600">Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
     </div>
   );
-}
-
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(" ");
 }

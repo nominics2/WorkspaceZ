@@ -1,5 +1,7 @@
+
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -9,23 +11,81 @@ import {
   AlertCircle, 
   LayoutDashboard, 
   TrendingUp,
-  ArrowRight
+  ArrowRight,
+  Loader2
 } from "lucide-react";
-import { MOCK_USER, MOCK_TASKS, TASK_STATUS } from "@/lib/mock-data";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { createClient } from "@/lib/supabase/client";
 
 export default function DashboardPage() {
-  const stats = [
-    { label: "To-do", count: 12, icon: Clock, color: "text-blue-500", bg: "bg-blue-50" },
-    { label: "Ongoing", count: 5, icon: TrendingUp, color: "text-amber-500", bg: "bg-amber-50" },
-    { label: "Completed", count: 48, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
-    { label: "Overdue", count: 2, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50" },
-  ];
+  const { activeWorkspace, userProfile } = useWorkspace();
+  const [stats, setStats] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [activity, setActivity] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+
+  useEffect(() => {
+    if (!activeWorkspace) return;
+
+    const fetchDashboardData = async () => {
+      setLoading(true);
+      try {
+        // Fetch Summary Stats
+        const { data: summary } = await supabase
+          .from('dashboard_task_summary_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .single();
+
+        if (summary) {
+          setStats([
+            { label: "To-do", count: summary.todo_count || 0, icon: Clock, color: "text-blue-500", bg: "bg-blue-50" },
+            { label: "Ongoing", count: summary.in_progress_count || 0, icon: TrendingUp, color: "text-amber-500", bg: "bg-amber-50" },
+            { label: "Completed", count: summary.completed_count || 0, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
+            { label: "Overdue", count: summary.overdue_count || 0, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50" },
+          ]);
+        }
+
+        // Fetch My Tasks
+        const { data: myTasks } = await supabase
+          .from('my_tasks_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .limit(5);
+        setTasks(myTasks || []);
+
+        // Fetch Recent Activity
+        const { data: recentLogs } = await supabase
+          .from('recent_activity_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .limit(3);
+        setActivity(recentLogs || []);
+
+      } catch (err) {
+        console.error('Error fetching dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [activeWorkspace]);
+
+  if (loading) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">Welcome back, {MOCK_USER.name} 👋</h1>
-        <p className="text-muted-foreground">Here is what's happening in your workspace today.</p>
+        <h1 className="text-3xl font-bold text-foreground">Welcome back, {userProfile?.full_name || 'User'} 👋</h1>
+        <p className="text-muted-foreground">Here is what's happening in {activeWorkspace?.name} today.</p>
       </div>
 
       {/* Stats Grid */}
@@ -55,26 +115,30 @@ export default function DashboardPage() {
             </button>
           </div>
           <div className="space-y-3">
-            {MOCK_TASKS.map((task) => (
-              <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-shadow group">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className={`w-2 h-12 rounded-full ${task.priority === 'Urgent' ? 'bg-rose-500' : 'bg-primary'}`} />
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">{task.title}</h3>
-                    <div className="flex items-center gap-3 mt-1">
-                      <p className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> Due {task.dueDate}
-                      </p>
-                      <Badge variant="secondary" className="text-[10px] py-0">{task.status}</Badge>
+            {tasks.length === 0 ? (
+              <p className="text-center py-8 text-muted-foreground">No upcoming tasks.</p>
+            ) : (
+              tasks.map((task) => (
+                <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-shadow group">
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className={`w-2 h-12 rounded-full ${task.priority === 'Urgent' ? 'bg-rose-500' : 'bg-primary'}`} />
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">{task.title}</h3>
+                      <div className="flex items-center gap-3 mt-1">
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> Due {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                        </p>
+                        <Badge variant="secondary" className="text-[10px] py-0">{task.status}</Badge>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs font-medium text-muted-foreground mb-1">{task.progress}%</p>
-                    <Progress value={task.progress} className="w-20 h-1.5" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                    <div className="text-right">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">{task.calculated_progress || task.manual_progress || 0}%</p>
+                      <Progress value={task.calculated_progress || task.manual_progress || 0} className="w-20 h-1.5" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
           </div>
         </div>
 
@@ -82,12 +146,14 @@ export default function DashboardPage() {
         <div className="space-y-8">
           <Card className="border-none shadow-sm bg-primary text-white overflow-hidden relative">
             <CardHeader>
-              <CardTitle className="text-lg">Productivity Score</CardTitle>
-              <CardDescription className="text-white/80">You're doing great this week!</CardDescription>
+              <CardTitle className="text-lg">Workspace Health</CardTitle>
+              <CardDescription className="text-white/80">Overall task completion progress</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-4xl font-bold mb-4">84%</div>
-              <Progress value={84} className="h-2 bg-white/20" />
+              <div className="text-4xl font-bold mb-4">
+                {stats.find(s => s.label === "Completed")?.count || 0}
+              </div>
+              <Progress value={50} className="h-2 bg-white/20" />
             </CardContent>
             <div className="absolute -right-4 -bottom-4 opacity-10">
               <LayoutDashboard className="w-32 h-32" />
@@ -99,19 +165,23 @@ export default function DashboardPage() {
               <CardTitle className="text-lg">Recent Activity</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex gap-4">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-                    <TrendingUp className="w-4 h-4 text-slate-500" />
+              {activity.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No recent activity.</p>
+              ) : (
+                activity.map((log) => (
+                  <div key={log.id} className="flex gap-4">
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                      <TrendingUp className="w-4 h-4 text-slate-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-foreground">
+                        <span className="font-bold">{log.actor_name}</span> {log.action_description}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">{new Date(log.created_at).toLocaleString()}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-foreground">
-                      <span className="font-bold">Alex Johnson</span> updated task <span className="font-medium text-primary cursor-pointer hover:underline">Dashboard v2</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">2 hours ago</p>
-                  </div>
-                </div>
-              ))}
+                ))
+              )}
             </CardContent>
           </Card>
         </div>
