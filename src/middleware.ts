@@ -1,4 +1,3 @@
-
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
@@ -67,11 +66,6 @@ export async function middleware(request: NextRequest) {
 
   if (isAppRoute && !user) {
     return NextResponse.redirect(new URL('/', request.url))
-  }
-
-  // Redirect to dashboard if logged in and accessing login page
-  if (request.nextUrl.pathname === '/' && user) {
-     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   return response
