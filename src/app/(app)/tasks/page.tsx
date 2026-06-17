@@ -127,7 +127,6 @@ export default function TasksPage() {
           .from('my_tasks_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
-          .eq('is_deleted', false)
           .order('created_at', { ascending: false }),
         supabase
           .from('sub_workspaces')
