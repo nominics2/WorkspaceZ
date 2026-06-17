@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -449,6 +450,27 @@ export default function TasksPage() {
     }
   };
 
+  const handleUpdateDueDate = async (date: string) => {
+    if (!selectedTask) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ due_date: date || null })
+        .eq('id', selectedTask.id);
+
+      if (error) throw error;
+      
+      setSelectedTask({ ...selectedTask, due_date: date });
+      toast({ title: "Due date updated" });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const detailProgress = useMemo(() => {
     if (!selectedTask) return 0;
     if (selectedTask.progress_mode === 'manual') return selectedTask.manual_progress || 0;
@@ -890,6 +912,32 @@ export default function TasksPage() {
               </SheetHeader>
 
               <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <CalendarDays className="w-3 h-3" /> Due Date
+                    </Label>
+                    <Input 
+                      type="date" 
+                      value={selectedTask.due_date ? selectedTask.due_date.split('T')[0] : ''} 
+                      onChange={(e) => handleUpdateDueDate(e.target.value)}
+                      className="h-9 text-sm bg-white border-slate-200"
+                      disabled={saving}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <User className="w-3 h-3" /> Assignee
+                    </Label>
+                    <div className="flex items-center gap-2 h-9 px-3 bg-white rounded-md border border-slate-200 opacity-60">
+                       <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                         <span className="text-[10px] font-bold text-primary">{selectedTask.assigned_to_name?.[0] || '?'}</span>
+                       </div>
+                       <span className="text-sm truncate">{selectedTask.assigned_to_name || 'Unassigned'}</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
                    <div className="flex items-center justify-between mb-2">
                      <div className="flex items-center gap-2">
