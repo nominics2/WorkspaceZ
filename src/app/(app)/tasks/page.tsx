@@ -122,6 +122,7 @@ export default function TasksPage() {
     const dueDate = formData.get("due_date") as string;
 
     setSaving(true);
+    console.log("Creating task...");
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
@@ -142,13 +143,17 @@ export default function TasksPage() {
       if (error) throw error;
 
       toast({ title: "Success", description: "Task created successfully" });
+      console.log("Task created, closing modal...");
       setIsCreateOpen(false);
-      (e.target as HTMLFormElement).reset();
-      await fetchTasks();
+      
+      // Refresh without blocking closure
+      fetchTasks();
     } catch (err: any) {
+      console.error("Create task error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
+      console.log("Saving state reset");
     }
   };
 
@@ -170,8 +175,8 @@ export default function TasksPage() {
 
       toast({ title: "Success", description: "Subtask added." });
       setNewSubtaskTitle("");
-      await fetchTaskDetails(selectedTask.id);
-      await fetchTasks();
+      fetchTaskDetails(selectedTask.id);
+      fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -185,8 +190,8 @@ export default function TasksPage() {
         is_completed: !subtask.is_completed
       }).eq('id', subtask.id);
       if (error) throw error;
-      await fetchTaskDetails(selectedTask.id);
-      await fetchTasks();
+      fetchTaskDetails(selectedTask.id);
+      fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -196,8 +201,8 @@ export default function TasksPage() {
     try {
       const { error } = await supabase.from('subtasks').delete().eq('id', id);
       if (error) throw error;
-      await fetchTaskDetails(selectedTask.id);
-      await fetchTasks();
+      fetchTaskDetails(selectedTask.id);
+      fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -217,7 +222,7 @@ export default function TasksPage() {
       });
       if (error) throw error;
       setNewComment("");
-      await fetchTaskDetails(selectedTask.id);
+      fetchTaskDetails(selectedTask.id);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -235,7 +240,7 @@ export default function TasksPage() {
       
       if (error) throw error;
       setSelectedTask({...selectedTask, manual_progress: val[0], progress_mode: 'manual'});
-      await fetchTasks();
+      fetchTasks();
     } catch (err: any) {
       console.error(err);
     }

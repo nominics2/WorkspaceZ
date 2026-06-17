@@ -123,6 +123,7 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!activeWorkspace || !userProfile) return;
     setSaving(true);
+    console.log("Saving reminder...");
     try {
       const { error } = await supabase.from('reminders').insert({
         workspace_id: activeWorkspace.id,
@@ -132,14 +133,19 @@ export default function DashboardPage() {
         remind_at: new Date(newReminder.remindAt).toISOString()
       });
       if (error) throw error;
+      
       toast({ title: "Reminder set!" });
+      console.log("Reminder saved, closing modal...");
       setIsReminderModalOpen(false);
       setNewReminder({ title: "", remindAt: "" });
-      await fetchDashboardData();
+      
+      fetchDashboardData();
     } catch (err: any) {
+      console.error("Reminder save error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
+      console.log("Saving state reset");
     }
   };
 
@@ -150,7 +156,7 @@ export default function DashboardPage() {
         completed_at: new Date().toISOString()
       }).eq('id', id);
       toast({ title: "Reminder completed" });
-      await fetchDashboardData();
+      fetchDashboardData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }

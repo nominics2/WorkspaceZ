@@ -58,6 +58,7 @@ export default function NotesPage() {
       if (error) throw error;
       setNotes(data || []);
     } catch (err: any) {
+      console.error("Fetch notes error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setLoading(false);
@@ -89,6 +90,7 @@ export default function NotesPage() {
     if (!activeWorkspace || !userProfile) return;
 
     setSaving(true);
+    console.log("Saving note start...");
     try {
       if (editingNote) {
         const { error } = await supabase
@@ -115,14 +117,19 @@ export default function NotesPage() {
         if (error) throw error;
         toast({ title: "Note Created" });
       }
-      // Critical: reset states before closing to ensure UI remains responsive
+      
+      console.log("Save successful, closing modal...");
       setIsModalOpen(false);
       setEditingNote(null);
-      await fetchNotes();
+      
+      // Do not await the refetch to prevent blocking UI release
+      fetchNotes();
     } catch (err: any) {
+      console.error("Save error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSaving(false);
+      console.log("Saving state reset to false");
     }
   };
 
@@ -134,7 +141,7 @@ export default function NotesPage() {
         .eq('id', id);
       if (error) throw error;
       toast({ title: "Note moved to trash" });
-      await fetchNotes();
+      fetchNotes();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
