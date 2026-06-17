@@ -65,6 +65,10 @@ export default function LoginPage() {
     }
   };
 
+  const toggleMode = () => {
+    setIsRegister(!isRegister);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
       <Card className="w-full max-w-md shadow-xl border-none">
@@ -144,7 +148,7 @@ export default function LoginPage() {
                 variant="link" 
                 className="p-0 h-auto font-semibold" 
                 type="button"
-                onClick={() => setIsRegister(!isRegister)}
+                onClick={toggleMode}
               >
                 {isRegister ? "Sign In" : "Register"}
               </Button>
