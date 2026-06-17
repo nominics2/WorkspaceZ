@@ -5,6 +5,8 @@ import { Menu } from "lucide-react";
 import { 
   Sheet, 
   SheetContent, 
+  SheetHeader,
+  SheetTitle,
   SheetTrigger 
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -34,6 +36,9 @@ export default function AppLayout({
                     </Button>
                   </SheetTrigger>
                   <SheetContent side="left" className="p-0 w-64">
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>Navigation Menu</SheetTitle>
+                    </SheetHeader>
                     <SidebarNav />
                   </SheetContent>
                 </Sheet>
