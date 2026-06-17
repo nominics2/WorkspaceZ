@@ -4,19 +4,22 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Plus, Loader2, Clock, Calendar as CalendarIcon, User } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Loader2, Clock, Calendar as CalendarIcon, User, Layout } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export default function CalendarPage() {
   const { activeWorkspace } = useWorkspace();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [tasks, setTasks] = useState<any[]>([]);
+  const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
+  const [teamFilter, setTeamFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -33,37 +36,55 @@ export default function CalendarPage() {
     return () => forceUnlockUI();
   }, []);
 
-  const fetchCalendarTasks = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('calendar_tasks_view')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .not('due_date', 'is', null)
-        .order('due_date', { ascending: true });
+      const [tasksRes, teamsRes] = await Promise.all([
+        supabase
+          .from('calendar_tasks_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .not('due_date', 'is', null)
+          .order('due_date', { ascending: true }),
+        supabase
+          .from('sub_workspaces')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .order('name', { ascending: true })
+      ]);
 
-      if (error) throw error;
-      setTasks(data || []);
+      if (tasksRes.error) throw tasksRes.error;
+      if (teamsRes.error) throw teamsRes.error;
+
+      setTasks(tasksRes.data || []);
+      setSubWorkspaces(teamsRes.data || []);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error fetching calendar", description: err.message });
+      toast({ variant: "destructive", title: "Error fetching data", description: err.message });
     } finally {
       setLoading(false);
     }
   }, [activeWorkspace, supabase, toast]);
 
   useEffect(() => {
-    fetchCalendarTasks();
-  }, [fetchCalendarTasks]);
+    fetchData();
+  }, [fetchData]);
 
   const handleOpenDetail = (task: any) => {
     setSelectedTask(task);
     setIsDetailOpen(true);
   };
 
-  // Filter tasks for the selected date
-  const selectedDateTasks = tasks.filter(task => {
+  // Filter tasks based on selected team and selected date
+  const filteredTasks = tasks.filter(task => {
+    if (teamFilter !== "all" && task.sub_workspace_id !== teamFilter) {
+      if (teamFilter === "none" && task.sub_workspace_id) return false;
+      if (teamFilter !== "none" && task.sub_workspace_id !== teamFilter) return false;
+    }
+    return true;
+  });
+
+  const selectedDateTasks = filteredTasks.filter(task => {
     if (!date || !task.due_date) return false;
     const taskDate = new Date(task.due_date);
     return (
@@ -75,10 +96,25 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Calendar</h1>
-          <p className="text-muted-foreground">Keep track of your deadlines</p>
+          <p className="text-muted-foreground">Keep track of your team deadlines</p>
+        </div>
+        <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border">
+           <Layout className="w-4 h-4 text-muted-foreground" />
+           <Select value={teamFilter} onValueChange={setTeamFilter}>
+             <SelectTrigger className="w-[180px] border-none shadow-none focus:ring-0">
+               <SelectValue placeholder="All Teams" />
+             </SelectTrigger>
+             <SelectContent>
+               <SelectItem value="all">All Teams</SelectItem>
+               <SelectItem value="none">No Team</SelectItem>
+               {subWorkspaces.map(team => (
+                 <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+               ))}
+             </SelectContent>
+           </Select>
         </div>
       </div>
 
@@ -130,6 +166,11 @@ export default function CalendarPage() {
                          )}>
                            {task.is_overdue ? "Overdue" : task.status}
                          </span>
+                         {task.sub_workspace_name && (
+                           <Badge variant="secondary" className="text-[8px] bg-violet-50 text-violet-600 border-none px-1 h-3.5">
+                             {task.sub_workspace_name}
+                           </Badge>
+                         )}
                       </div>
                     </div>
                     <Badge className={
@@ -145,17 +186,22 @@ export default function CalendarPage() {
           </div>
 
           <div className="pt-6 border-t">
-             <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">All Upcoming</h3>
+             <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">Upcoming {teamFilter !== 'all' ? 'Team' : ''}</h3>
              <div className="space-y-3">
-                {tasks.slice(0, 5).map(task => (
+                {filteredTasks.slice(0, 5).map(task => (
                   <div key={task.id} className="flex items-start gap-3 group cursor-pointer" onClick={() => handleOpenDetail(task)}>
                     <div className={cn(
                       "w-1 h-8 rounded-full shrink-0",
-                      task.priority?.toLowerCase() === 'urgent' ? 'bg-rose-500' : 'bg-primary/20'
+                      task.priority?.toLowerCase() === 'urgent' ? "bg-rose-500" : "bg-primary/20"
                     )} />
-                    <div>
-                      <p className="text-xs font-bold group-hover:text-primary transition-colors">{task.title}</p>
-                      <p className="text-[10px] text-muted-foreground">{new Date(task.due_date).toLocaleDateString()}</p>
+                    <div className="overflow-hidden">
+                      <p className="text-xs font-bold group-hover:text-primary transition-colors truncate">{task.title}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] text-muted-foreground">{new Date(task.due_date).toLocaleDateString()}</p>
+                        {task.sub_workspace_name && (
+                           <span className="text-[8px] text-violet-500 font-bold uppercase">{task.sub_workspace_name}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -173,9 +219,12 @@ export default function CalendarPage() {
           {selectedTask && (
             <div className="space-y-8 pt-6">
               <SheetHeader>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <Badge variant="outline" className="capitalize">{selectedTask.priority}</Badge>
                   <Badge variant="secondary" className="capitalize">{selectedTask.status?.replace('_', ' ')}</Badge>
+                  {selectedTask.sub_workspace_name && (
+                    <Badge variant="secondary" className="bg-violet-50 text-violet-600 border-none">{selectedTask.sub_workspace_name}</Badge>
+                  )}
                 </div>
                 <SheetTitle className="text-2xl font-bold">{selectedTask.title}</SheetTitle>
                 <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>

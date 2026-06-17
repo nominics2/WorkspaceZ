@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Search, StickyNote, MoreVertical, Link as LinkIcon, Loader2, Trash2, Globe, Lock } from "lucide-react";
+import { Plus, Search, StickyNote, MoreVertical, Link as LinkIcon, Loader2, Trash2, Globe, Lock, Layout } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +31,7 @@ import { cn } from "@/lib/utils";
 export default function NotesPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [notes, setNotes] = useState<any[]>([]);
+  const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -38,7 +40,8 @@ export default function NotesPage() {
   const [form, setForm] = useState({
     title: "",
     content: "",
-    visibility: "workspace" as "personal" | "workspace"
+    visibility: "workspace" as "personal" | "workspace",
+    sub_workspace_id: "none"
   });
 
   const supabase = createClient();
@@ -46,39 +49,46 @@ export default function NotesPage() {
 
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
-      // We use a slight delay to ensure it runs after Radix's cleanup cycle
       setTimeout(() => {
         document.body.style.pointerEvents = "";
       }, 100);
     }
   }, []);
 
-  // Global safety cleanup on mount/unmount
   useEffect(() => {
     forceUnlockUI();
     return () => forceUnlockUI();
   }, [forceUnlockUI]);
 
-  // Specific safety fix: restore pointer events whenever the modal is confirmed closed
   useEffect(() => {
     if (!isModalOpen && !saving) {
       forceUnlockUI();
     }
   }, [isModalOpen, saving, forceUnlockUI]);
 
-  const fetchNotes = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
+      const [notesRes, teamsRes] = await Promise.all([
+        supabase
+          .from('notes')
+          .select('*, sub_workspaces(name)')
+          .eq('workspace_id', activeWorkspace.id)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('sub_workspaces')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .order('name', { ascending: true })
+      ]);
 
-      if (error) throw error;
-      setNotes(data || []);
+      if (notesRes.error) throw notesRes.error;
+      if (teamsRes.error) throw teamsRes.error;
+
+      setNotes(notesRes.data || []);
+      setSubWorkspaces(teamsRes.data || []);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -88,12 +98,12 @@ export default function NotesPage() {
   }, [activeWorkspace, supabase, toast, forceUnlockUI]);
 
   useEffect(() => {
-    fetchNotes();
-  }, [fetchNotes]);
+    fetchData();
+  }, [fetchData]);
 
   const handleOpenCreate = (visibility: "personal" | "workspace") => {
     setEditingNote(null);
-    setForm({ title: "", content: "", visibility });
+    setForm({ title: "", content: "", visibility, sub_workspace_id: "none" });
     setIsModalOpen(true);
   };
 
@@ -102,7 +112,8 @@ export default function NotesPage() {
     setForm({
       title: note.title,
       content: note.content,
-      visibility: note.visibility
+      visibility: note.visibility,
+      sub_workspace_id: note.sub_workspace_id || "none"
     });
     setIsModalOpen(true);
   };
@@ -112,6 +123,8 @@ export default function NotesPage() {
     if (!activeWorkspace || !userProfile) return;
 
     setSaving(true);
+    const subWsId = form.sub_workspace_id === "none" ? null : form.sub_workspace_id;
+    
     try {
       if (editingNote) {
         const { error } = await supabase
@@ -120,6 +133,7 @@ export default function NotesPage() {
             title: form.title,
             content: form.content,
             visibility: form.visibility,
+            sub_workspace_id: subWsId,
             updated_at: new Date().toISOString()
           })
           .eq('id', editingNote.id);
@@ -133,7 +147,8 @@ export default function NotesPage() {
             created_by: userProfile.id,
             title: form.title,
             content: form.content,
-            visibility: form.visibility
+            visibility: form.visibility,
+            sub_workspace_id: subWsId
           });
         if (error) throw error;
         toast({ title: "Note Created" });
@@ -141,7 +156,7 @@ export default function NotesPage() {
       
       setIsModalOpen(false);
       setEditingNote(null);
-      await fetchNotes();
+      await fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -158,7 +173,7 @@ export default function NotesPage() {
         .eq('id', id);
       if (error) throw error;
       toast({ title: "Note moved to trash" });
-      fetchNotes();
+      fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -244,11 +259,18 @@ export default function NotesPage() {
                   <span className="text-[10px] font-bold text-muted-foreground">
                     {new Date(note.created_at).toLocaleDateString()}
                   </span>
-                  {note.task_id && (
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-primary">
-                      <LinkIcon className="w-3 h-3" /> Linked to Task
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {note.sub_workspaces?.name && (
+                      <Badge variant="secondary" className="text-[9px] bg-violet-50 text-violet-600 border-none h-4">
+                        {note.sub_workspaces.name}
+                      </Badge>
+                    )}
+                    {note.task_id && (
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-primary">
+                        <LinkIcon className="w-3 h-3" /> Linked
+                      </div>
+                    )}
+                  </div>
                 </div>
               </CardFooter>
             </Card>
@@ -281,6 +303,20 @@ export default function NotesPage() {
                 disabled={saving}
               />
             </div>
+            {form.visibility === 'workspace' && (
+              <div className="space-y-2">
+                <Label>Link to Team (Optional)</Label>
+                <Select value={form.sub_workspace_id} onValueChange={v => setForm({...form, sub_workspace_id: v})}>
+                  <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Team Link</SelectItem>
+                    {subWorkspaces.map(team => (
+                      <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Content</Label>
               <Textarea 

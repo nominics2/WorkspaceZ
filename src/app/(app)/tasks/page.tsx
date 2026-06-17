@@ -16,7 +16,8 @@ import {
   Trash2,
   FileIcon,
   X,
-  Eye
+  Eye,
+  Layout
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +57,9 @@ import { Slider } from "@/components/ui/slider";
 export default function TasksPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [tasks, setTasks] = useState<any[]>([]);
+  const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [teamFilter, setTeamFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -86,18 +89,28 @@ export default function TasksPage() {
     return () => forceUnlockUI();
   }, [forceUnlockUI]);
 
-  const fetchTasks = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('my_tasks_view')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setTasks(data || []);
+      const [tasksRes, teamsRes] = await Promise.all([
+        supabase
+          .from('my_tasks_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('sub_workspaces')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .order('name', { ascending: true })
+      ]);
+
+      if (tasksRes.error) throw tasksRes.error;
+      if (teamsRes.error) throw teamsRes.error;
+
+      setTasks(tasksRes.data || []);
+      setSubWorkspaces(teamsRes.data || []);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -106,8 +119,8 @@ export default function TasksPage() {
   }, [activeWorkspace, supabase, toast]);
 
   useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+    fetchData();
+  }, [fetchData]);
 
   const fetchTaskDetails = async (taskId: string) => {
     try {
@@ -243,6 +256,7 @@ export default function TasksPage() {
     const description = formData.get("description") as string;
     const priority = (formData.get("priority") as string || "medium").toLowerCase();
     const dueDate = formData.get("due_date") as string;
+    const subWsId = formData.get("sub_workspace_id") as string;
 
     setSaving(true);
     try {
@@ -251,6 +265,7 @@ export default function TasksPage() {
 
       const { error } = await supabase.from('tasks').insert({
         workspace_id: activeWorkspace?.id,
+        sub_workspace_id: subWsId && subWsId !== "none" ? subWsId : null,
         title,
         description,
         priority: priority,
@@ -267,7 +282,7 @@ export default function TasksPage() {
       toast({ title: "Success", description: "Task created successfully" });
       setIsCreateOpen(false);
       forceUnlockUI();
-      fetchTasks();
+      fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -295,7 +310,7 @@ export default function TasksPage() {
       toast({ title: "Success", description: "Subtask added." });
       setNewSubtaskTitle("");
       fetchTaskDetails(selectedTask.id);
-      fetchTasks();
+      fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -310,7 +325,7 @@ export default function TasksPage() {
       }).eq('id', subtask.id);
       if (error) throw error;
       fetchTaskDetails(selectedTask.id);
-      fetchTasks();
+      fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -321,7 +336,7 @@ export default function TasksPage() {
       const { error } = await supabase.from('subtasks').delete().eq('id', id);
       if (error) throw error;
       fetchTaskDetails(selectedTask.id);
-      fetchTasks();
+      fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -359,7 +374,7 @@ export default function TasksPage() {
       
       if (error) throw error;
       setSelectedTask({...selectedTask, manual_progress: val[0], progress_mode: 'manual'});
-      fetchTasks();
+      fetchData();
     } catch (err: any) {
       console.error(err);
     }
@@ -373,10 +388,14 @@ export default function TasksPage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const filteredTasks = tasks.filter(t => 
-    t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.description?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredTasks = tasks.filter(t => {
+    const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         t.description?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (teamFilter === "all") return matchesSearch;
+    if (teamFilter === "none") return matchesSearch && !t.sub_workspace_id;
+    return matchesSearch && t.sub_workspace_id === teamFilter;
+  });
 
   return (
     <div className="space-y-6">
@@ -393,8 +412,8 @@ export default function TasksPage() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
-        <div className="relative flex-1">
+      <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
+        <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
             className="pl-10 border-none shadow-none focus-visible:ring-0" 
@@ -403,16 +422,34 @@ export default function TasksPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <Button variant="ghost" className="flex items-center gap-2">
-          <Filter className="w-4 h-4" /> Filter
-        </Button>
+        <div className="flex items-center gap-2 w-full md:w-auto border-t md:border-t-0 pt-2 md:pt-0">
+          <Layout className="w-4 h-4 text-muted-foreground" />
+          <Select value={teamFilter} onValueChange={setTeamFilter}>
+            <SelectTrigger className="w-[180px] border-none shadow-none focus:ring-0">
+              <SelectValue placeholder="All Teams" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Teams</SelectItem>
+              <SelectItem value="none">No Team</SelectItem>
+              {subWorkspaces.map(team => (
+                <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Separator orientation="vertical" className="h-6 mx-2 hidden md:block" />
+          <Button variant="ghost" className="flex items-center gap-2">
+            <Filter className="w-4 h-4" /> Filter
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         {loading && !saving ? (
           <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : filteredTasks.length === 0 ? (
-          <p className="text-center py-12 text-muted-foreground">No tasks found in this workspace.</p>
+          <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed">
+            <p className="text-muted-foreground">No tasks found in this view.</p>
+          </div>
         ) : (
           filteredTasks.map((task) => (
             <Card 
@@ -429,11 +466,13 @@ export default function TasksPage() {
                   )} />
                   <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center gap-6">
                     <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize">{task.title}</h3>
-                        <Badge variant="outline" className="text-[10px] rounded-sm capitalize">{task.priority}</Badge>
+                        <Badge variant="outline" className="text-[10px] rounded-sm capitalize border-slate-200">{task.priority}</Badge>
                         {task.sub_workspace_name && (
-                           <Badge variant="secondary" className="text-[10px] bg-slate-100">{task.sub_workspace_name}</Badge>
+                           <Badge variant="secondary" className="text-[10px] bg-violet-50 text-violet-600 border-none">
+                             <Layout className="w-2.5 h-2.5 mr-1" /> {task.sub_workspace_name}
+                           </Badge>
                         )}
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-1">{task.description || 'No description'}</p>
@@ -488,6 +527,18 @@ export default function TasksPage() {
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" name="description" placeholder="Add more details..." disabled={saving} />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="sub_workspace_id">Assign to Team</Label>
+              <Select name="sub_workspace_id" defaultValue="none">
+                <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Workspace General (No Team)</SelectItem>
+                  {subWorkspaces.map(team => (
+                    <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="priority">Priority</Label>
@@ -525,9 +576,14 @@ export default function TasksPage() {
           {selectedTask && (
             <div className="space-y-8 pt-6">
               <SheetHeader>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <Badge variant="outline" className="capitalize">{selectedTask.priority}</Badge>
                   <Badge variant="secondary" className="capitalize">{selectedTask.status?.replace('_', ' ')}</Badge>
+                  {selectedTask.sub_workspace_name && (
+                    <Badge variant="secondary" className="bg-violet-50 text-violet-600 border-none">
+                      {selectedTask.sub_workspace_name}
+                    </Badge>
+                  )}
                 </div>
                 <SheetTitle className="text-2xl font-bold">{selectedTask.title}</SheetTitle>
                 <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>

@@ -23,7 +23,8 @@ import {
   UserCheck,
   Filter,
   XCircle,
-  Clock
+  Clock,
+  Layout
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -71,17 +72,21 @@ export default function WorkspaceAdminPage() {
   const [members, setMembers] = useState<any[]>([]);
   const [allocations, setAllocations] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
   const [storage, setStorage] = useState<any>(null);
   const [permissionDefs, setPermissionDefs] = useState<any[]>([]);
   const [wsPermissions, setWsPermissions] = useState<any[]>([]);
   const [workspaceInfo, setWorkspaceInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
+  const [isCreatingTeam, setIsCreatingTeam] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [updatingPerm, setUpdatingPerm] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "pending">("active");
   const [deactivatingMember, setDeactivatingMember] = useState<any>(null);
+  const [deletingTeam, setDeletingTeam] = useState<any>(null);
   const [isStatusUpdating, setIsStatusUpdating] = useState<string | null>(null);
   
   const supabase = createClient();
@@ -136,21 +141,29 @@ export default function WorkspaceAdminPage() {
         .order('created_at', { ascending: false });
       setAllocations(allocList || []);
 
-      // 5. Fetch Permission Definitions
+      // 5. Fetch sub-workspaces
+      const { data: swList } = await supabase
+        .from('sub_workspaces')
+        .select('*')
+        .eq('workspace_id', activeWorkspace.id)
+        .order('name', { ascending: true });
+      setSubWorkspaces(swList || []);
+
+      // 6. Fetch Permission Definitions
       const { data: defs } = await supabase
         .from('role_permission_definitions')
         .select('*')
         .order('category', { ascending: true });
       setPermissionDefs(defs || []);
 
-      // 6. Fetch Workspace Role Permissions
+      // 7. Fetch Workspace Role Permissions
       const { data: perms } = await supabase
         .from('workspace_role_permissions')
         .select('*')
         .eq('workspace_id', activeWorkspace.id);
       setWsPermissions(perms || []);
 
-      // 7. Fetch Audit Logs
+      // 8. Fetch Audit Logs
       const { data: logs } = await supabase
         .from('admin_audit_logs')
         .select('*, actor:profiles!actor_id(full_name), target:profiles!target_user_id(full_name)')
@@ -355,6 +368,83 @@ export default function WorkspaceAdminPage() {
     }
   };
 
+  const handleCreateTeam = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!activeWorkspace || !userProfile) return;
+    setSubmitting(true);
+    const formData = new FormData(e.currentTarget);
+    const name = formData.get("name") as string;
+    const description = formData.get("description") as string;
+
+    try {
+      if (editingTeam) {
+        const { error } = await supabase
+          .from('sub_workspaces')
+          .update({ name, description })
+          .eq('id', editingTeam.id);
+        
+        if (error) throw error;
+
+        await supabase.rpc('create_admin_audit_log', {
+          p_workspace_id: activeWorkspace.id,
+          p_action: 'sub_workspace_updated',
+          p_details: { id: editingTeam.id, name }
+        });
+
+        toast({ title: "Team updated" });
+      } else {
+        const { data, error } = await supabase.from('sub_workspaces').insert({
+          workspace_id: activeWorkspace.id,
+          name,
+          description,
+          created_by: userProfile.id
+        }).select().single();
+
+        if (error) throw error;
+
+        await supabase.rpc('create_admin_audit_log', {
+          p_workspace_id: activeWorkspace.id,
+          p_action: 'sub_workspace_created',
+          p_details: { id: data.id, name }
+        });
+
+        toast({ title: "Team created" });
+      }
+      setIsCreatingTeam(false);
+      setEditingTeam(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSubmitting(false);
+      forceUnlockUI();
+    }
+  };
+
+  const handleDeleteTeam = async (id: string) => {
+    try {
+      // Clean up task references first
+      await supabase.from('tasks').update({ sub_workspace_id: null }).eq('sub_workspace_id', id);
+      
+      const { error } = await supabase.from('sub_workspaces').delete().eq('id', id);
+      if (error) throw error;
+
+      await supabase.rpc('create_admin_audit_log', {
+        p_workspace_id: activeWorkspace?.id,
+        p_action: 'sub_workspace_deleted',
+        p_details: { id }
+      });
+
+      toast({ title: "Team removed" });
+      setDeletingTeam(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      forceUnlockUI();
+    }
+  };
+
   const handleTogglePermission = async (role: string, permissionKey: string, currentEnabled: boolean) => {
     if (userRole !== 'superadmin') return;
     if (!activeWorkspace || !userProfile) return;
@@ -386,6 +476,7 @@ export default function WorkspaceAdminPage() {
   const isAdminOrSuper = isSuper || userRole === 'admin';
   const canManageMembers = hasPermission('manage_members');
   const canManageAllocations = hasPermission('manage_work_allocations');
+  const canManageSettings = hasPermission('manage_workspace_settings');
   const canViewAuditLog = isSuper || hasPermission('view_admin_panel');
 
   const filteredMembers = members.filter(m => {
@@ -426,15 +517,27 @@ export default function WorkspaceAdminPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <Card className="border-none shadow-sm">
           <CardContent className="p-6 flex items-center gap-4">
             <div className="p-3 bg-blue-50 rounded-xl">
               <Users className="w-6 h-6 text-blue-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Total Members</p>
+              <p className="text-sm text-muted-foreground font-medium">Members</p>
               <p className="text-2xl font-bold">{members.filter(m => m.status === 'active').length}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="p-3 bg-violet-50 rounded-xl">
+              <Layout className="w-6 h-6 text-violet-500" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground font-medium">Teams</p>
+              <p className="text-2xl font-bold">{subWorkspaces.length}</p>
             </div>
           </CardContent>
         </Card>
@@ -458,7 +561,7 @@ export default function WorkspaceAdminPage() {
                  <div className="p-2 bg-amber-50 rounded-lg">
                    <HardDrive className="w-4 h-4 text-amber-500" />
                  </div>
-                 <p className="text-sm text-muted-foreground font-medium">Storage Used</p>
+                 <p className="text-sm text-muted-foreground font-medium">Storage</p>
                </div>
                <p className="text-xs font-bold text-muted-foreground">
                  {((storage?.total_bytes_used || 0) / (1024 * 1024)).toFixed(1)} MB / 1 GB
@@ -470,8 +573,9 @@ export default function WorkspaceAdminPage() {
       </div>
 
       <Tabs defaultValue="members" className="space-y-6">
-        <TabsList className="bg-white border p-1 rounded-xl">
+        <TabsList className="bg-white border p-1 rounded-xl overflow-x-auto h-auto whitespace-nowrap">
           <TabsTrigger value="members" className="rounded-lg px-6">Members</TabsTrigger>
+          <TabsTrigger value="teams" className="rounded-lg px-6">Teams</TabsTrigger>
           <TabsTrigger value="allocations" className="rounded-lg px-6">Allocations</TabsTrigger>
           <TabsTrigger value="permissions" className="rounded-lg px-6">Permissions</TabsTrigger>
           {canViewAuditLog && <TabsTrigger value="audit" className="rounded-lg px-6">Audit Log</TabsTrigger>}
@@ -667,6 +771,56 @@ export default function WorkspaceAdminPage() {
               )}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="teams" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Workspace Teams</h2>
+            {(canManageSettings || isSuper) && (
+              <Button onClick={() => { setEditingTeam(null); setIsCreatingTeam(true); }} className="flex items-center gap-2">
+                <Plus className="w-4 h-4" /> Create Team
+              </Button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {subWorkspaces.length === 0 ? (
+              <div className="md:col-span-3 py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
+                <Layout className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <p className="text-muted-foreground">No teams defined yet.</p>
+              </div>
+            ) : (
+              subWorkspaces.map((team) => (
+                <Card key={team.id} className="border-none shadow-sm group">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <Badge variant="secondary" className="bg-violet-50 text-violet-600 hover:bg-violet-100 border-none">Team</Badge>
+                      {(canManageSettings || isSuper) && (
+                        <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                              <MoreVertical className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsCreatingTeam(true); }}>Edit Team</DropdownMenuItem>
+                            <DropdownMenuItem className="text-rose-500" onClick={() => setDeletingTeam(team)}>Delete Team</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                    <CardTitle className="text-lg mt-2">{team.name}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground line-clamp-2">{team.description || 'No description provided.'}</p>
+                    <p className="text-[10px] text-muted-foreground mt-4 pt-4 border-t flex items-center gap-1.5">
+                      <Clock className="w-3 h-3" /> Created {new Date(team.created_at).toLocaleDateString()}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="allocations" className="space-y-6">
@@ -949,6 +1103,32 @@ export default function WorkspaceAdminPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isCreatingTeam} onOpenChange={(open) => { setIsCreatingTeam(open); if (!open) { setEditingTeam(null); forceUnlockUI(); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingTeam ? 'Edit Team' : 'Create New Team'}</DialogTitle>
+            <DialogDescription>Organize your workspace into functional sub-groups.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTeam} className="space-y-4 py-4">
+             <div className="space-y-2">
+               <Label>Team Name</Label>
+               <Input name="name" defaultValue={editingTeam?.name} placeholder="e.g. Engineering, Marketing..." required disabled={submitting} />
+             </div>
+             <div className="space-y-2">
+               <Label>Description</Label>
+               <Textarea name="description" defaultValue={editingTeam?.description} placeholder="What does this team focus on?" rows={4} disabled={submitting} />
+             </div>
+             <DialogFooter className="pt-4">
+                <Button type="button" variant="ghost" onClick={() => { setIsCreatingTeam(false); setEditingTeam(null); forceUnlockUI(); }} disabled={submitting}>Cancel</Button>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                  {editingTeam ? 'Update Team' : 'Create Team'}
+                </Button>
+             </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => { if (!open) { setDeactivatingMember(null); forceUnlockUI(); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -965,6 +1145,27 @@ export default function WorkspaceAdminPage() {
               className="bg-rose-600 hover:bg-rose-700"
             >
               Confirm Deactivation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deletingTeam} onOpenChange={(open) => { if (!open) { setDeletingTeam(null); forceUnlockUI(); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Team?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete <span className="font-bold text-foreground">{deletingTeam?.name}</span>? 
+              Deleting this team will remove the grouping from related tasks. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletingTeam(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => deletingTeam && handleDeleteTeam(deletingTeam.id)}
+              className="bg-rose-600 hover:bg-rose-700"
+            >
+              Confirm Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
