@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -62,18 +61,15 @@ export default function LoginPage() {
           .from('workspace_members')
           .select('workspace_id')
           .eq('user_id', data.user.id)
+          .eq('status', 'active')
           .limit(1);
 
         if (memberError) {
-          // If we fail to check workspace membership but login succeeded, 
-          // we still proceed to a page that can handle it (WorkspaceProvider)
           console.error('Error checking workspace membership:', memberError);
           router.push("/dashboard");
         } else if (!memberData || memberData.length === 0) {
-          // No workspaces found, go to setup
           router.push("/workspace-setup");
         } else {
-          // Found workspace, go to dashboard
           router.push("/dashboard");
         }
         
@@ -92,7 +88,6 @@ export default function LoginPage() {
 
   const toggleMode = () => {
     setIsRegister(!isRegister);
-    // Clear fields when toggling to avoid confusion
     setEmail("");
     setPassword("");
   };

@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
@@ -9,12 +8,6 @@ interface Workspace {
   id: string;
   name: string;
   join_code: string;
-}
-
-interface WorkspaceMember {
-  workspace_id: string;
-  role: string;
-  workspaces: Workspace;
 }
 
 interface WorkspaceContextType {
@@ -42,6 +35,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        if (pathname !== '/' && !pathname.startsWith('/onboarding') && pathname !== '/workspace-setup') {
+          router.push('/');
+        }
         setLoading(false);
         return;
       }
@@ -66,7 +62,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             join_code
           )
         `)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .eq('status', 'active');
 
       if (error) throw error;
 
@@ -74,12 +71,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setWorkspaces(wsList);
 
       if (wsList.length > 0) {
-        // Auto-select first workspace if none selected
         if (!activeWorkspace) {
           setActiveWorkspace(wsList[0]);
         }
-      } else if (pathname !== '/workspace-setup' && !pathname.startsWith('/onboarding')) {
-        // No workspaces found, redirect to setup
+      } else if (pathname !== '/workspace-setup' && !pathname.startsWith('/onboarding') && pathname !== '/') {
         router.push('/workspace-setup');
       }
     } catch (err) {
@@ -91,7 +86,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchData();
-  }, []);
+    
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN') {
+        fetchData();
+      } else if (event === 'SIGNED_OUT') {
+        setActiveWorkspace(null);
+        setWorkspaces([]);
+        setUserProfile(null);
+        router.push('/');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [pathname]);
 
   const switchWorkspace = (id: string) => {
     const ws = workspaces.find(w => w.id === id);

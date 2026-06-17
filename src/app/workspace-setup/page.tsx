@@ -24,11 +24,7 @@ export default function WorkspaceSetupPage() {
     async function checkUser() {
       const { data: { user }, error } = await supabase.auth.getUser();
       if (error || !user) {
-        toast({
-          variant: "destructive",
-          title: "Session Expired",
-          description: "Please log in again to continue.",
-        });
+        // No session found, redirect to login
         router.push("/");
         return;
       }
@@ -36,7 +32,7 @@ export default function WorkspaceSetupPage() {
       setLoading(false);
     }
     checkUser();
-  }, [router, supabase.auth, toast]);
+  }, [router, supabase.auth]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
