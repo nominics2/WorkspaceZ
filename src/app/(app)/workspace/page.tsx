@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, Fragment } from "react";
 import { 
   Users, 
   Layers, 
@@ -17,7 +17,9 @@ import {
   Briefcase,
   ShieldAlert,
   Lock,
-  CheckCircle2
+  CheckCircle2,
+  History,
+  Info
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -54,6 +56,7 @@ export default function WorkspaceAdminPage() {
   const { activeWorkspace, userProfile, userRole, hasPermission } = useWorkspace();
   const [members, setMembers] = useState<any[]>([]);
   const [allocations, setAllocations] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [storage, setStorage] = useState<any>(null);
   const [permissionDefs, setPermissionDefs] = useState<any[]>([]);
   const [wsPermissions, setWsPermissions] = useState<any[]>([]);
@@ -121,13 +124,24 @@ export default function WorkspaceAdminPage() {
         .eq('workspace_id', activeWorkspace.id);
       setWsPermissions(perms || []);
 
+      // 6. Fetch Audit Logs
+      if (userRole === 'superadmin' || hasPermission('view_admin_panel')) {
+        const { data: logs } = await supabase
+          .from('admin_audit_logs')
+          .select('*, actor:profiles!actor_id(full_name), target:profiles!target_user_id(full_name)')
+          .eq('workspace_id', activeWorkspace.id)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        setAuditLogs(logs || []);
+      }
+
     } catch (err: any) {
       console.error("Fetch error:", err);
     } finally {
       setLoading(false);
       forceUnlockUI();
     }
-  }, [activeWorkspace, userProfile, supabase, forceUnlockUI]);
+  }, [activeWorkspace, userProfile, supabase, forceUnlockUI, userRole, hasPermission]);
 
   useEffect(() => {
     fetchData();
@@ -145,6 +159,9 @@ export default function WorkspaceAdminPage() {
       toast({ variant: "destructive", title: "Unauthorized", description: "Only superadmins can change member roles." });
       return;
     }
+
+    const targetMember = members.find(m => m.user_id === memberUserId);
+    const oldRole = targetMember?.role;
 
     // Protection for last superadmin
     if (newRole !== 'superadmin') {
@@ -169,6 +186,14 @@ export default function WorkspaceAdminPage() {
       
       if (error) throw error;
       
+      // Audit Log
+      await supabase.rpc('create_admin_audit_log', {
+        p_workspace_id: activeWorkspace?.id,
+        p_action: 'role_changed',
+        p_target_user_id: memberUserId,
+        p_details: { from: oldRole, to: newRole }
+      });
+
       toast({ title: "Role Updated", description: "The member's role has been successfully changed." });
       fetchData();
     } catch (err: any) {
@@ -190,15 +215,24 @@ export default function WorkspaceAdminPage() {
     const description = formData.get("description") as string;
 
     try {
-      const { error } = await supabase.from('work_allocations').insert({
+      const { data: allocation, error } = await supabase.from('work_allocations').insert({
         workspace_id: activeWorkspace.id,
         user_id: targetUserId,
         assigned_by: userProfile.id,
         title,
         description
-      });
+      }).select().single();
 
       if (error) throw error;
+
+      // Audit Log
+      await supabase.rpc('create_admin_audit_log', {
+        p_workspace_id: activeWorkspace.id,
+        p_action: 'work_allocation_created',
+        p_target_user_id: targetUserId,
+        p_details: { allocation_id: allocation.id, title }
+      });
+
       toast({ title: "Work allocated successfully" });
       setIsAllocating(false);
       fetchData();
@@ -211,9 +245,19 @@ export default function WorkspaceAdminPage() {
   };
 
   const handleDeleteAllocation = async (id: string) => {
+    const alloc = allocations.find(a => a.id === id);
     try {
       const { error } = await supabase.from('work_allocations').delete().eq('id', id);
       if (error) throw error;
+
+      // Audit Log
+      await supabase.rpc('create_admin_audit_log', {
+        p_workspace_id: activeWorkspace?.id,
+        p_action: 'work_allocation_deleted',
+        p_target_user_id: alloc?.user_id,
+        p_details: { allocation_id: id, title: alloc?.title }
+      });
+
       toast({ title: "Allocation removed" });
       fetchData();
     } catch (err: any) {
@@ -241,6 +285,14 @@ export default function WorkspaceAdminPage() {
 
       if (error) throw error;
       
+      // Audit Log
+      await supabase.rpc('create_admin_audit_log', {
+        p_workspace_id: activeWorkspace.id,
+        p_action: 'permission_updated',
+        p_target_user_id: null,
+        p_details: { role, permission_key: permissionKey, enabled: !currentEnabled }
+      });
+
       toast({ title: "Permission Updated" });
       fetchData();
     } catch (err: any) {
@@ -257,7 +309,7 @@ export default function WorkspaceAdminPage() {
   // Permission Checks
   const canManageMembers = hasPermission('manage_members');
   const canManageAllocations = hasPermission('manage_work_allocations');
-  const canManageStorage = hasPermission('manage_storage');
+  const canViewAuditLog = isSuper || hasPermission('view_admin_panel');
 
   if (loading && !activeWorkspace) {
     return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -340,6 +392,7 @@ export default function WorkspaceAdminPage() {
           <TabsTrigger value="members" className="rounded-lg px-6">Members</TabsTrigger>
           <TabsTrigger value="allocations" className="rounded-lg px-6">Allocations</TabsTrigger>
           <TabsTrigger value="permissions" className="rounded-lg px-6">Permissions</TabsTrigger>
+          {canViewAuditLog && <TabsTrigger value="audit" className="rounded-lg px-6">Audit Log</TabsTrigger>}
           {isAdminOrSuper && <TabsTrigger value="settings" className="rounded-lg px-6">Access Control</TabsTrigger>}
         </TabsList>
 
@@ -508,7 +561,7 @@ export default function WorkspaceAdminPage() {
                   </thead>
                   <tbody>
                     {Object.keys(groupedPermissions).map((cat) => (
-                      <React.Fragment key={cat}>
+                      <Fragment key={cat}>
                         <tr className="bg-slate-100/50">
                           <td colSpan={5} className="p-2 px-4 text-[10px] font-bold uppercase tracking-widest text-primary">{cat}</td>
                         </tr>
@@ -547,13 +600,69 @@ export default function WorkspaceAdminPage() {
                             })}
                           </tr>
                         ))}
-                      </React.Fragment>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="audit" className="space-y-4">
+          {!canViewAuditLog ? (
+             <div className="py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
+                <History className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <p className="text-muted-foreground">You do not have permission to view audit logs.</p>
+             </div>
+          ) : (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <History className="w-5 h-5 text-primary" /> Admin Activity
+              </h2>
+              {auditLogs.length === 0 ? (
+                <Card className="p-12 text-center text-muted-foreground bg-slate-50 border-dashed border-2">
+                   No admin activity yet.
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                   {auditLogs.map((log) => (
+                     <Card key={log.id} className="border-none shadow-sm overflow-hidden">
+                       <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                             <div className="p-2 bg-primary/5 rounded-lg mt-1">
+                                <Shield className="w-4 h-4 text-primary" />
+                             </div>
+                             <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                   <p className="text-sm font-bold text-foreground capitalize">{log.action.replace(/_/g, ' ')}</p>
+                                   <span className="text-[10px] text-muted-foreground">{new Date(log.created_at).toLocaleString()}</span>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                   <span className="font-bold text-foreground">{(log.actor as any)?.full_name || 'System'}</span>
+                                   {log.target_user_id ? (
+                                     <> performed action for <span className="font-bold text-foreground">{(log.target as any)?.full_name}</span></>
+                                   ) : (
+                                     <> updated workspace settings</>
+                                   )}
+                                </p>
+                                {log.details && (
+                                   <div className="mt-3 p-2 bg-slate-50 rounded border text-[10px] font-mono flex items-center gap-2">
+                                      <Info className="w-3 h-3 text-primary" />
+                                      <span>
+                                         {JSON.stringify(log.details).substring(0, 100)}
+                                      </span>
+                                   </div>
+                                )}
+                             </div>
+                          </div>
+                       </CardContent>
+                     </Card>
+                   ))}
+                </div>
+              )}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-6">
