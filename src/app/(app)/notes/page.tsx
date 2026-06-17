@@ -70,15 +70,17 @@ function NotesPageContent() {
   }, [forceUnlockUI]);
 
   const fetchData = useCallback(async () => {
-    if (!activeWorkspace) return;
+    if (!activeWorkspace || !userProfile) return;
     setLoading(true);
     try {
+      // SECURITY: Filter notes to only show workspace notes or notes created by the current user
       const [notesRes, teamsRes] = await Promise.all([
         supabase
           .from('notes')
           .select('*, sub_workspaces(name)')
           .eq('workspace_id', activeWorkspace.id)
           .eq('is_deleted', false)
+          .or(`visibility.eq.workspace,created_by.eq.${userProfile.id}`)
           .order('created_at', { ascending: false }),
         supabase
           .from('sub_workspaces')
@@ -104,7 +106,7 @@ function NotesPageContent() {
       setLoading(false);
       forceUnlockUI();
     }
-  }, [activeWorkspace, supabase, toast, forceUnlockUI, searchParams]);
+  }, [activeWorkspace, userProfile, supabase, toast, forceUnlockUI, searchParams]);
 
   useEffect(() => {
     fetchData();
@@ -134,6 +136,11 @@ function NotesPageContent() {
   };
 
   const handleMoveToTrash = async (note: any) => {
+    if (note.created_by !== userProfile?.id && editingNote?.visibility === 'personal') {
+      toast({ variant: "destructive", title: "Permission Denied", description: "You can only delete your own notes." });
+      return;
+    }
+
     setSaving(true);
     try {
       const { error } = await supabase.rpc('move_note_to_trash', {
@@ -286,9 +293,11 @@ function NotesPageContent() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleOpenEdit(note)}>Edit Note</DropdownMenuItem>
-                      <DropdownMenuItem className="text-rose-500" onClick={() => handleMoveToTrash(note)}>
-                        <Trash2 className="w-4 h-4 mr-2" /> Move to Trash
-                      </DropdownMenuItem>
+                      {(note.created_by === userProfile?.id || note.visibility === 'workspace') && (
+                        <DropdownMenuItem className="text-rose-500" onClick={() => handleMoveToTrash(note)}>
+                          <Trash2 className="w-4 h-4 mr-2" /> Move to Trash
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

@@ -11,7 +11,8 @@ import {
   Bell, 
   User, 
   AlertCircle, 
-  Clock 
+  Clock,
+  ShieldAlert
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,7 @@ export default function TrashPage() {
   const canManageTrash = hasPermission('manage_trash') || userRole === 'superadmin' || userRole === 'admin';
 
   const fetchTrash = useCallback(async () => {
-    if (!activeWorkspace) return;
+    if (!activeWorkspace || !canManageTrash) return;
     setLoading(true);
     try {
       const { data, error } = await supabase.rpc('workspace_trash_items', {
@@ -59,13 +60,14 @@ export default function TrashPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeWorkspace, supabase, toast]);
+  }, [activeWorkspace, canManageTrash, supabase, toast]);
 
   useEffect(() => {
     fetchTrash();
   }, [fetchTrash]);
 
   const handleRestore = async (item: any) => {
+    if (!canManageTrash) return;
     setActionLoading(item.item_id);
     try {
       let rpcName = "";
@@ -95,6 +97,7 @@ export default function TrashPage() {
   };
 
   const handlePermanentDelete = async (item: any) => {
+    if (!canManageTrash) return;
     setActionLoading(item.item_id);
     try {
       let rpcName = "";
@@ -149,7 +152,7 @@ export default function TrashPage() {
   if (!canManageTrash && !loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
-        <AlertCircle className="w-12 h-12 text-rose-500" />
+        <ShieldAlert className="w-12 h-12 text-rose-500" />
         <h1 className="text-xl font-bold">Access Denied</h1>
         <p className="text-muted-foreground text-sm text-center max-w-xs">You do not have permission to manage the workspace trash. Contact your administrator.</p>
       </div>

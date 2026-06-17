@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback, Fragment } from "react";
@@ -97,6 +96,12 @@ export default function WorkspaceAdminPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin';
+  const canManageMembers = hasPermission('manage_members') || userRole === 'superadmin';
+  const canManageAllocations = hasPermission('manage_work_allocations') || userRole === 'superadmin';
+  const canManageSettings = hasPermission('manage_workspace_settings') || userRole === 'superadmin';
+  const canViewAuditLog = userRole === 'superadmin' || hasPermission('view_admin_panel');
+
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
       setTimeout(() => {
@@ -112,6 +117,13 @@ export default function WorkspaceAdminPage() {
 
   const fetchData = useCallback(async () => {
     if (!activeWorkspace || !userProfile) return;
+    
+    // SECURITY: Block non-admins from data fetching on this page
+    if (!hasPermission('view_admin_panel') && userRole !== 'superadmin') {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -175,7 +187,7 @@ export default function WorkspaceAdminPage() {
       setLoading(false);
       forceUnlockUI();
     }
-  }, [activeWorkspace, userProfile, supabase, forceUnlockUI]);
+  }, [activeWorkspace, userProfile, userRole, hasPermission, supabase, forceUnlockUI]);
 
   useEffect(() => {
     fetchData();
@@ -189,7 +201,7 @@ export default function WorkspaceAdminPage() {
   };
 
   const handleToggleJoinApproval = async (required: boolean) => {
-    if (!hasPermission('manage_members') && userRole !== 'superadmin') return;
+    if (!canManageMembers) return;
     try {
       const { error } = await supabase.rpc('set_workspace_join_approval', {
         p_workspace_id: activeWorkspace?.id,
@@ -230,6 +242,7 @@ export default function WorkspaceAdminPage() {
   };
 
   const handleDeactivate = async (memberUserId: string) => {
+    if (!canManageMembers) return;
     setIsStatusUpdating(memberUserId);
     try {
       const { error } = await supabase.rpc("deactivate_workspace_member", {
@@ -251,6 +264,7 @@ export default function WorkspaceAdminPage() {
   };
 
   const handleReactivate = async (memberUserId: string) => {
+    if (!canManageMembers) return;
     setIsStatusUpdating(memberUserId);
     try {
       const { error } = await supabase.rpc("reactivate_workspace_member", {
@@ -271,6 +285,7 @@ export default function WorkspaceAdminPage() {
   };
 
   const handleApproveJoin = async (memberUserId: string) => {
+    if (!canManageMembers) return;
     setIsStatusUpdating(memberUserId);
     try {
       const { error } = await supabase.rpc("approve_workspace_join_request", {
@@ -289,6 +304,7 @@ export default function WorkspaceAdminPage() {
   };
 
   const handleRejectJoin = async (memberUserId: string) => {
+    if (!canManageMembers) return;
     setIsStatusUpdating(memberUserId);
     try {
       const { error } = await supabase.rpc("reject_workspace_join_request", {
@@ -308,7 +324,7 @@ export default function WorkspaceAdminPage() {
 
   const handleCreateAllocation = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!activeWorkspace || !userProfile) return;
+    if (!activeWorkspace || !userProfile || !canManageAllocations) return;
     
     setSubmitting(true);
     const formData = new FormData(e.currentTarget);
@@ -345,29 +361,9 @@ export default function WorkspaceAdminPage() {
     }
   };
 
-  const handleDeleteAllocation = async (id: string) => {
-    const alloc = allocations.find(a => a.id === id);
-    try {
-      const { error } = await supabase.from('work_allocations').delete().eq('id', id);
-      if (error) throw error;
-
-      await supabase.rpc('create_admin_audit_log', {
-        p_workspace_id: activeWorkspace?.id,
-        p_action: 'work_allocation_deleted',
-        p_target_user_id: alloc?.user_id,
-        p_details: { allocation_id: id, title: alloc?.title }
-      });
-
-      toast({ title: "Allocation removed" });
-      fetchData();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
-    }
-  };
-
   const handleCreateTeam = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!activeWorkspace || !userProfile) return;
+    if (!activeWorkspace || !userProfile || !canManageSettings) return;
     setSubmitting(true);
     const formData = new FormData(e.currentTarget);
     const name = formData.get("name") as string;
@@ -418,26 +414,6 @@ export default function WorkspaceAdminPage() {
     }
   };
 
-  const handleDeleteTeam = async (id: string) => {
-    try {
-      await supabase.from('tasks').update({ sub_workspace_id: null }).eq('sub_workspace_id', id);
-      const { error } = await supabase.from('sub_workspaces').delete().eq('id', id);
-      if (error) throw error;
-      await supabase.rpc('create_admin_audit_log', {
-        p_workspace_id: activeWorkspace?.id,
-        p_action: 'sub_workspace_deleted',
-        p_details: { id }
-      });
-      toast({ title: "Team removed" });
-      setDeletingTeam(null);
-      fetchData();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
-    } finally {
-      forceUnlockUI();
-    }
-  };
-
   const handleTogglePermission = async (role: string, permissionKey: string, currentEnabled: boolean) => {
     if (userRole !== 'superadmin') return;
     if (!activeWorkspace || !userProfile) return;
@@ -462,7 +438,7 @@ export default function WorkspaceAdminPage() {
   };
 
   const handleRunNotificationChecks = async () => {
-    if (!activeWorkspace) return;
+    if (!activeWorkspace || !canManageSettings) return;
     setIsRunningChecks(true);
     try {
       const response = await fetch("/api/admin/run-notification-checks", {
@@ -496,11 +472,20 @@ export default function WorkspaceAdminPage() {
     }
   };
 
-  const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin';
-  const canManageMembers = hasPermission('manage_members');
-  const canManageAllocations = hasPermission('manage_work_allocations');
-  const canManageSettings = hasPermission('manage_workspace_settings');
-  const canViewAuditLog = userRole === 'superadmin' || hasPermission('view_admin_panel');
+  if (loading && !activeWorkspace) {
+    return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  }
+
+  // SECURITY: Hard block non-admins from viewing this page content
+  if (!canViewAuditLog && !loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+        <ShieldAlert className="w-12 h-12 text-rose-500" />
+        <h1 className="text-xl font-bold">Access Denied</h1>
+        <p className="text-muted-foreground text-sm text-center max-w-xs">You do not have permission to access the workspace admin panel.</p>
+      </div>
+    );
+  }
 
   const filteredMembers = members.filter(m => {
     if (statusFilter === "all") return true;
@@ -513,10 +498,6 @@ export default function WorkspaceAdminPage() {
     acc[cat].push(def);
     return acc;
   }, {});
-
-  if (loading && !activeWorkspace) {
-    return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
-  }
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
@@ -616,84 +597,77 @@ export default function WorkspaceAdminPage() {
             </div>
           </div>
 
-          {!canManageMembers && userRole !== 'superadmin' ? (
-             <div className="py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Shield className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">Management permissions required.</p>
-             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3">
-              {filteredMembers.length === 0 ? (
-                <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl border-2 border-dashed">No members found.</p>
-              ) : (
-                filteredMembers.map((member) => (
-                  <Card key={member.id} className={cn("border-none shadow-sm", member.status === 'inactive' && "opacity-60")}>
-                    <CardContent className="p-3 md:p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm shrink-0 overflow-hidden">
-                          <Avatar className="w-full h-full border-none shadow-none">
-                            <AvatarImage src={member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url} />
-                            <AvatarFallback className="bg-primary/5 text-primary text-sm font-bold">
-                              {member.profiles?.full_name?.[0]}
-                            </AvatarFallback>
-                          </Avatar>
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-bold text-sm md:text-base truncate">{member.profiles?.full_name}</span>
-                            <Badge variant={member.status === 'active' ? 'default' : 'outline'} className="text-[9px] h-3.5 px-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 capitalize">
-                              {member.status}
-                            </Badge>
-                          </div>
-                          <p className="text-[10px] md:text-xs text-muted-foreground truncate">{member.profiles?.username} • {member.role}</p>
-                        </div>
+          <div className="grid grid-cols-1 gap-3">
+            {filteredMembers.length === 0 ? (
+              <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl border-2 border-dashed">No members found.</p>
+            ) : (
+              filteredMembers.map((member) => (
+                <Card key={member.id} className={cn("border-none shadow-sm", member.status === 'inactive' && "opacity-60")}>
+                  <CardContent className="p-3 md:p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm shrink-0 overflow-hidden">
+                        <Avatar className="w-full h-full border-none shadow-none">
+                          <AvatarImage src={member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url} />
+                          <AvatarFallback className="bg-primary/5 text-primary text-sm font-bold">
+                            {member.profiles?.full_name?.[0]}
+                          </AvatarFallback>
+                        </Avatar>
                       </div>
-                      
-                      <div className="flex items-center gap-2">
-                        {member.status === 'pending' ? (
-                          <div className="flex items-center gap-1">
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600" onClick={() => handleApproveJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><UserCheck className="w-4 h-4" /></Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" onClick={() => handleRejectJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><XCircle className="w-4 h-4" /></Button>
-                          </div>
-                        ) : (
-                          <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8" disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}>
-                                {updatingRole === member.user_id || isStatusUpdating === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
-                              {userRole === 'superadmin' && member.role !== 'superadmin' && (
-                                <>
-                                  <DropdownMenuLabel>Role</DropdownMenuLabel>
-                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')}>Admin</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')}>Manager</DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')}>Member</DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                </>
-                              )}
-                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                              {member.status === 'active' ? (
-                                <DropdownMenuItem className="text-rose-500" onClick={() => setDeactivatingMember(member)} disabled={member.user_id === userProfile?.id || member.role === 'superadmin'}><UserX className="w-4 h-4 mr-2" /> Deactivate</DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem className="text-emerald-500" onClick={() => handleReactivate(member.user_id)}><UserCheck className="w-4 h-4 mr-2" /> Reactivate</DropdownMenuItem>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm md:text-base truncate">{member.profiles?.full_name}</span>
+                          <Badge variant={member.status === 'active' ? 'default' : 'outline'} className="text-[9px] h-3.5 px-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 capitalize">
+                            {member.status}
+                          </Badge>
+                        </div>
+                        <p className="text-[10px] md:text-xs text-muted-foreground truncate">{member.profiles?.username} • {member.role}</p>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))
-              )}
-            </div>
-          )}
+                    </div>
+                    
+                    <div className="flex items-center gap-2">
+                      {member.status === 'pending' ? (
+                        <div className="flex items-center gap-1">
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600" onClick={() => handleApproveJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><UserCheck className="w-4 h-4" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" onClick={() => handleRejectJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><XCircle className="w-4 h-4" /></Button>
+                        </div>
+                      ) : (
+                        <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}>
+                              {updatingRole === member.user_id || isStatusUpdating === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            {userRole === 'superadmin' && member.role !== 'superadmin' && (
+                              <>
+                                <DropdownMenuLabel>Role</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')}>Admin</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')}>Manager</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')}>Member</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                              </>
+                            )}
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            {member.status === 'active' ? (
+                              <DropdownMenuItem className="text-rose-500" onClick={() => setDeactivatingMember(member)} disabled={member.user_id === userProfile?.id || member.role === 'superadmin'}><UserX className="w-4 h-4 mr-2" /> Deactivate</DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem className="text-emerald-500" onClick={() => handleReactivate(member.user_id)}><UserCheck className="w-4 h-4 mr-2" /> Reactivate</DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            ))}
+          </div>
         </TabsContent>
 
         <TabsContent value="teams" className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">Workspace Teams</h2>
-            {(canManageSettings || userRole === 'superadmin') && (
+            {canManageSettings && (
               <Button size="sm" onClick={() => { setEditingTeam(null); setIsCreatingTeam(true); }} className="gap-2">
                 <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Create Team</span>
               </Button>
@@ -711,7 +685,7 @@ export default function WorkspaceAdminPage() {
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-center justify-between">
                       <Badge variant="secondary" className="bg-violet-50 text-violet-600 text-[10px] h-4">Team</Badge>
-                      {(canManageSettings || userRole === 'superadmin') && (
+                      {canManageSettings && (
                         <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-7 w-7"><MoreVertical className="w-4 h-4" /></Button>
@@ -816,7 +790,7 @@ export default function WorkspaceAdminPage() {
              <CardContent className="p-4 md:p-6 space-y-4">
                 <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 rounded-lg border">
                   <div><p className="text-sm font-bold">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div>
-                  <Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!userRole === 'superadmin' && !canManageMembers} />
+                  <Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!canManageMembers} />
                 </div>
              </CardContent>
            </Card>
