@@ -52,10 +52,18 @@ export default function NotesPage() {
     }
   }, []);
 
+  // Global safety cleanup
   useEffect(() => {
     forceUnlockUI();
     return () => forceUnlockUI();
   }, [forceUnlockUI]);
+
+  // Safety fix: restore pointer events whenever modal closes
+  useEffect(() => {
+    if (!isModalOpen) {
+      forceUnlockUI();
+    }
+  }, [isModalOpen, forceUnlockUI]);
 
   const fetchNotes = useCallback(async () => {
     if (!activeWorkspace) return;
