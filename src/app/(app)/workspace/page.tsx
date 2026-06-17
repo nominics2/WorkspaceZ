@@ -12,14 +12,16 @@ import {
   Trash2, 
   Loader2, 
   UserPlus,
-  ArrowRight,
   ShieldCheck,
   Briefcase,
   ShieldAlert,
   Lock,
   CheckCircle2,
   History,
-  Info
+  Info,
+  UserX,
+  UserCheck,
+  Filter
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -47,6 +49,16 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -65,6 +77,9 @@ export default function WorkspaceAdminPage() {
   const [submitting, setSubmitting] = useState(false);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [updatingPerm, setUpdatingPerm] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active");
+  const [deactivatingMember, setDeactivatingMember] = useState<any>(null);
+  const [isStatusUpdating, setIsStatusUpdating] = useState<string | null>(null);
   
   const supabase = createClient();
   const { toast } = useToast();
@@ -125,15 +140,13 @@ export default function WorkspaceAdminPage() {
       setWsPermissions(perms || []);
 
       // 6. Fetch Audit Logs
-      if (userRole === 'superadmin' || hasPermission('view_admin_panel')) {
-        const { data: logs } = await supabase
-          .from('admin_audit_logs')
-          .select('*, actor:profiles!actor_id(full_name), target:profiles!target_user_id(full_name)')
-          .eq('workspace_id', activeWorkspace.id)
-          .order('created_at', { ascending: false })
-          .limit(50);
-        setAuditLogs(logs || []);
-      }
+      const { data: logs } = await supabase
+        .from('admin_audit_logs')
+        .select('*, actor:profiles!actor_id(full_name), target:profiles!target_user_id(full_name)')
+        .eq('workspace_id', activeWorkspace.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      setAuditLogs(logs || []);
 
     } catch (err: any) {
       console.error("Fetch error:", err);
@@ -141,7 +154,7 @@ export default function WorkspaceAdminPage() {
       setLoading(false);
       forceUnlockUI();
     }
-  }, [activeWorkspace, userProfile, supabase, forceUnlockUI, userRole, hasPermission]);
+  }, [activeWorkspace, userProfile, supabase, forceUnlockUI]);
 
   useEffect(() => {
     fetchData();
@@ -180,6 +193,47 @@ export default function WorkspaceAdminPage() {
     }
   };
 
+  const handleDeactivate = async (memberUserId: string) => {
+    setIsStatusUpdating(memberUserId);
+    try {
+      const { error } = await supabase.rpc("deactivate_workspace_member", {
+        p_workspace_id: activeWorkspace?.id,
+        p_member_user_id: memberUserId,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Member Deactivated", description: "User can no longer access the workspace." });
+      setDeactivatingMember(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Action Failed", description: err.message });
+    } finally {
+      setIsStatusUpdating(null);
+      forceUnlockUI();
+    }
+  };
+
+  const handleReactivate = async (memberUserId: string) => {
+    setIsStatusUpdating(memberUserId);
+    try {
+      const { error } = await supabase.rpc("reactivate_workspace_member", {
+        p_workspace_id: activeWorkspace?.id,
+        p_member_user_id: memberUserId,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Member Reactivated", description: "User access has been restored." });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Action Failed", description: err.message });
+    } finally {
+      setIsStatusUpdating(null);
+      forceUnlockUI();
+    }
+  };
+
   const handleCreateAllocation = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!activeWorkspace || !userProfile) return;
@@ -201,7 +255,6 @@ export default function WorkspaceAdminPage() {
 
       if (error) throw error;
 
-      // Audit Log for allocations still using RPC logging helper
       await supabase.rpc('create_admin_audit_log', {
         p_workspace_id: activeWorkspace.id,
         p_action: 'work_allocation_created',
@@ -226,7 +279,6 @@ export default function WorkspaceAdminPage() {
       const { error } = await supabase.from('work_allocations').delete().eq('id', id);
       if (error) throw error;
 
-      // Audit Log
       await supabase.rpc('create_admin_audit_log', {
         p_workspace_id: activeWorkspace?.id,
         p_action: 'work_allocation_deleted',
@@ -270,15 +322,14 @@ export default function WorkspaceAdminPage() {
 
   const isSuper = userRole === 'superadmin';
   const isAdminOrSuper = isSuper || userRole === 'admin';
-
-  // Permission Checks
   const canManageMembers = hasPermission('manage_members');
   const canManageAllocations = hasPermission('manage_work_allocations');
   const canViewAuditLog = isSuper || hasPermission('view_admin_panel');
 
-  if (loading && !activeWorkspace) {
-    return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
-  }
+  const filteredMembers = members.filter(m => {
+    if (statusFilter === "all") return true;
+    return m.status === statusFilter;
+  });
 
   const groupedPermissions = permissionDefs.reduce((acc: any, def) => {
     const cat = def.category || 'General';
@@ -286,6 +337,10 @@ export default function WorkspaceAdminPage() {
     acc[cat].push(def);
     return acc;
   }, {});
+
+  if (loading && !activeWorkspace) {
+    return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -362,81 +417,153 @@ export default function WorkspaceAdminPage() {
         </TabsList>
 
         <TabsContent value="members" className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+            <h2 className="text-xl font-bold">Workspace Members</h2>
+            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
+              <Button 
+                variant={statusFilter === "all" ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setStatusFilter("all")}
+                className="text-xs h-8"
+              >
+                All
+              </Button>
+              <Button 
+                variant={statusFilter === "active" ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setStatusFilter("active")}
+                className="text-xs h-8"
+              >
+                Active
+              </Button>
+              <Button 
+                variant={statusFilter === "inactive" ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setStatusFilter("inactive")}
+                className="text-xs h-8"
+              >
+                Inactive
+              </Button>
+            </div>
+          </div>
+
           {!canManageMembers && !isSuper ? (
              <div className="py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Shield className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-4" />
+                <Shield className="w-12 h-12 text-slate-300 mx-auto mb-4" />
                 <p className="text-muted-foreground">You do not have permission to manage members.</p>
              </div>
           ) : (
             <div className="grid grid-cols-1 gap-3">
-              {members.map((member) => (
-                <Card key={member.id} className="border-none shadow-sm group">
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm overflow-hidden">
-                        {member.profiles?.avatar_url ? (
-                          <img src={member.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
-                        )}
-                      </div>
-                      <div className="font-bold text-foreground flex items-center gap-2">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <span>{member.profiles?.full_name}</span>
-                            {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
+              {filteredMembers.length === 0 ? (
+                <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl border-2 border-dashed">
+                  No {statusFilter} members found.
+                </p>
+              ) : (
+                filteredMembers.map((member) => (
+                  <Card key={member.id} className={cn("border-none shadow-sm group", member.status === 'inactive' && "opacity-75")}>
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm overflow-hidden">
+                          {member.profiles?.avatar_url ? (
+                            <img src={member.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
+                          )}
+                        </div>
+                        <div className="font-bold text-foreground flex items-center gap-2">
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span>{member.profiles?.full_name}</span>
+                              {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
+                              <Badge variant={member.status === 'active' ? 'default' : 'outline'} className={cn(
+                                "text-[10px] h-4",
+                                member.status === 'active' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : "bg-slate-50 text-slate-400"
+                              )}>
+                                {member.status}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground font-normal">{member.profiles?.username} • {member.profiles?.email}</p>
                           </div>
-                          <p className="text-xs text-muted-foreground font-normal">{member.profiles?.username} • {member.profiles?.email}</p>
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-6">
-                      <div className="text-right hidden sm:block">
-                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
-                        {member.role === 'superadmin' ? (
-                          <Badge variant="default" className="mt-1">Superadmin - Full Access</Badge>
-                        ) : (
-                          <Badge 
-                            variant={member.role === 'admin' ? 'secondary' : 'outline'} 
-                            className="capitalize mt-1"
-                          >
-                            {member.role}
-                          </Badge>
+                      
+                      <div className="flex items-center gap-6">
+                        <div className="text-right hidden sm:block">
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
+                          {member.role === 'superadmin' ? (
+                            <Badge variant="default" className="mt-1">Superadmin - Full Access</Badge>
+                          ) : (
+                            <Badge 
+                              variant={member.role === 'admin' ? 'secondary' : 'outline'} 
+                              className="capitalize mt-1"
+                            >
+                              {member.role}
+                            </Badge>
+                          )}
+                        </div>
+
+                        {(isSuper || canManageMembers) && (
+                          <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+                            <DropdownMenuTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="text-muted-foreground hover:text-foreground"
+                                disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}
+                              >
+                                {updatingRole === member.user_id || isStatusUpdating === member.user_id ? 
+                                  <Loader2 className="w-4 h-4 animate-spin" /> : 
+                                  <MoreVertical className="w-4 h-4" />
+                                }
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              {isSuper && member.role !== 'superadmin' && (
+                                <>
+                                  <DropdownMenuLabel>Change Role</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
+                                    <Shield className="w-3.5 h-3.5" /> Admin
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
+                                    <Briefcase className="w-3.5 h-3.5" /> Manager
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
+                                    <Users className="w-3.5 h-3.5" /> Member
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
+                              
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              {member.status === 'active' ? (
+                                <DropdownMenuItem 
+                                  className="text-rose-500 gap-2"
+                                  onClick={() => setDeactivatingMember(member)}
+                                  disabled={
+                                    member.user_id === userProfile?.id || 
+                                    member.role === 'superadmin' || 
+                                    (member.role === 'admin' && !isSuper)
+                                  }
+                                >
+                                  <UserX className="w-3.5 h-3.5" /> Deactivate
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem 
+                                  className="text-emerald-500 gap-2"
+                                  onClick={() => handleReactivate(member.user_id)}
+                                >
+                                  <UserCheck className="w-3.5 h-3.5" /> Reactivate
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
-
-                      {isSuper && member.role !== 'superadmin' && (
-                        <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              className="text-muted-foreground hover:text-foreground"
-                              disabled={updatingRole === member.user_id}
-                            >
-                              {updatingRole === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Change Role</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
-                              <Shield className="w-3.5 h-3.5" /> Admin
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
-                              <Briefcase className="w-3.5 h-3.5" /> Manager
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
-                              <Users className="w-3.5 h-3.5" /> Member
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                ))
+              )}
             </div>
           )}
         </TabsContent>
@@ -704,6 +831,27 @@ export default function WorkspaceAdminPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => { if (!open) { setDeactivatingMember(null); forceUnlockUI(); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will deactivate <span className="font-bold text-foreground">{deactivatingMember?.profiles?.full_name}</span>. 
+              They will lose all access to this workspace until reactivated.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeactivatingMember(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => deactivatingMember && handleDeactivate(deactivatingMember.user_id)}
+              className="bg-rose-600 hover:bg-rose-700"
+            >
+              Confirm Deactivation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
