@@ -68,15 +68,22 @@ export default function LoginPage() {
           .limit(1);
 
         if (memberError) {
-          console.error('Error checking workspace membership:', memberError);
-          router.push("/dashboard");
-        } else if (!memberData || memberData.length === 0) {
-          router.push("/workspace-setup");
-        } else {
-          router.push("/dashboard");
+          console.error("Error checking workspace membership:", memberError);
+          toast({
+            variant: "destructive",
+            title: "Workspace check failed",
+            description: memberError.message,
+          });
+          return;
         }
-        
-        router.refresh();
+
+        if (!memberData || memberData.length === 0) {
+          router.replace("/workspace-setup");
+          return;
+        }
+
+        router.replace("/dashboard");
+        return;
       }
     } catch (error: any) {
       toast({
@@ -108,9 +115,9 @@ export default function LoginPage() {
             <CardTitle className="text-2xl font-bold">
               {isRegister ? "Create Account" : "Welcome to WorkspaceZ"}
             </CardTitle>
-            <CardDescription>
-              {isRegister ? "Join teams and manage tasks effectively" : "Modern workspace management for teams"}
-            </CardDescription>
+            <CardTitle className="text-sm font-normal text-muted-foreground mt-2">
+               {isRegister ? "Join teams and manage tasks effectively" : "Modern workspace management for teams"}
+            </CardTitle>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
