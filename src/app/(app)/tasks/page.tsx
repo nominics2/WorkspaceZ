@@ -117,7 +117,7 @@ export default function TasksPage() {
     const formData = new FormData(e.currentTarget);
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
-    const priority = formData.get("priority") as string;
+    const priority = (formData.get("priority") as string || "medium").toLowerCase();
     const dueDate = formData.get("due_date") as string;
 
     try {
@@ -125,11 +125,11 @@ export default function TasksPage() {
         workspace_id: activeWorkspace?.id,
         title,
         description,
-        priority: priority || 'Medium',
-        status: 'To Do',
-        due_date: dueDate || null,
+        priority: priority,
+        status: 'to_do',
+        due_date: dueDate && dueDate.trim() !== "" ? dueDate : null,
         created_by: userProfile?.id,
-        assigned_to: userProfile?.id, // Default to self for now
+        assigned_to: userProfile?.id,
         progress_mode: 'auto',
         manual_progress: 0
       });
@@ -139,6 +139,7 @@ export default function TasksPage() {
       toast({ title: "Success", description: "Task created successfully" });
       setIsCreateOpen(false);
       fetchTasks();
+      (e.target as HTMLFormElement).reset();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -154,7 +155,7 @@ export default function TasksPage() {
       if (error) throw error;
       setNewSubtaskTitle("");
       fetchTaskDetails(selectedTask.id);
-      fetchTasks(); // Refresh progress
+      fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -167,7 +168,7 @@ export default function TasksPage() {
       }).eq('id', subtask.id);
       if (error) throw error;
       fetchTaskDetails(selectedTask.id);
-      fetchTasks(); // Refresh progress
+      fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -178,7 +179,7 @@ export default function TasksPage() {
       const { error } = await supabase.from('subtasks').delete().eq('id', id);
       if (error) throw error;
       fetchTaskDetails(selectedTask.id);
-      fetchTasks(); // Refresh progress
+      fetchTasks();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -266,14 +267,14 @@ export default function TasksPage() {
                 <div className="flex flex-col md:flex-row">
                   <div className={cn(
                     "w-full md:w-1.5 h-1.5 md:h-auto",
-                    task.priority === 'Urgent' ? "bg-rose-500" : 
-                    task.priority === 'High' ? "bg-amber-500" : "bg-primary"
+                    task.priority?.toLowerCase() === 'urgent' ? "bg-rose-500" : 
+                    task.priority?.toLowerCase() === 'high' ? "bg-amber-500" : "bg-primary"
                   )} />
                   <div className="flex-1 p-6 flex flex-col md:flex-row md:items-center gap-6">
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-lg group-hover:text-primary transition-colors">{task.title}</h3>
-                        <Badge variant="outline" className="text-[10px] rounded-sm">{task.priority}</Badge>
+                        <h3 className="font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize">{task.title}</h3>
+                        <Badge variant="outline" className="text-[10px] rounded-sm capitalize">{task.priority}</Badge>
                         {task.sub_workspace_name && (
                            <Badge variant="secondary" className="text-[10px] bg-slate-100">{task.sub_workspace_name}</Badge>
                         )}
@@ -331,13 +332,13 @@ export default function TasksPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="priority">Priority</Label>
-                <Select name="priority" defaultValue="Medium">
+                <Select name="priority" defaultValue="medium">
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Low">Low</SelectItem>
-                    <SelectItem value="Medium">Medium</SelectItem>
-                    <SelectItem value="High">High</SelectItem>
-                    <SelectItem value="Urgent">Urgent</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -361,8 +362,8 @@ export default function TasksPage() {
             <div className="space-y-8 pt-6">
               <SheetHeader>
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="outline">{selectedTask.priority}</Badge>
-                  <Badge variant="secondary">{selectedTask.status}</Badge>
+                  <Badge variant="outline" className="capitalize">{selectedTask.priority}</Badge>
+                  <Badge variant="secondary" className="capitalize">{selectedTask.status?.replace('_', ' ')}</Badge>
                 </div>
                 <SheetTitle className="text-2xl font-bold">{selectedTask.title}</SheetTitle>
                 <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>
