@@ -14,9 +14,12 @@ interface WorkspaceContextType {
   activeWorkspace: Workspace | null;
   workspaces: Workspace[];
   userProfile: any | null;
+  userRole: string | null;
+  permissions: string[];
   loading: boolean;
   switchWorkspace: (id: string) => void;
   refreshWorkspaces: () => Promise<void>;
+  hasPermission: (permissionKey: string) => boolean;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -25,6 +28,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [userProfile, setUserProfile] = useState<any | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
   const router = useRouter();
@@ -33,7 +38,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Use getSession for initial persistence check
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.user) {
@@ -54,7 +58,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         .single();
       setUserProfile(profile);
 
-      // Fetch Workspaces
+      // Fetch Workspace Memberships
       const { data: members, error } = await supabase
         .from('workspace_members')
         .select(`
@@ -75,8 +79,26 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setWorkspaces(wsList);
 
       if (wsList.length > 0) {
-        if (!activeWorkspace) {
-          setActiveWorkspace(wsList[0]);
+        const currentWs = activeWorkspace || wsList[0];
+        setActiveWorkspace(currentWs);
+
+        // Get role for the active workspace
+        const currentMembership = members.find(m => m.workspace_id === currentWs.id);
+        const role = currentMembership?.role || 'member';
+        setUserRole(role);
+
+        // Fetch Permissions for this role in this workspace
+        if (role === 'superadmin') {
+          setPermissions(['all']); // Superadmin has pseudo-permission 'all'
+        } else {
+          const { data: perms } = await supabase
+            .from('workspace_role_permissions')
+            .select('permission_key')
+            .eq('workspace_id', currentWs.id)
+            .eq('role', role)
+            .eq('enabled', true);
+          
+          setPermissions(perms?.map(p => p.permission_key) || []);
         }
       } else if (pathname !== '/workspace-setup' && !pathname.startsWith('/onboarding') && pathname !== '/') {
         router.push('/workspace-setup');
@@ -91,7 +113,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     fetchData();
     
-    // Listen for auth changes to maintain persistence
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN') {
         fetchData();
@@ -99,6 +120,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setActiveWorkspace(null);
         setWorkspaces([]);
         setUserProfile(null);
+        setUserRole(null);
+        setPermissions([]);
         router.push('/');
       }
     });
@@ -110,7 +133,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const switchWorkspace = (id: string) => {
     const ws = workspaces.find(w => w.id === id);
-    if (ws) setActiveWorkspace(ws);
+    if (ws) {
+      setActiveWorkspace(ws);
+      // fetchData will re-run via pathname dependency if needed, 
+      // but manually calling it ensures role/perms update immediately
+      fetchData();
+    }
+  };
+
+  const hasPermission = (key: string) => {
+    if (userRole === 'superadmin') return true;
+    return permissions.includes(key);
   };
 
   return (
@@ -118,9 +151,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       activeWorkspace, 
       workspaces, 
       userProfile, 
+      userRole,
+      permissions,
       loading, 
       switchWorkspace, 
-      refreshWorkspaces: fetchData 
+      refreshWorkspaces: fetchData,
+      hasPermission
     }}>
       {children}
     </WorkspaceContext.Provider>

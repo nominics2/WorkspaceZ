@@ -15,7 +15,9 @@ import {
   ArrowRight,
   ShieldCheck,
   Briefcase,
-  ShieldAlert
+  ShieldAlert,
+  Lock,
+  CheckCircle2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -26,6 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,15 +51,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 
 export default function WorkspaceAdminPage() {
-  const { activeWorkspace, userProfile } = useWorkspace();
+  const { activeWorkspace, userProfile, userRole, hasPermission } = useWorkspace();
   const [members, setMembers] = useState<any[]>([]);
   const [allocations, setAllocations] = useState<any[]>([]);
   const [storage, setStorage] = useState<any>(null);
-  const [userRole, setUserRole] = useState<string>("member");
+  const [permissionDefs, setPermissionDefs] = useState<any[]>([]);
+  const [wsPermissions, setWsPermissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+  const [updatingPerm, setUpdatingPerm] = useState<string | null>(null);
   
   const supabase = createClient();
   const { toast } = useToast();
@@ -79,42 +84,42 @@ export default function WorkspaceAdminPage() {
     setLoading(true);
 
     try {
-      // 1. Get current user's role in this workspace
-      const { data: memberInfo } = await supabase
-        .from('workspace_members')
-        .select('role')
-        .eq('workspace_id', activeWorkspace.id)
-        .eq('user_id', userProfile.id)
-        .single();
-      
-      const role = memberInfo?.role || "member";
-      setUserRole(role);
-
-      // 2. Fetch all members with profile details
+      // 1. Fetch members
       const { data: membersList } = await supabase
         .from('workspace_members')
         .select('*, profiles(full_name, username, avatar_url, email)')
         .eq('workspace_id', activeWorkspace.id);
-      
       setMembers(membersList || []);
 
-      // 3. Fetch storage usage
+      // 2. Fetch storage usage
       const { data: storageInfo } = await supabase
         .from('workspace_storage_usage')
         .select('*')
         .eq('workspace_id', activeWorkspace.id)
         .maybeSingle();
-      
       setStorage(storageInfo);
 
-      // 4. Fetch work allocations
+      // 3. Fetch work allocations
       const { data: allocList } = await supabase
         .from('work_allocations')
         .select('*, profiles!work_allocations_user_id_fkey(full_name), creator:profiles!work_allocations_assigned_by_fkey(full_name)')
         .eq('workspace_id', activeWorkspace.id)
         .order('created_at', { ascending: false });
-      
       setAllocations(allocList || []);
+
+      // 4. Fetch Permission Definitions
+      const { data: defs } = await supabase
+        .from('role_permission_definitions')
+        .select('*')
+        .order('category', { ascending: true });
+      setPermissionDefs(defs || []);
+
+      // 5. Fetch Workspace Role Permissions
+      const { data: perms } = await supabase
+        .from('workspace_role_permissions')
+        .select('*')
+        .eq('workspace_id', activeWorkspace.id);
+      setWsPermissions(perms || []);
 
     } catch (err: any) {
       console.error("Fetch error:", err);
@@ -216,12 +221,54 @@ export default function WorkspaceAdminPage() {
     }
   };
 
-  const isAdmin = userRole === 'superadmin' || userRole === 'admin';
+  const handleTogglePermission = async (role: string, permissionKey: string, currentEnabled: boolean) => {
+    if (userRole !== 'superadmin') return;
+    if (!activeWorkspace || !userProfile) return;
+
+    const id = `${role}-${permissionKey}`;
+    setUpdatingPerm(id);
+
+    try {
+      const { error } = await supabase
+        .from('workspace_role_permissions')
+        .upsert({
+          workspace_id: activeWorkspace.id,
+          role,
+          permission_key: permissionKey,
+          enabled: !currentEnabled,
+          updated_by: userProfile.id
+        }, { onConflict: 'workspace_id,role,permission_key' });
+
+      if (error) throw error;
+      
+      toast({ title: "Permission Updated" });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setUpdatingPerm(null);
+      forceUnlockUI();
+    }
+  };
+
   const isSuper = userRole === 'superadmin';
+  const isAdminOrSuper = isSuper || userRole === 'admin';
+
+  // Permission Checks
+  const canManageMembers = hasPermission('manage_members');
+  const canManageAllocations = hasPermission('manage_work_allocations');
+  const canManageStorage = hasPermission('manage_storage');
 
   if (loading && !activeWorkspace) {
     return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   }
+
+  const groupedPermissions = permissionDefs.reduce((acc: any, def) => {
+    const cat = def.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(def);
+    return acc;
+  }, {});
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -233,7 +280,7 @@ export default function WorkspaceAdminPage() {
           </h1>
           <p className="text-muted-foreground">Manage workspace settings, members, roles, allocations, and storage.</p>
         </div>
-        {isAdmin && (
+        {isAdminOrSuper && (
           <div className="flex items-center gap-2 bg-white p-2 pr-4 rounded-xl border shadow-sm">
             <div className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-bold font-mono text-primary">
               {activeWorkspace?.join_code}
@@ -292,91 +339,99 @@ export default function WorkspaceAdminPage() {
         <TabsList className="bg-white border p-1 rounded-xl">
           <TabsTrigger value="members" className="rounded-lg px-6">Members</TabsTrigger>
           <TabsTrigger value="allocations" className="rounded-lg px-6">Allocations</TabsTrigger>
-          {isAdmin && <TabsTrigger value="settings" className="rounded-lg px-6">Access Control</TabsTrigger>}
+          <TabsTrigger value="permissions" className="rounded-lg px-6">Permissions</TabsTrigger>
+          {isAdminOrSuper && <TabsTrigger value="settings" className="rounded-lg px-6">Access Control</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="members" className="space-y-4">
-          <div className="grid grid-cols-1 gap-3">
-            {members.map((member) => (
-              <Card key={member.id} className="border-none shadow-sm group">
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm overflow-hidden">
-                      {member.profiles?.avatar_url ? (
-                        <img src={member.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
+          {!canManageMembers && !isSuper ? (
+             <div className="py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
+                <Shield className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <p className="text-muted-foreground">You do not have permission to manage members.</p>
+             </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3">
+              {members.map((member) => (
+                <Card key={member.id} className="border-none shadow-sm group">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm overflow-hidden">
+                        {member.profiles?.avatar_url ? (
+                          <img src={member.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-bold text-foreground flex items-center gap-2">
+                          <span>{member.profiles?.full_name}</span>
+                          {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{member.profiles?.username} • {member.profiles?.email}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-6">
+                      <div className="text-right hidden sm:block">
+                        <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
+                        <Badge 
+                          variant={member.role === 'superadmin' ? 'default' : member.role === 'admin' ? 'secondary' : 'outline'} 
+                          className="capitalize mt-1"
+                        >
+                          {member.role}
+                        </Badge>
+                      </div>
+
+                      {isSuper && (
+                        <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-muted-foreground hover:text-foreground"
+                              disabled={updatingRole === member.user_id}
+                            >
+                              {updatingRole === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuLabel>Manage Roles</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
+                              <Shield className="w-3.5 h-3.5" /> Admin
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
+                              <Briefcase className="w-3.5 h-3.5" /> Manager
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
+                              <Users className="w-3.5 h-3.5" /> Member
+                            </DropdownMenuItem>
+                            {member.role !== 'superadmin' && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  onClick={() => handleUpdateRole(member.user_id, 'superadmin')} 
+                                  className="text-amber-600 gap-2 font-medium"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5" /> Promote to Superadmin
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
-                    <div>
-                      <div className="font-bold text-foreground flex items-center gap-2">
-                        <span>{member.profiles?.full_name}</span>
-                        {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
-                      </div>
-                      <p className="text-xs text-muted-foreground">{member.profiles?.username} • {member.profiles?.email}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-6">
-                    <div className="text-right hidden sm:block">
-                      <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
-                      <Badge 
-                        variant={member.role === 'superadmin' ? 'default' : member.role === 'admin' ? 'secondary' : 'outline'} 
-                        className="capitalize mt-1"
-                      >
-                        {member.role}
-                      </Badge>
-                    </div>
-
-                    {isSuper && (
-                      <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
-                        <DropdownMenuTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="text-muted-foreground hover:text-foreground"
-                            disabled={updatingRole === member.user_id}
-                          >
-                            {updatingRole === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-48">
-                          <DropdownMenuLabel>Manage Roles</DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
-                            <Shield className="w-3.5 h-3.5" /> Admin
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
-                            <Briefcase className="w-3.5 h-3.5" /> Manager
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
-                            <Users className="w-3.5 h-3.5" /> Member
-                          </DropdownMenuItem>
-                          {member.role !== 'superadmin' && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                onClick={() => handleUpdateRole(member.user_id, 'superadmin')} 
-                                className="text-amber-600 gap-2 font-medium"
-                              >
-                                <ShieldAlert className="w-3.5 h-3.5" /> Promote to Superadmin
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="allocations" className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">Member Work Allocations</h2>
-            {isAdmin && (
+            {(canManageAllocations || isSuper) && (
               <Button onClick={() => setIsAllocating(true)} className="flex items-center gap-2">
                 <Plus className="w-4 h-4" /> Create Allocation
               </Button>
@@ -396,7 +451,7 @@ export default function WorkspaceAdminPage() {
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-widest text-primary border-primary/20">Allocation</Badge>
-                      {isAdmin && (
+                      {(canManageAllocations || isSuper) && (
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -425,6 +480,78 @@ export default function WorkspaceAdminPage() {
               ))
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="permissions" className="space-y-6">
+          <Card className="border-none shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-primary" /> Role Permissions Matrix
+              </CardTitle>
+              <CardDescription>
+                {isSuper ? "Configure granular access for different workspace roles." : "View current workspace permissions."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b">
+                      <th className="text-left p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Permission</th>
+                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Superadmin</th>
+                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Admin</th>
+                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Manager</th>
+                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Member</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.keys(groupedPermissions).map((cat) => (
+                      <React.Fragment key={cat}>
+                        <tr className="bg-slate-100/50">
+                          <td colSpan={5} className="p-2 px-4 text-[10px] font-bold uppercase tracking-widest text-primary">{cat}</td>
+                        </tr>
+                        {groupedPermissions[cat].map((def: any) => (
+                          <tr key={def.key} className="border-b hover:bg-slate-50 transition-colors">
+                            <td className="p-4">
+                              <p className="text-sm font-bold">{def.name}</p>
+                              <p className="text-[10px] text-muted-foreground">{def.description}</p>
+                            </td>
+                            <td className="p-4 text-center">
+                              <div className="flex justify-center">
+                                <Badge variant="secondary" className="gap-1.5 opacity-60">
+                                  <Lock className="w-2.5 h-2.5" /> Full Access
+                                </Badge>
+                              </div>
+                            </td>
+                            {['admin', 'manager', 'member'].map(role => {
+                              const perm = wsPermissions.find(p => p.role === role && p.permission_key === def.key);
+                              const enabled = !!perm?.enabled;
+                              const isUpdating = updatingPerm === `${role}-${def.key}`;
+                              return (
+                                <td key={role} className="p-4 text-center">
+                                  <div className="flex justify-center">
+                                    {isSuper ? (
+                                      <Switch 
+                                        checked={enabled} 
+                                        onCheckedChange={() => handleTogglePermission(role, def.key, enabled)}
+                                        disabled={isUpdating}
+                                      />
+                                    ) : (
+                                      enabled ? <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto" /> : <ShieldAlert className="w-5 h-5 text-slate-200 mx-auto" />
+                                    )}
+                                  </div>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-6">

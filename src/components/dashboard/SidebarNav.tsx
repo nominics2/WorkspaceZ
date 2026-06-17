@@ -31,13 +31,12 @@ const navItems = [
   { label: "Chat", icon: MessageSquare, href: "/chat" },
   { label: "Calendar", icon: Calendar, href: "/calendar" },
   { label: "Notes", icon: StickyNote, href: "/notes" },
-  { label: "Admin Panel", icon: Layers, href: "/workspace" },
 ];
 
 export function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace();
+  const { activeWorkspace, workspaces, switchWorkspace, userRole, hasPermission } = useWorkspace();
   const [mounted, setMounted] = useState(false);
   const supabase = createClient();
 
@@ -50,6 +49,8 @@ export function SidebarNav() {
     router.refresh();
     router.push("/");
   };
+
+  const canViewAdminPanel = hasPermission('view_admin_panel');
 
   return (
     <div className="flex flex-col h-full bg-white border-r w-64">
@@ -112,6 +113,19 @@ export function SidebarNav() {
             </Link>
           );
         })}
+        {canViewAdminPanel && (
+          <Link href="/workspace">
+            <span className={cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
+              pathname === "/workspace" 
+                ? "bg-primary/10 text-primary" 
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}>
+              <Layers className="w-5 h-5" />
+              Admin Panel
+            </span>
+          </Link>
+        )}
       </nav>
 
       <div className="p-4 border-t space-y-2">
