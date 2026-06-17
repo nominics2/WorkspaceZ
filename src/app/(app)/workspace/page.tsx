@@ -14,7 +14,8 @@ import {
   UserPlus,
   ArrowRight,
   ShieldCheck,
-  Briefcase
+  Briefcase,
+  ShieldAlert
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -30,6 +31,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
 } from "@/components/ui/dropdown-menu";
 import {
   Dialog,
@@ -53,6 +56,7 @@ export default function WorkspaceAdminPage() {
   const [loading, setLoading] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   
   const supabase = createClient();
   const { toast } = useToast();
@@ -64,6 +68,11 @@ export default function WorkspaceAdminPage() {
       }, 0);
     }
   }, []);
+
+  useEffect(() => {
+    forceUnlockUI();
+    return () => forceUnlockUI();
+  }, [forceUnlockUI]);
 
   const fetchData = useCallback(async () => {
     if (!activeWorkspace || !userProfile) return;
@@ -81,7 +90,7 @@ export default function WorkspaceAdminPage() {
       const role = memberInfo?.role || "member";
       setUserRole(role);
 
-      // 2. Fetch all members
+      // 2. Fetch all members with profile details
       const { data: membersList } = await supabase
         .from('workspace_members')
         .select('*, profiles(full_name, username, avatar_url, email)')
@@ -128,7 +137,7 @@ export default function WorkspaceAdminPage() {
 
   const handleUpdateRole = async (memberUserId: string, newRole: string) => {
     if (userRole !== 'superadmin') {
-      toast({ variant: "destructive", title: "Unauthorized", description: "Only superadmins can change roles." });
+      toast({ variant: "destructive", title: "Unauthorized", description: "Only superadmins can change member roles." });
       return;
     }
 
@@ -136,11 +145,16 @@ export default function WorkspaceAdminPage() {
     if (newRole !== 'superadmin') {
       const superadmins = members.filter(m => m.role === 'superadmin');
       if (superadmins.length === 1 && superadmins[0].user_id === memberUserId) {
-        toast({ variant: "destructive", title: "Error", description: "Workspace must have at least one superadmin." });
+        toast({ 
+          variant: "destructive", 
+          title: "Action Denied", 
+          description: "Cannot downgrade the last superadmin. The workspace must have at least one superadmin." 
+        });
         return;
       }
     }
 
+    setUpdatingRole(memberUserId);
     try {
       const { error } = await supabase
         .from('workspace_members')
@@ -149,10 +163,14 @@ export default function WorkspaceAdminPage() {
         .eq('user_id', memberUserId);
       
       if (error) throw error;
-      toast({ title: "Role updated" });
+      
+      toast({ title: "Role Updated", description: "The member's role has been successfully changed." });
       fetchData();
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
+      toast({ variant: "destructive", title: "Update Failed", description: err.message });
+    } finally {
+      setUpdatingRole(null);
+      forceUnlockUI();
     }
   };
 
@@ -290,11 +308,11 @@ export default function WorkspaceAdminPage() {
                         <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
                       )}
                     </div>
-                    <div className="font-bold text-foreground flex items-center gap-2">
-                      <span>{member.profiles?.full_name}</span>
-                      {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
-                    </div>
                     <div>
+                      <div className="font-bold text-foreground flex items-center gap-2">
+                        <span>{member.profiles?.full_name}</span>
+                        {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
+                      </div>
                       <p className="text-xs text-muted-foreground">{member.profiles?.username} • {member.profiles?.email}</p>
                     </div>
                   </div>
@@ -302,22 +320,49 @@ export default function WorkspaceAdminPage() {
                   <div className="flex items-center gap-6">
                     <div className="text-right hidden sm:block">
                       <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
-                      <Badge variant={member.role === 'superadmin' ? 'default' : 'outline'} className="capitalize mt-1">
+                      <Badge 
+                        variant={member.role === 'superadmin' ? 'default' : member.role === 'admin' ? 'secondary' : 'outline'} 
+                        className="capitalize mt-1"
+                      >
                         {member.role}
                       </Badge>
                     </div>
 
-                    {isSuper && member.user_id !== userProfile?.id && (
+                    {isSuper && (
                       <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
-                            <MoreVertical className="w-4 h-4" />
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="text-muted-foreground hover:text-foreground"
+                            disabled={updatingRole === member.user_id}
+                          >
+                            {updatingRole === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')}>Promote to Admin</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')}>Change to Manager</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')}>Change to Member</DropdownMenuItem>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuLabel>Manage Roles</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
+                            <Shield className="w-3.5 h-3.5" /> Admin
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
+                            <Briefcase className="w-3.5 h-3.5" /> Manager
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
+                            <Users className="w-3.5 h-3.5" /> Member
+                          </DropdownMenuItem>
+                          {member.role !== 'superadmin' && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                onClick={() => handleUpdateRole(member.user_id, 'superadmin')} 
+                                className="text-amber-600 gap-2 font-medium"
+                              >
+                                <ShieldAlert className="w-3.5 h-3.5" /> Promote to Superadmin
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
