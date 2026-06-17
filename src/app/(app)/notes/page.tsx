@@ -44,17 +44,14 @@ export default function NotesPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
-  // Helper to force unlock UI by resetting body pointer events
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
       setTimeout(() => {
         document.body.style.pointerEvents = "";
-        console.log("UI Force Unlocked");
       }, 0);
     }
   }, []);
 
-  // Safety cleanup on mount/unmount
   useEffect(() => {
     forceUnlockUI();
     return () => forceUnlockUI();
@@ -74,7 +71,6 @@ export default function NotesPage() {
       if (error) throw error;
       setNotes(data || []);
     } catch (err: any) {
-      console.error("Fetch notes error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setLoading(false);

@@ -67,7 +67,9 @@ export default function TasksPage() {
 
   const forceUnlockUI = () => {
     if (typeof document !== 'undefined') {
-      document.body.style.pointerEvents = "";
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+      }, 0);
     }
   };
 
@@ -350,10 +352,8 @@ export default function TasksPage() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={(open) => { 
-        if (!saving) {
-          setIsCreateOpen(open);
-          if (!open) forceUnlockUI();
-        }
+        setIsCreateOpen(open);
+        if (!open) forceUnlockUI();
       }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -399,10 +399,8 @@ export default function TasksPage() {
       </Dialog>
 
       <Sheet open={isDetailOpen} onOpenChange={(open) => { 
-        if (!saving) {
-          setIsDetailOpen(open);
-          if (!open) forceUnlockUI();
-        }
+        setIsDetailOpen(open);
+        if (!open) forceUnlockUI();
       }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           {selectedTask && (
