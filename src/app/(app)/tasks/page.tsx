@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { 
   Plus, 
   Search, 
@@ -71,7 +70,7 @@ import { Slider } from "@/components/ui/slider";
 import { useSearchParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-export default function TasksPage() {
+function TasksPageContent() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const searchParams = useSearchParams();
   const [tasks, setTasks] = useState<any[]>([]);
@@ -1078,5 +1077,17 @@ export default function TasksPage() {
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+
+export default function TasksPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[50vh] items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    }>
+      <TasksPageContent />
+    </Suspense>
   );
 }
