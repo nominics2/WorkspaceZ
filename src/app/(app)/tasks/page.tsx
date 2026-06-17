@@ -377,6 +377,37 @@ export default function TasksPage() {
     }
   };
 
+  const handleAddSubtask = async () => {
+    if (!selectedTask || !userProfile) return;
+    if (!newSubtaskTitle.trim()) return;
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('subtasks')
+        .insert({
+          task_id: selectedTask.id,
+          title: newSubtaskTitle.trim(),
+          created_by: userProfile.id,
+          is_completed: false
+        });
+
+      if (error) throw error;
+
+      setNewSubtaskTitle("");
+      await fetchTaskDetails(selectedTask.id);
+      await fetchData();
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Error adding subtask", 
+        description: err.message 
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleUpdateManualProgress = async (val: number[]) => {
     if (!selectedTask) return;
     try {
@@ -904,8 +935,4 @@ export default function TasksPage() {
       </Sheet>
     </div>
   );
-}
-
-function handleAddSubtask() {
-  throw new Error("Function not implemented.");
 }
