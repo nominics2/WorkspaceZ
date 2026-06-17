@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   Send, 
   Smile, 
@@ -8,7 +9,10 @@ import {
   MoreVertical, 
   CheckSquare, 
   Plus,
-  User
+  User,
+  Loader2,
+  Calendar as CalendarIcon,
+  CheckCircle2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,57 +26,270 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-
-const MOCK_MESSAGES = [
-  { id: "m1", user: "Alex Johnson", text: "Hey team, we need to finalize the project specs by Friday.", time: "10:30 AM", isMe: true },
-  { id: "m2", user: "Sarah Miller", text: "I'm on it. I'll have the draft ready by tomorrow afternoon.", time: "10:35 AM", isMe: false },
-  { id: "m3", user: "Sarah Miller", text: "Wait, actually could someone help me with the API documentation part?", time: "10:36 AM", isMe: false },
-];
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { createClient } from "@/lib/supabase/client";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState(MOCK_MESSAGES);
+  const { activeWorkspace, userProfile } = useWorkspace();
+  const [channel, setChannel] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const { toast } = useToast();
+  const supabase = createClient();
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    const newMessage = {
-      id: Date.now().toString(),
-      user: "Alex Johnson",
-      text: input,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isMe: true
-    };
-    setMessages([...messages, newMessage]);
-    setInput("");
+  // Task creation state
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState<any>(null);
+  const [taskForm, setTaskForm] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+    dueDate: "",
+    assignedTo: ""
+  });
+
+  const scrollToBottom = () => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    }
   };
 
-  const handleCreateTaskFromMessage = (text: string) => {
-    toast({
-      title: "Task Created",
-      description: `Task created from message: "${text.substring(0, 30)}..."`,
+  const fetchMembers = useCallback(async () => {
+    if (!activeWorkspace) return;
+    const { data } = await supabase
+      .from('workspace_members')
+      .select('user_id, profiles(id, full_name, avatar_url)')
+      .eq('workspace_id', activeWorkspace.id)
+      .eq('status', 'active');
+    
+    setMembers(data?.map(m => m.profiles) || []);
+  }, [activeWorkspace, supabase]);
+
+  const fetchChannel = useCallback(async () => {
+    if (!activeWorkspace || !userProfile) return;
+    setLoading(true);
+
+    try {
+      // Find workspace channel
+      let { data: channels, error: channelError } = await supabase
+        .from('chat_channels')
+        .select('*')
+        .eq('workspace_id', activeWorkspace.id)
+        .eq('type', 'workspace')
+        .limit(1);
+
+      let currentChannel = channels?.[0];
+
+      // Create channel if it doesn't exist
+      if (!currentChannel && !channelError) {
+        const { data: newChannel, error: createError } = await supabase
+          .from('chat_channels')
+          .insert({
+            name: "General",
+            type: "workspace",
+            workspace_id: activeWorkspace.id,
+            created_by: userProfile.id
+          })
+          .select()
+          .single();
+        
+        if (createError) throw createError;
+        currentChannel = newChannel;
+      }
+
+      setChannel(currentChannel);
+
+      // Fetch messages
+      if (currentChannel) {
+        const { data: msgs, error: msgError } = await supabase
+          .from('chat_messages')
+          .select('*, profiles:sender_id(full_name, username, avatar_url)')
+          .eq('channel_id', currentChannel.id)
+          .eq('workspace_id', activeWorkspace.id)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: true });
+
+        if (msgError) throw msgError;
+        setMessages(msgs || []);
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Chat Error", description: err.message });
+    } finally {
+      setLoading(false);
+      setTimeout(scrollToBottom, 100);
+    }
+  }, [activeWorkspace, userProfile, supabase, toast]);
+
+  useEffect(() => {
+    fetchChannel();
+    fetchMembers();
+  }, [fetchChannel, fetchMembers]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!channel) return;
+
+    const subscription = supabase
+      .channel(`chat:${channel.id}`)
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'chat_messages',
+        filter: `channel_id=eq.${channel.id}`
+      }, async (payload) => {
+        // Fetch full message with profile when a new one arrives
+        const { data } = await supabase
+          .from('chat_messages')
+          .select('*, profiles:sender_id(full_name, username, avatar_url)')
+          .eq('id', payload.new.id)
+          .single();
+        
+        if (data) {
+          setMessages(prev => [...prev, data]);
+          setTimeout(scrollToBottom, 50);
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'chat_messages',
+        filter: `channel_id=eq.${channel.id}`
+      }, (payload) => {
+        setMessages(prev => prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [channel, supabase]);
+
+  const handleSend = async () => {
+    if (!input.trim() || !channel || !userProfile || !activeWorkspace) return;
+    setSending(true);
+
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .insert({
+          channel_id: channel.id,
+          workspace_id: activeWorkspace.id,
+          sender_id: userProfile.id,
+          message: input.trim()
+        });
+
+      if (error) throw error;
+      setInput("");
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const openTaskModal = (msg: any) => {
+    if (msg.created_task_id) {
+      toast({ title: "Already converted", description: "A task has already been created from this message." });
+      return;
+    }
+
+    setSelectedMessage(msg);
+    // Prefill title with first line or first 50 chars
+    const title = msg.message.split('\n')[0].substring(0, 50);
+    setTaskForm({
+      title,
+      description: msg.message,
+      priority: "medium",
+      dueDate: "",
+      assignedTo: userProfile?.id || ""
     });
+    setIsTaskModalOpen(true);
+  };
+
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMessage || !activeWorkspace || !userProfile) return;
+
+    try {
+      // 1. Create Task
+      const { data: task, error: taskError } = await supabase
+        .from('tasks')
+        .insert({
+          workspace_id: activeWorkspace.id,
+          title: taskForm.title,
+          description: taskForm.description,
+          status: 'to_do',
+          priority: taskForm.priority.toLowerCase(),
+          assigned_to: taskForm.assignedTo || userProfile.id,
+          created_by: userProfile.id,
+          due_date: taskForm.dueDate || null,
+          progress_mode: 'auto',
+          manual_progress: 0
+        })
+        .select()
+        .single();
+
+      if (taskError) throw taskError;
+
+      // 2. Update message
+      await supabase
+        .from('chat_messages')
+        .update({ created_task_id: task.id })
+        .eq('id', selectedMessage.id);
+
+      // 3. Link message to task
+      await supabase
+        .from('task_message_links')
+        .insert({
+          task_id: task.id,
+          message_id: selectedMessage.id,
+          workspace_id: activeWorkspace.id,
+          created_by: userProfile.id
+        });
+
+      toast({ title: "Task Created", description: "The message has been successfully converted into a task." });
+      setIsTaskModalOpen(false);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col gap-4">
+    <div className="h-[calc(100vh-8rem)] flex flex-col gap-4 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Workspace Chat</h1>
-          <p className="text-muted-foreground">Collaborate with your team members</p>
+          <p className="text-muted-foreground">Collaborate with your team in {activeWorkspace?.name}</p>
         </div>
       </div>
 
-      <Card className="flex-1 flex flex-col border-none shadow-xl overflow-hidden">
+      <Card className="flex-1 flex flex-col border-none shadow-xl overflow-hidden relative">
         {/* Chat Header */}
-        <div className="p-4 border-b bg-white flex items-center justify-between">
+        <div className="p-4 border-b bg-white flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
               <span className="text-primary font-bold">#</span>
             </div>
             <div>
-              <p className="font-bold">General Channel</p>
-              <p className="text-xs text-muted-foreground">12 members online</p>
+              <p className="font-bold">{channel?.name || 'General'}</p>
+              <p className="text-xs text-muted-foreground">{members.length} members in workspace</p>
             </div>
           </div>
           <Button variant="ghost" size="icon">
@@ -81,63 +298,168 @@ export default function ChatPage() {
         </div>
 
         {/* Messages */}
-        <ScrollArea className="flex-1 p-6 bg-slate-50/50">
-          <div className="space-y-6">
-            {messages.map((msg) => (
-              <div key={msg.id} className={`flex gap-3 ${msg.isMe ? "flex-row-reverse" : ""}`}>
-                <Avatar className="w-10 h-10">
-                  <AvatarFallback>{msg.user[0]}</AvatarFallback>
-                </Avatar>
-                <div className={`max-w-[70%] group ${msg.isMe ? "items-end" : "items-start"}`}>
-                  <div className="flex items-center gap-2 mb-1 px-1">
-                    <span className="text-xs font-bold">{msg.user}</span>
-                    <span className="text-[10px] text-muted-foreground">{msg.time}</span>
-                  </div>
-                  <div className="relative">
-                    <div className={`p-4 rounded-2xl shadow-sm ${msg.isMe ? "bg-primary text-white rounded-tr-none" : "bg-white text-foreground rounded-tl-none border"}`}>
-                      {msg.text}
+        <ScrollArea className="flex-1 bg-slate-50/50">
+          <div className="p-6 space-y-6">
+            {loading ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+            ) : messages.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground italic">No messages yet. Start the conversation!</div>
+            ) : (
+              messages.map((msg) => {
+                const isMe = msg.sender_id === userProfile?.id;
+                const profile = msg.profiles;
+                return (
+                  <div key={msg.id} className={cn("flex gap-3 group", isMe ? "flex-row-reverse" : "")}>
+                    <Avatar className="w-10 h-10 border shadow-sm">
+                      <AvatarImage src={profile?.avatar_url} />
+                      <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
+                        {profile?.full_name?.[0] || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className={cn("max-w-[70%] flex flex-col", isMe ? "items-end" : "items-start")}>
+                      <div className="flex items-center gap-2 mb-1 px-1">
+                        <span className="text-xs font-bold">{profile?.full_name || 'User'}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="relative group/bubble">
+                        <div className={cn(
+                          "p-4 rounded-2xl shadow-sm break-words whitespace-pre-wrap",
+                          isMe ? "bg-primary text-white rounded-tr-none" : "bg-white text-foreground rounded-tl-none border"
+                        )}>
+                          {msg.message}
+                          {msg.created_task_id && (
+                            <div className={cn(
+                              "mt-2 pt-2 border-t flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider",
+                              isMe ? "border-white/20 text-white/80" : "border-slate-100 text-primary"
+                            )}>
+                              <CheckCircle2 className="w-3 h-3" /> Task Created
+                            </div>
+                          )}
+                        </div>
+                        {/* Floating Message Action */}
+                        {!msg.created_task_id && (
+                          <div className={cn(
+                            "absolute top-0 opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-2",
+                            isMe ? "-left-12 pr-2" : "-right-12 pl-2"
+                          )}>
+                             <Button 
+                               variant="secondary" 
+                               size="icon" 
+                               className="h-8 w-8 rounded-full shadow-md bg-white hover:bg-slate-50 border"
+                               onClick={() => openTaskModal(msg)}
+                               title="Create task from message"
+                             >
+                               <CheckSquare className="w-4 h-4 text-primary" />
+                             </Button>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {/* Floating Message Action */}
-                    <div className={`absolute top-0 -right-12 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                       <Button 
-                         variant="secondary" 
-                         size="icon" 
-                         className="h-8 w-8 rounded-full shadow-md"
-                         onClick={() => handleCreateTaskFromMessage(msg.text)}
-                         title="Create task from message"
-                       >
-                         <CheckSquare className="w-4 h-4" />
-                       </Button>
-                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                );
+              })
+            )}
+            <div ref={scrollRef} />
           </div>
         </ScrollArea>
 
         {/* Input area */}
         <div className="p-4 bg-white border-t">
-          <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+          <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200">
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary shrink-0">
               <Paperclip className="w-5 h-5" />
             </Button>
             <Input 
-              className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base" 
+              className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1" 
               placeholder="Type your message..." 
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSend()}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
+              disabled={sending}
             />
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary">
+            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary shrink-0">
               <Smile className="w-5 h-5" />
             </Button>
-            <Button size="icon" className="rounded-lg shadow-lg shadow-primary/20" onClick={handleSend}>
-              <Send className="w-5 h-5" />
+            <Button 
+              size="icon" 
+              className="rounded-lg shadow-lg shadow-primary/20 shrink-0" 
+              onClick={handleSend}
+              disabled={sending || !input.trim()}
+            >
+              {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </Button>
           </div>
         </div>
       </Card>
+
+      {/* Create Task Dialog */}
+      <Dialog open={isTaskModalOpen} onOpenChange={setIsTaskModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Task from Message</DialogTitle>
+            <DialogDescription>Convert this chat message into a project assignment.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTask} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="t-title">Task Title</Label>
+              <Input 
+                id="t-title" 
+                value={taskForm.title} 
+                onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
+                required 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="t-desc">Description</Label>
+              <Textarea 
+                id="t-desc" 
+                value={taskForm.description} 
+                onChange={e => setTaskForm({...taskForm, description: e.target.value})} 
+                rows={4}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Priority</Label>
+                <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Due Date</Label>
+                <Input 
+                  type="date" 
+                  value={taskForm.dueDate} 
+                  onChange={e => setTaskForm({...taskForm, dueDate: e.target.value})} 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Assigned To</Label>
+              <Select value={taskForm.assignedTo} onValueChange={v => setTaskForm({...taskForm, assignedTo: v})}>
+                <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
+                <SelectContent>
+                  {members.map(m => (
+                    <SelectItem key={m.id} value={m.id}>{m.full_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="ghost" onClick={() => setIsTaskModalOpen(false)}>Cancel</Button>
+              <Button type="submit">Convert to Task</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
