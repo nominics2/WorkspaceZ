@@ -115,6 +115,7 @@ export default function NotesPage() {
         if (error) throw error;
         toast({ title: "Note Created" });
       }
+      // Critical: reset states before closing to ensure UI remains responsive
       setIsModalOpen(false);
       setEditingNote(null);
       await fetchNotes();
