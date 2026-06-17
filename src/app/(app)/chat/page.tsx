@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -53,6 +52,7 @@ export default function ChatPage() {
   const { toast } = useToast();
   const supabase = createClient();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Task creation state
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -65,11 +65,17 @@ export default function ChatPage() {
     assignedTo: ""
   });
 
-  const scrollToBottom = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior });
     }
   };
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom();
+    }
+  }, [messages]);
 
   const fetchMembers = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -80,6 +86,21 @@ export default function ChatPage() {
       .eq('status', 'active');
     
     setMembers(data?.map(m => m.profiles) || []);
+  }, [activeWorkspace, supabase]);
+
+  const fetchMessages = useCallback(async (channelId: string) => {
+    if (!activeWorkspace) return;
+    const { data: msgs, error: msgError } = await supabase
+      .from('chat_messages')
+      .select('*, profiles:sender_id(full_name, username, avatar_url)')
+      .eq('channel_id', channelId)
+      .eq('workspace_id', activeWorkspace.id)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: true });
+
+    if (msgError) throw msgError;
+    setMessages(msgs || []);
+    setTimeout(() => scrollToBottom("auto"), 100);
   }, [activeWorkspace, supabase]);
 
   const fetchChannel = useCallback(async () => {
@@ -118,24 +139,14 @@ export default function ChatPage() {
 
       // Fetch messages
       if (currentChannel) {
-        const { data: msgs, error: msgError } = await supabase
-          .from('chat_messages')
-          .select('*, profiles:sender_id(full_name, username, avatar_url)')
-          .eq('channel_id', currentChannel.id)
-          .eq('workspace_id', activeWorkspace.id)
-          .eq('is_deleted', false)
-          .order('created_at', { ascending: true });
-
-        if (msgError) throw msgError;
-        setMessages(msgs || []);
+        await fetchMessages(currentChannel.id);
       }
     } catch (err: any) {
       toast({ variant: "destructive", title: "Chat Error", description: err.message });
     } finally {
       setLoading(false);
-      setTimeout(scrollToBottom, 100);
     }
-  }, [activeWorkspace, userProfile, supabase, toast]);
+  }, [activeWorkspace, userProfile, supabase, toast, fetchMessages]);
 
   useEffect(() => {
     fetchChannel();
@@ -162,8 +173,10 @@ export default function ChatPage() {
           .single();
         
         if (data) {
-          setMessages(prev => [...prev, data]);
-          setTimeout(scrollToBottom, 50);
+          setMessages(prev => {
+            if (prev.some(m => m.id === data.id)) return prev;
+            return [...prev, data];
+          });
         }
       })
       .on('postgres_changes', {
@@ -186,17 +199,32 @@ export default function ChatPage() {
     setSending(true);
 
     try {
-      const { error } = await supabase
+      const { data: newMessage, error } = await supabase
         .from('chat_messages')
         .insert({
           channel_id: channel.id,
           workspace_id: activeWorkspace.id,
           sender_id: userProfile.id,
           message: input.trim()
-        });
+        })
+        .select(`
+          *,
+          profiles:sender_id(full_name, username, avatar_url)
+        `)
+        .single();
 
       if (error) throw error;
+      
+      // Optimistic/Immediate update
+      if (newMessage) {
+        setMessages(prev => {
+          if (prev.some(m => m.id === newMessage.id)) return prev;
+          return [...prev, newMessage];
+        });
+      }
+      
       setInput("");
+      scrollToBottom();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
@@ -266,6 +294,9 @@ export default function ChatPage() {
 
       toast({ title: "Task Created", description: "The message has been successfully converted into a task." });
       setIsTaskModalOpen(false);
+      
+      // Update the message in state to show the "Task Created" badge
+      setMessages(prev => prev.map(m => m.id === selectedMessage.id ? { ...m, created_task_id: task.id } : m));
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     }
@@ -317,7 +348,7 @@ export default function ChatPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div className={cn("max-w-[70%] flex flex-col", isMe ? "items-end" : "items-start")}>
-                      <div className="flex items-center gap-2 mb-1 px-1">
+                      <div className={cn("flex items-center gap-2 mb-1 px-1", isMe ? "flex-row-reverse" : "")}>
                         <span className="text-xs font-bold">{profile?.full_name || 'User'}</span>
                         <span className="text-[10px] text-muted-foreground">
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -361,7 +392,7 @@ export default function ChatPage() {
                 );
               })
             )}
-            <div ref={scrollRef} />
+            <div ref={messagesEndRef} />
           </div>
         </ScrollArea>
 
