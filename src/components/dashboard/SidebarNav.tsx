@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { 
@@ -38,7 +39,12 @@ export function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { activeWorkspace, workspaces, switchWorkspace } = useWorkspace();
+  const [mounted, setMounted] = useState(false);
   const supabase = createClient();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -49,38 +55,42 @@ export function SidebarNav() {
   return (
     <div className="flex flex-col h-full bg-white border-r w-64">
       <div className="p-6">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-lg">
-                    {activeWorkspace?.name?.[0] || 'W'}
-                  </span>
+        {!mounted ? (
+          <div className="w-full h-12 bg-slate-50 rounded-lg animate-pulse" />
+        ) : (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-lg">
+                      {activeWorkspace?.name?.[0] || 'W'}
+                    </span>
+                  </div>
+                  <div className="text-left overflow-hidden">
+                     <h1 className="text-sm font-bold truncate text-foreground">
+                       {activeWorkspace?.name || 'WorkspaceZ'}
+                     </h1>
+                     <p className="text-[10px] text-muted-foreground truncate">
+                       {activeWorkspace?.join_code || ''}
+                     </p>
+                  </div>
                 </div>
-                <div className="text-left overflow-hidden">
-                   <h1 className="text-sm font-bold truncate text-foreground">
-                     {activeWorkspace?.name || 'WorkspaceZ'}
-                   </h1>
-                   <p className="text-[10px] text-muted-foreground truncate">
-                     {activeWorkspace?.join_code || ''}
-                   </p>
-                </div>
-              </div>
-              <ChevronDown className="w-4 h-4 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="start">
-            {workspaces.map((ws) => (
-              <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)}>
-                {ws.name}
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56" align="start">
+              {workspaces.map((ws) => (
+                <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)}>
+                  {ws.name}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuItem onClick={() => router.push('/workspace-setup')} className="text-primary font-medium">
+                Create/Join New
               </DropdownMenuItem>
-            ))}
-            <DropdownMenuItem onClick={() => router.push('/workspace-setup')} className="text-primary font-medium">
-              Create/Join New
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <nav className="flex-1 px-4 space-y-1">
