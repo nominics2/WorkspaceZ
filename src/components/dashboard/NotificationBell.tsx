@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -81,8 +82,6 @@ export function NotificationBell() {
         },
         (payload) => {
           const newNotif = payload.new;
-          
-          // Check if notification belongs to active workspace or is global
           const belongsToWorkspace = !newNotif.workspace_id || newNotif.workspace_id === activeWorkspace?.id;
           
           if (belongsToWorkspace) {
@@ -99,12 +98,45 @@ export function NotificationBell() {
           }
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userProfile.id}`,
+        },
+        (payload) => {
+          const updatedNotif = payload.new;
+          setNotifications(prev => prev.map(n => n.id === updatedNotif.id ? updatedNotif : n));
+          // Recalculate unread count
+          setUnreadCount(prev => {
+             // This is a simple approximation; full refetch is safer for bulk updates
+             return prev; 
+          });
+          fetchNotifications(); // Full refetch to ensure count is accurate after status change
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'notifications',
+        },
+        (payload) => {
+          // Note: DELETE payload doesn't have .new, only .old (usually just ID)
+          const deletedId = payload.old.id;
+          setNotifications(prev => prev.filter(n => n.id !== deletedId));
+          fetchNotifications();
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userProfile, activeWorkspace, supabase, toast]);
+  }, [userProfile, activeWorkspace, supabase, toast, fetchNotifications]);
 
   const handleMarkAsRead = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
@@ -157,7 +189,6 @@ export function NotificationBell() {
   };
 
   const handleNotificationClick = async (notification: any) => {
-    // 1. Mark as read if unread
     if (!notification.is_read) {
       try {
         await supabase.rpc("mark_notification_read", {
@@ -172,7 +203,6 @@ export function NotificationBell() {
       }
     }
 
-    // 2. Navigate
     if (notification.related_task_id) {
       router.push(`/tasks?taskId=${notification.related_task_id}`);
     } else if (notification.related_note_id) {
@@ -281,8 +311,12 @@ export function NotificationBell() {
         </div>
         <DropdownMenuSeparator className="m-0" />
         <div className="p-2 bg-white text-center">
-          <Button variant="ghost" className="w-full h-8 text-xs font-medium text-muted-foreground hover:text-foreground">
-            View all notifications
+          <Button 
+            variant="ghost" 
+            className="w-full h-8 text-xs font-medium text-muted-foreground hover:text-foreground"
+            onClick={() => router.push('/settings')}
+          >
+            View all history
           </Button>
         </div>
       </DropdownMenuContent>
