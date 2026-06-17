@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
   const router = useRouter();
@@ -29,11 +31,20 @@ export default function LoginPage() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            data: {
+              full_name: fullName,
+              username: username.toLowerCase(),
+            },
+          },
         });
         if (error) throw error;
-        toast({ title: "Check your email", description: "Confirmation link sent." });
+        toast({ 
+          title: "Registration successful", 
+          description: "Please check your email to verify your account." 
+        });
       } else {
-        const { error, data } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
@@ -65,11 +76,39 @@ export default function LoginPage() {
             <CardTitle className="text-2xl font-bold">
               {isRegister ? "Create Account" : "Welcome to WorkspaceZ"}
             </CardTitle>
-            <CardDescription>Modern workspace management for teams</CardDescription>
+            <CardDescription>
+              {isRegister ? "Join teams and manage tasks effectively" : "Modern workspace management for teams"}
+            </CardDescription>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
+            {isRegister && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Full Name</Label>
+                  <Input 
+                    id="fullName" 
+                    placeholder="Alex Johnson" 
+                    required 
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
+                  <Input 
+                    id="username" 
+                    placeholder="alexj" 
+                    required 
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+              </>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input 
