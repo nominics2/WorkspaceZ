@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -56,11 +55,14 @@ export function SidebarNav() {
     <div className="flex flex-col h-full bg-white border-r w-64">
       <div className="p-6">
         {!mounted ? (
-          <div className="w-full h-12 bg-slate-50 rounded-lg animate-pulse" />
+          <div className="w-full h-12 rounded-lg bg-slate-100 animate-pulse" />
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
+              <button 
+                type="button"
+                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors"
+              >
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                     <span className="text-white font-bold text-lg">
