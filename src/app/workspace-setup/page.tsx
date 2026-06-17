@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,23 +14,51 @@ export default function WorkspaceSetupPage() {
   const [mode, setMode] = useState<"choice" | "create" | "join">("choice");
   const [workspaceName, setWorkspaceName] = useState("");
   const [joinCode, setJoinCode] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
+
+  useEffect(() => {
+    async function checkUser() {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error || !user) {
+        toast({
+          variant: "destructive",
+          title: "Session Expired",
+          description: "Please log in again to continue.",
+        });
+        router.push("/");
+        return;
+      }
+      setUser(user);
+      setLoading(false);
+    }
+    checkUser();
+  }, [router, supabase.auth, toast]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !currentUser) {
+        toast({
+          variant: "destructive",
+          title: "Authentication Error",
+          description: "Not authenticated. Please login again.",
+        });
+        router.push("/");
+        return;
+      }
 
       const { data, error } = await supabase
         .from('workspaces')
         .insert({
           name: workspaceName,
-          created_by: user.id
+          created_by: currentUser.id
         })
         .select()
         .single();
@@ -51,6 +78,9 @@ export default function WorkspaceSetupPage() {
     e.preventDefault();
     setLoading(true);
     try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (!currentUser) throw new Error("Not authenticated");
+
       const { data, error } = await supabase.rpc('join_workspace_by_code', {
         p_join_code: joinCode
       });
@@ -60,11 +90,23 @@ export default function WorkspaceSetupPage() {
       toast({ title: "Welcome!", description: "You have joined the workspace." });
       router.push("/dashboard");
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "Invalid join code" });
+      toast({ 
+        variant: "destructive", 
+        title: "Error joining workspace", 
+        description: err.message || "Invalid join code" 
+      });
     } finally {
       setLoading(false);
     }
   };
+
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (mode === "choice") {
     return (
