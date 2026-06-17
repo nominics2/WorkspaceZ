@@ -1,21 +1,21 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { 
   HardDrive, 
   Shield, 
   Bell, 
   User, 
-  Cloud, 
   Loader2, 
   CheckCircle2, 
   Trash2, 
   Filter, 
   Inbox,
   Clock,
-  Check
+  Check,
+  LogOut,
+  Send,
+  Save
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -30,23 +30,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 
 type TabType = 'profile' | 'notifications';
 
 export default function SettingsPage() {
-  const { activeWorkspace, userProfile } = useWorkspace();
+  const { activeWorkspace, userProfile, refreshWorkspaces } = useWorkspace();
   const [activeTab, setActiveTab] = useState<TabType>('profile');
-  const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 1024 * 1024 * 1024 }); // Default 1GB
+  const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 1024 * 1024 * 1024 }); 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   
+  // Profile Form State
+  const [profileForm, setProfileForm] = useState({
+    full_name: "",
+    username: ""
+  });
+
   // Notification Filters
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
   const supabase = createClient();
   const { toast } = useToast();
+
+  useEffect(() => {
+    if (userProfile) {
+      setProfileForm({
+        full_name: userProfile.full_name || "",
+        username: userProfile.username || ""
+      });
+    }
+  }, [userProfile]);
 
   const fetchStorageUsage = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -96,6 +117,48 @@ export default function SettingsPage() {
     setLoading(true);
     Promise.all([fetchStorageUsage(), fetchNotifications()]).finally(() => setLoading(false));
   }, [fetchStorageUsage, fetchNotifications]);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userProfile) return;
+
+    // Validation
+    const usernameRegex = /^[a-z0-9_]{3,20}$/;
+    if (!usernameRegex.test(profileForm.username)) {
+      toast({
+        variant: "destructive",
+        title: "Invalid Username",
+        description: "Username must be 3-20 characters, lowercase, and only contain letters, numbers, or underscores."
+      });
+      return;
+    }
+
+    setSavingProfile(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: profileForm.full_name,
+          username: profileForm.username.toLowerCase(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userProfile.id);
+
+      if (error) throw error;
+
+      toast({ title: "Profile updated successfully!" });
+      await refreshWorkspaces();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update failed", description: err.message });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = '/';
+  };
 
   const handleMarkRead = async (id: string) => {
     try {
@@ -150,8 +213,8 @@ export default function SettingsPage() {
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Settings</h1>
-          <p className="text-muted-foreground">Manage your account and workspace preferences</p>
+          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <p className="text-muted-foreground">Manage your account, workspace, and preferences.</p>
         </div>
       </div>
 
@@ -175,7 +238,10 @@ export default function SettingsPage() {
           >
             <Bell className="w-5 h-5" /> Notification History
           </button>
-          <div className="pt-4 mt-4 border-t px-3">
+          
+          <Separator className="my-4" />
+          
+          <div className="px-3">
              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Resources</p>
              <div className="space-y-4">
                <div className="space-y-1.5">
@@ -187,6 +253,17 @@ export default function SettingsPage() {
                </div>
              </div>
           </div>
+          
+          <div className="pt-8">
+            <Button 
+              variant="ghost" 
+              className="w-full justify-start text-rose-500 hover:text-rose-600 hover:bg-rose-50"
+              onClick={handleLogout}
+            >
+              <LogOut className="w-4 h-4 mr-3" />
+              Sign Out
+            </Button>
+          </div>
         </aside>
 
         <div className="md:col-span-3 space-y-6">
@@ -194,28 +271,106 @@ export default function SettingsPage() {
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
               <Card className="border-none shadow-sm overflow-hidden">
                 <CardHeader className="bg-white border-b">
-                  <CardTitle>Account Information</CardTitle>
-                  <CardDescription>Update your personal details and view your role.</CardDescription>
+                  <CardTitle>Public Profile</CardTitle>
+                  <CardDescription>Update your personal information visible to your team.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-6">
-                  <div className="flex flex-col sm:flex-row items-center gap-6">
-                    <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center border-4 border-white shadow-xl overflow-hidden shrink-0">
-                      {userProfile?.avatar_url ? (
-                        <img src={userProfile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
-                      ) : (
-                        <span className="text-primary font-bold text-3xl">{userProfile?.full_name?.[0]}</span>
-                      )}
-                    </div>
-                    <div className="space-y-2 text-center sm:text-left flex-1">
-                      <h3 className="text-2xl font-bold">{userProfile?.full_name}</h3>
-                      <p className="text-muted-foreground font-mono text-sm">{userProfile?.username}</p>
-                      <div className="flex flex-wrap justify-center sm:justify-start gap-2 pt-2">
-                        <Badge variant="secondary" className="bg-primary/10 text-primary border-none px-3">
-                          {activeWorkspace?.name} Member
-                        </Badge>
-                        <Badge variant="outline" className="capitalize">{userProfile?.email}</Badge>
+                  <form onSubmit={handleUpdateProfile} className="space-y-6">
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                      <div className="relative group">
+                        <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center border-4 border-white shadow-xl overflow-hidden shrink-0">
+                          {userProfile?.avatar_url ? (
+                            <img src={userProfile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                          ) : (
+                            <span className="text-primary font-bold text-3xl">{userProfile?.full_name?.[0]}</span>
+                          )}
+                        </div>
+                        <button 
+                          type="button" 
+                          disabled 
+                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex items-center justify-center cursor-not-allowed"
+                        >
+                          <span className="text-[10px] text-white font-bold text-center px-2">Upload coming soon</span>
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-1 text-center sm:text-left flex-1">
+                        <h3 className="text-xl font-bold">{userProfile?.full_name}</h3>
+                        <p className="text-muted-foreground text-sm">{userProfile?.email}</p>
+                        <div className="pt-2">
+                          <Badge variant="secondary" className="bg-primary/10 text-primary border-none px-3 h-6">
+                            {activeWorkspace?.name || 'Loading workspace...'} Member
+                          </Badge>
+                        </div>
                       </div>
                     </div>
+
+                    <Separator />
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="full_name">Full Name</Label>
+                        <Input 
+                          id="full_name" 
+                          value={profileForm.full_name} 
+                          onChange={(e) => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
+                          placeholder="Your real name"
+                          disabled={savingProfile}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="username">Username</Label>
+                        <Input 
+                          id="username" 
+                          value={profileForm.username} 
+                          onChange={(e) => setProfileForm(f => ({ ...f, username: e.target.value }))}
+                          placeholder="unique_handle"
+                          disabled={savingProfile}
+                        />
+                        <p className="text-[10px] text-muted-foreground">3-20 characters, lowercase, numbers, or underscores.</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Email Address</Label>
+                      <Input value={userProfile?.email} disabled className="bg-slate-50 cursor-not-allowed" />
+                      <p className="text-[10px] text-muted-foreground italic">Email change is managed by workspace administrators.</p>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <Button type="submit" disabled={savingProfile} className="gap-2">
+                        {savingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                        Save Changes
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+
+              <Card className="border-none shadow-sm overflow-hidden opacity-80">
+                <CardHeader className="bg-white border-b">
+                  <div className="flex items-center gap-2">
+                    <Send className="w-5 h-5 text-sky-500" />
+                    <CardTitle>Telegram Notifications</CardTitle>
+                  </div>
+                  <CardDescription>Receive real-time alerts directly in your Telegram app.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 flex items-start gap-3">
+                    <div className="p-2 bg-white rounded-lg shadow-sm">
+                      <Clock className="w-4 h-4 text-sky-600" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm font-bold text-sky-900">Coming Soon</p>
+                      <p className="text-xs text-sky-700 leading-relaxed">
+                        We are working on a Telegram integration to help you stay updated with task deadlines and team messages.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Telegram Chat ID</Label>
+                    <Input disabled placeholder="e.g. 123456789" className="bg-slate-50 border-dashed" />
+                    <p className="text-[10px] text-muted-foreground">Integration status: <span className="font-bold">Experimental</span></p>
                   </div>
                 </CardContent>
               </Card>
@@ -226,8 +381,8 @@ export default function SettingsPage() {
                     <HardDrive className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <CardTitle>Workspace Storage</CardTitle>
-                    <CardDescription>File storage usage for {activeWorkspace?.name || 'Workspace'}</CardDescription>
+                    <CardTitle>Workspace Usage</CardTitle>
+                    <CardDescription>Resources consumed by your active workspace.</CardDescription>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -246,7 +401,7 @@ export default function SettingsPage() {
                       <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-3">
                         <Shield className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          Your storage limit is managed by the workspace administrator. Standard accounts are limited to 1GB. Contact support to request an increase.
+                          Standard workspace accounts are limited to 1GB. To increase this limit, please contact your workspace owner.
                         </p>
                       </div>
                     </div>
@@ -356,7 +511,7 @@ export default function SettingsPage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8 text-primary hover:bg-primary/5"
-                              onClick={() => handleMarkRead(id)}
+                              onClick={() => handleMarkRead(n.id)}
                               title="Mark as read"
                             >
                               <CheckCircle2 className="w-4 h-4" />
