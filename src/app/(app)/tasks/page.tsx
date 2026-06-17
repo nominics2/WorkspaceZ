@@ -1,18 +1,17 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { 
   Plus, 
   Search, 
   Filter, 
   MoreVertical, 
-  CheckCircle2, 
-  Clock, 
-  MessageSquare, 
-  Paperclip,
+  Loader2,
   Calendar as CalendarIcon,
-  Loader2
+  CheckCircle2,
+  Clock,
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,52 +24,201 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogDescription
+} from "@/components/ui/dialog";
+import { 
+  Sheet, 
+  SheetContent, 
+  SheetHeader, 
+  SheetTitle, 
+  SheetDescription 
+} from "@/components/ui/sheet";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { Slider } from "@/components/ui/slider";
 
 export default function TasksPage() {
-  const { activeWorkspace } = useWorkspace();
+  const { activeWorkspace, userProfile } = useWorkspace();
   const [tasks, setTasks] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [subtasks, setSubtasks] = useState<any[]>([]);
+  const [comments, setComments] = useState<any[]>([]);
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [newComment, setNewComment] = useState("");
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+
   const supabase = createClient();
+  const { toast } = useToast();
+
+  const fetchTasks = useCallback(async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('my_tasks_view')
+        .select('*')
+        .eq('workspace_id', activeWorkspace.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setTasks(data || []);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setLoading(false);
+    }
+  }, [activeWorkspace, supabase, toast]);
 
   useEffect(() => {
-    if (!activeWorkspace) return;
-
-    const fetchTasks = async () => {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('my_tasks_view')
-          .select('*')
-          .eq('workspace_id', activeWorkspace.id);
-        
-        if (error) throw error;
-        setTasks(data || []);
-      } catch (err) {
-        console.error('Error fetching tasks:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchTasks();
-  }, [activeWorkspace]);
+  }, [fetchTasks]);
+
+  const fetchTaskDetails = async (taskId: string) => {
+    try {
+      // Subtasks
+      const { data: st } = await supabase.from('subtasks').select('*').eq('task_id', taskId).order('created_at', { ascending: true });
+      setSubtasks(st || []);
+
+      // Comments
+      const { data: c } = await supabase.from('task_comments_view').select('*').eq('task_id', taskId).order('created_at', { ascending: false });
+      setComments(c || []);
+
+      // Activity
+      const { data: al } = await supabase.from('task_activity_logs').select('*').eq('task_id', taskId).order('created_at', { ascending: false });
+      setActivityLogs(al || []);
+    } catch (err: any) {
+      console.error("Error fetching task details:", err);
+    }
+  };
+
+  const handleOpenDetail = (task: any) => {
+    setSelectedTask(task);
+    setIsDetailOpen(true);
+    fetchTaskDetails(task.id);
+  };
+
+  const handleCreateTask = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const title = formData.get("title") as string;
+    const description = formData.get("description") as string;
+    const priority = formData.get("priority") as string;
+    const dueDate = formData.get("due_date") as string;
+
+    try {
+      const { error } = await supabase.from('tasks').insert({
+        workspace_id: activeWorkspace?.id,
+        title,
+        description,
+        priority: priority || 'Medium',
+        status: 'To Do',
+        due_date: dueDate || null,
+        created_by: userProfile?.id,
+        assigned_to: userProfile?.id, // Default to self for now
+        progress_mode: 'auto',
+        manual_progress: 0
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Success", description: "Task created successfully" });
+      setIsCreateOpen(false);
+      fetchTasks();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleAddSubtask = async () => {
+    if (!newSubtaskTitle.trim() || !selectedTask) return;
+    try {
+      const { error } = await supabase.from('subtasks').insert({
+        task_id: selectedTask.id,
+        title: newSubtaskTitle
+      });
+      if (error) throw error;
+      setNewSubtaskTitle("");
+      fetchTaskDetails(selectedTask.id);
+      fetchTasks(); // Refresh progress
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleToggleSubtask = async (subtask: any) => {
+    try {
+      const { error } = await supabase.from('subtasks').update({
+        completed: !subtask.completed
+      }).eq('id', subtask.id);
+      if (error) throw error;
+      fetchTaskDetails(selectedTask.id);
+      fetchTasks(); // Refresh progress
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleDeleteSubtask = async (id: string) => {
+    try {
+      const { error } = await supabase.from('subtasks').delete().eq('id', id);
+      if (error) throw error;
+      fetchTaskDetails(selectedTask.id);
+      fetchTasks(); // Refresh progress
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !selectedTask) return;
+    try {
+      const { error } = await supabase.from('task_comments').insert({
+        task_id: selectedTask.id,
+        user_id: userProfile?.id,
+        comment: newComment
+      });
+      if (error) throw error;
+      setNewComment("");
+      fetchTaskDetails(selectedTask.id);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleUpdateManualProgress = async (val: number[]) => {
+    if (!selectedTask) return;
+    try {
+      await supabase.from('tasks').update({
+        manual_progress: val[0],
+        progress_mode: 'manual'
+      }).eq('id', selectedTask.id);
+      
+      setSelectedTask({...selectedTask, manual_progress: val[0], progress_mode: 'manual'});
+      fetchTasks();
+    } catch (err: any) {
+      console.error(err);
+    }
+  };
 
   const filteredTasks = tasks.filter(t => 
     t.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.description?.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  if (loading) {
-    return (
-      <div className="flex h-[80vh] items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -79,7 +227,10 @@ export default function TasksPage() {
           <h1 className="text-3xl font-bold">Tasks</h1>
           <p className="text-muted-foreground">Manage and track your project assignments</p>
         </div>
-        <Button className="flex items-center gap-2 py-6 px-6 shadow-lg shadow-primary/20">
+        <Button 
+          className="flex items-center gap-2 py-6 px-6 shadow-lg shadow-primary/20"
+          onClick={() => setIsCreateOpen(true)}
+        >
           <Plus className="w-5 h-5" /> New Task
         </Button>
       </div>
@@ -100,11 +251,17 @@ export default function TasksPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4">
-        {filteredTasks.length === 0 ? (
-          <p className="text-center py-12 text-muted-foreground">No tasks found.</p>
+        {loading ? (
+          <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+        ) : filteredTasks.length === 0 ? (
+          <p className="text-center py-12 text-muted-foreground">No tasks found in this workspace.</p>
         ) : (
           filteredTasks.map((task) => (
-            <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden">
+            <Card 
+              key={task.id} 
+              className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden cursor-pointer"
+              onClick={() => handleOpenDetail(task)}
+            >
               <CardContent className="p-0">
                 <div className="flex flex-col md:flex-row">
                   <div className={cn(
@@ -121,17 +278,17 @@ export default function TasksPage() {
                            <Badge variant="secondary" className="text-[10px] bg-slate-100">{task.sub_workspace_name}</Badge>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-1">{task.description}</p>
+                      <p className="text-sm text-muted-foreground line-clamp-1">{task.description || 'No description'}</p>
                     </div>
 
                     <div className="flex items-center gap-8 min-w-[300px]">
                       <div className="space-y-1">
                         <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                          <CalendarIcon className="w-3 h-3" /> Due {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
+                          <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
                         </p>
                         <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-slate-100 border flex items-center justify-center">
-                            <span className="text-[10px] font-bold">
+                          <div className="w-6 h-6 rounded-full bg-primary/10 border flex items-center justify-center">
+                            <span className="text-[10px] font-bold text-primary">
                               {task.assigned_to_name?.[0] || '?'}
                             </span>
                           </div>
@@ -142,24 +299,9 @@ export default function TasksPage() {
                       <div className="flex-1">
                         <div className="flex justify-between items-center mb-1.5">
                           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Progress</span>
-                          <span className="text-xs font-bold text-primary">{task.calculated_progress || task.manual_progress || 0}%</span>
+                          <span className="text-xs font-bold text-primary">{Math.round(task.calculated_progress || task.manual_progress || 0)}%</span>
                         </div>
                         <Progress value={task.calculated_progress || task.manual_progress || 0} className="h-1.5" />
-                      </div>
-
-                      <div className="flex items-center gap-4 text-muted-foreground">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="rounded-full">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem>Edit Task</DropdownMenuItem>
-                            <DropdownMenuItem className="text-emerald-600">Mark Completed</DropdownMenuItem>
-                            <DropdownMenuItem className="text-rose-600">Delete</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                       </div>
                     </div>
                   </div>
@@ -169,6 +311,176 @@ export default function TasksPage() {
           ))
         )}
       </div>
+
+      {/* Create Task Dialog */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create New Task</DialogTitle>
+            <DialogDescription>Add a new assignment to {activeWorkspace?.name}</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTask} className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">Task Title</Label>
+              <Input id="title" name="title" placeholder="What needs to be done?" required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea id="description" name="description" placeholder="Add more details..." />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="priority">Priority</Label>
+                <Select name="priority" defaultValue="Medium">
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Low">Low</SelectItem>
+                    <SelectItem value="Medium">Medium</SelectItem>
+                    <SelectItem value="High">High</SelectItem>
+                    <SelectItem value="Urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="due_date">Due Date</Label>
+                <Input id="due_date" name="due_date" type="date" />
+              </div>
+            </div>
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="ghost" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+              <Button type="submit">Create Task</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Detail Sheet */}
+      <Sheet open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+          {selectedTask && (
+            <div className="space-y-8 pt-6">
+              <SheetHeader>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline">{selectedTask.priority}</Badge>
+                  <Badge variant="secondary">{selectedTask.status}</Badge>
+                </div>
+                <SheetTitle className="text-2xl font-bold">{selectedTask.title}</SheetTitle>
+                <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>
+              </SheetHeader>
+
+              <div className="space-y-6">
+                {/* Progress Tracking */}
+                <div className="space-y-3 p-4 bg-slate-50 rounded-xl">
+                   <div className="flex items-center justify-between mb-2">
+                     <Label className="text-sm font-bold">Progress Tracking</Label>
+                     <Badge variant={selectedTask.progress_mode === 'auto' ? 'default' : 'secondary'}>
+                       {selectedTask.progress_mode === 'auto' ? 'Auto (Subtasks)' : 'Manual'}
+                     </Badge>
+                   </div>
+                   {selectedTask.progress_mode === 'manual' ? (
+                     <div className="space-y-4">
+                       <Slider 
+                         value={[selectedTask.manual_progress || 0]} 
+                         onValueChange={handleUpdateManualProgress} 
+                         max={100} 
+                         step={1} 
+                       />
+                       <p className="text-xs text-center font-bold text-primary">{selectedTask.manual_progress}% Complete</p>
+                     </div>
+                   ) : (
+                     <div className="space-y-2">
+                       <Progress value={selectedTask.calculated_progress || 0} className="h-2" />
+                       <p className="text-xs text-center font-bold text-primary">{Math.round(selectedTask.calculated_progress || 0)}% Complete</p>
+                     </div>
+                   )}
+                </div>
+
+                {/* Subtasks */}
+                <div className="space-y-4">
+                  <h4 className="font-bold flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-primary" /> Subtasks
+                  </h4>
+                  <div className="space-y-2">
+                    {subtasks.map((st) => (
+                      <div key={st.id} className="flex items-center justify-between group p-2 hover:bg-slate-50 rounded-lg transition-colors">
+                        <div className="flex items-center gap-3">
+                          <input 
+                            type="checkbox" 
+                            checked={st.completed} 
+                            onChange={() => handleToggleSubtask(st)}
+                            className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                          />
+                          <span className={cn("text-sm", st.completed && "line-through text-muted-foreground")}>{st.title}</span>
+                        </div>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 text-rose-500"
+                          onClick={() => handleDeleteSubtask(st.id)}
+                        >
+                          <Plus className="w-4 h-4 rotate-45" />
+                        </Button>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-2 mt-2">
+                      <Input 
+                        placeholder="Add subtask..." 
+                        value={newSubtaskTitle}
+                        onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask()}
+                        className="h-9 text-sm"
+                      />
+                      <Button size="sm" variant="secondary" onClick={handleAddSubtask}>Add</Button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Comments */}
+                <div className="space-y-4">
+                  <h4 className="font-bold flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-primary" /> Comments
+                  </h4>
+                  <div className="space-y-4">
+                    <div className="flex gap-2">
+                      <Input 
+                        placeholder="Add a comment..." 
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                      />
+                      <Button onClick={handleAddComment}>Post</Button>
+                    </div>
+                    <div className="space-y-4">
+                      {comments.map((c) => (
+                        <div key={c.id} className="bg-slate-50 p-3 rounded-lg space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold">{c.full_name}</span>
+                            <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
+                          </div>
+                          <p className="text-sm">{c.comment}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Activity Log */}
+                <div className="space-y-4 border-t pt-4">
+                  <h4 className="font-bold text-xs text-muted-foreground uppercase tracking-widest">Recent Activity</h4>
+                  <div className="space-y-3">
+                    {activityLogs.map((log) => (
+                      <div key={log.id} className="text-xs flex gap-2">
+                        <Clock className="w-3 h-3 text-muted-foreground mt-0.5" />
+                        <span className="text-muted-foreground">{log.action}</span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">{new Date(log.created_at).toLocaleDateString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

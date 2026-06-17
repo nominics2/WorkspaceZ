@@ -12,16 +12,19 @@ import {
   LayoutDashboard, 
   TrendingUp,
   ArrowRight,
-  Loader2
+  Loader2,
+  Bell
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [stats, setStats] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
@@ -36,22 +39,21 @@ export default function DashboardPage() {
           .from('dashboard_task_summary_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
-          .single();
+          .maybeSingle();
 
-        if (summary) {
-          setStats([
-            { label: "To-do", count: summary.todo_count || 0, icon: Clock, color: "text-blue-500", bg: "bg-blue-50" },
-            { label: "Ongoing", count: summary.in_progress_count || 0, icon: TrendingUp, color: "text-amber-500", bg: "bg-amber-50" },
-            { label: "Completed", count: summary.completed_count || 0, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
-            { label: "Overdue", count: summary.overdue_count || 0, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50" },
-          ]);
-        }
+        setStats([
+          { label: "To-do", count: summary?.todo_count || 0, icon: Clock, color: "text-blue-500", bg: "bg-blue-50" },
+          { label: "Ongoing", count: summary?.in_progress_count || 0, icon: TrendingUp, color: "text-amber-500", bg: "bg-amber-50" },
+          { label: "Completed", count: summary?.completed_count || 0, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
+          { label: "Overdue", count: summary?.overdue_count || 0, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50" },
+        ]);
 
-        // Fetch My Tasks
+        // Fetch My Tasks (Upcoming)
         const { data: myTasks } = await supabase
           .from('my_tasks_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
+          .order('due_date', { ascending: true })
           .limit(5);
         setTasks(myTasks || []);
 
@@ -60,8 +62,19 @@ export default function DashboardPage() {
           .from('recent_activity_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
-          .limit(3);
+          .order('created_at', { ascending: false })
+          .limit(5);
         setActivity(recentLogs || []);
+
+        // Fetch Notifications
+        const { data: notifs } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', userProfile?.id)
+          .eq('is_read', false)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        setNotifications(notifs || []);
 
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
@@ -71,7 +84,7 @@ export default function DashboardPage() {
     };
 
     fetchDashboardData();
-  }, [activeWorkspace]);
+  }, [activeWorkspace, userProfile?.id, supabase]);
 
   if (loading) {
     return (
@@ -83,9 +96,11 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Welcome back, {userProfile?.full_name || 'User'} 👋</h1>
-        <p className="text-muted-foreground">Here is what's happening in {activeWorkspace?.name} today.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground">Welcome back, {userProfile?.full_name || 'User'} 👋</h1>
+          <p className="text-muted-foreground">Here is what's happening in {activeWorkspace?.name} today.</p>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -110,13 +125,15 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">Upcoming Tasks</h2>
-            <button className="text-sm font-medium text-primary flex items-center gap-1 hover:underline">
+            <Link href="/tasks" className="text-sm font-medium text-primary flex items-center gap-1 hover:underline">
               View all <ArrowRight className="w-4 h-4" />
-            </button>
+            </Link>
           </div>
           <div className="space-y-3">
             {tasks.length === 0 ? (
-              <p className="text-center py-8 text-muted-foreground">No upcoming tasks.</p>
+              <Card className="border-none shadow-sm p-8 text-center text-muted-foreground">
+                No upcoming tasks for this workspace.
+              </Card>
             ) : (
               tasks.map((task) => (
                 <Card key={task.id} className="border-none shadow-sm hover:shadow-md transition-shadow group">
@@ -132,7 +149,9 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">{task.calculated_progress || task.manual_progress || 0}%</p>
+                      <p className="text-xs font-medium text-muted-foreground mb-1">
+                        {Math.round(task.calculated_progress || task.manual_progress || 0)}%
+                      </p>
                       <Progress value={task.calculated_progress || task.manual_progress || 0} className="w-20 h-1.5" />
                     </div>
                   </CardContent>
@@ -144,21 +163,24 @@ export default function DashboardPage() {
 
         {/* Productivity & Activity */}
         <div className="space-y-8">
-          <Card className="border-none shadow-sm bg-primary text-white overflow-hidden relative">
-            <CardHeader>
-              <CardTitle className="text-lg">Workspace Health</CardTitle>
-              <CardDescription className="text-white/80">Overall task completion progress</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-4xl font-bold mb-4">
-                {stats.find(s => s.label === "Completed")?.count || 0}
-              </div>
-              <Progress value={50} className="h-2 bg-white/20" />
-            </CardContent>
-            <div className="absolute -right-4 -bottom-4 opacity-10">
-              <LayoutDashboard className="w-32 h-32" />
-            </div>
-          </Card>
+          {notifications.length > 0 && (
+            <Card className="border-none shadow-sm border-l-4 border-l-primary">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-primary" />
+                  <CardTitle className="text-sm">Latest Notifications</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {notifications.map((n) => (
+                  <div key={n.id} className="text-xs">
+                    <p className="font-medium">{n.title}</p>
+                    <p className="text-muted-foreground">{n.message}</p>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="border-none shadow-sm">
             <CardHeader>
@@ -166,7 +188,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               {activity.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No recent activity.</p>
+                <p className="text-xs text-muted-foreground">No recent activity found.</p>
               ) : (
                 activity.map((log) => (
                   <div key={log.id} className="flex gap-4">
