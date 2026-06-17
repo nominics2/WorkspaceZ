@@ -52,7 +52,9 @@ export function GlobalSearch() {
     setIsOpen(false);
     setQuery("");
 
-    switch (result.type) {
+    const resType = result.result_type || "unknown";
+
+    switch (resType) {
       case "task":
         router.push(`/tasks?taskId=${result.id}`);
         break;
@@ -72,7 +74,7 @@ export function GlobalSearch() {
         try {
           const { data, error } = await supabase.storage
             .from('workspace-attachments')
-            .createSignedUrl(result.subtitle, 600);
+            .createSignedUrl(result.subtitle || "", 600);
           if (error) throw error;
           if (data?.signedUrl) window.open(data.signedUrl, '_blank');
         } catch (err: any) {
@@ -134,7 +136,7 @@ export function GlobalSearch() {
         <Card className="absolute top-full left-0 right-0 mt-2 p-2 shadow-2xl border-none z-[100] max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-top-2">
           {loading ? (
             <div className="flex items-center justify-center p-8 gap-3 text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <Loader2 className="w-5 {h-5} animate-spin" />
               <span className="text-sm font-medium">Searching workspace...</span>
             </div>
           ) : results.length === 0 ? (
@@ -146,39 +148,46 @@ export function GlobalSearch() {
             </div>
           ) : (
             <div className="space-y-1">
-              {results.map((result) => (
-                <button
-                  key={`${result.type}-${result.id}`}
-                  className="w-full flex items-start gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors text-left group/item"
-                  onClick={() => handleResultClick(result)}
-                >
-                  <div className={cn("p-2 rounded-lg shrink-0", getTypeColor(result.type))}>
-                    {getTypeIcon(result.type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-bold text-sm truncate">{result.title}</span>
-                      <Badge variant="outline" className="text-[9px] uppercase tracking-wider py-0 h-4 bg-white">
-                        {result.type.replace("_", " ")}
-                      </Badge>
+              {results.map((result) => {
+                const resType = result.result_type || "unknown";
+                const title = result.title || "Untitled";
+                const subtitle = result.subtitle || "";
+                const description = result.description || "";
+                
+                return (
+                  <button
+                    key={`${resType}-${result.id}`}
+                    className="w-full flex items-start gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors text-left group/item"
+                    onClick={() => handleResultClick(result)}
+                  >
+                    <div className={cn("p-2 rounded-lg shrink-0", getTypeColor(resType))}>
+                      {getTypeIcon(resType)}
                     </div>
-                    {result.description && (
-                      <p className="text-xs text-muted-foreground line-clamp-1 mb-1">{result.description}</p>
-                    )}
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <CalendarIcon className="w-3 h-3" />
-                        {new Date(result.created_at).toLocaleDateString()}
-                      </span>
-                      {result.subtitle && result.type !== 'attachment' && (
-                        <span className="text-[10px] text-primary/60 font-medium truncate italic">
-                          {result.subtitle}
-                        </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-bold text-sm truncate">{title}</span>
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-wider py-0 h-4 bg-white">
+                          {resType.replaceAll("_", " ")}
+                        </Badge>
+                      </div>
+                      {description && (
+                        <p className="text-xs text-muted-foreground line-clamp-1 mb-1">{description}</p>
                       )}
+                      <div className="flex items-center gap-3">
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                          <CalendarIcon className="w-3 h-3" />
+                          {result.created_at ? new Date(result.created_at).toLocaleDateString() : 'N/A'}
+                        </span>
+                        {subtitle && resType !== 'attachment' && (
+                          <span className="text-[10px] text-primary/60 font-medium truncate italic">
+                            {subtitle}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                );
+              })}
             </div>
           )}
         </Card>
