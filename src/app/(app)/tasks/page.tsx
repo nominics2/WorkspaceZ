@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
@@ -195,6 +194,27 @@ export default function TasksPage() {
       }
     } catch (err: any) {
       toast({ variant: "destructive", title: "Open failed", description: err.message });
+    }
+  };
+
+  const handleDownloadAttachment = async (attachment: any) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('workspace-attachments')
+        .download(attachment.file_path);
+
+      if (error) throw error;
+
+      const url = window.URL.createObjectURL(data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', attachment.file_name);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Download failed", description: err.message });
     }
   };
 
@@ -625,9 +645,18 @@ export default function TasksPage() {
                               size="icon" 
                               className="h-8 w-8 text-primary"
                               onClick={() => handleOpenAttachment(file)}
-                              title="Open File"
+                              title="View File"
                             >
                               <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-primary"
+                              onClick={() => handleDownloadAttachment(file)}
+                              title="Download File"
+                            >
+                              <Download className="w-4 h-4" />
                             </Button>
                             <Button 
                               variant="ghost" 
