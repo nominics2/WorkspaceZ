@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Search, Loader2, FileText, CheckSquare, MessageSquare, Users, Layout, Paperclip, X, Calendar as CalendarIcon, Globe, Lock } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Loader2, FileText, CheckSquare, MessageSquare, Users, Layout, Paperclip, X, Calendar as CalendarIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -116,7 +116,7 @@ export function GlobalSearch() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
         <Input
-          className="pl-10 h-10 bg-slate-50 border-none shadow-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded-xl transition-all w-full"
+          className="pl-10 h-10 md:h-11 bg-slate-50 border-none shadow-none focus-visible:ring-2 focus-visible:ring-primary/20 rounded-xl transition-all w-full text-base md:text-sm"
           placeholder="Search everything..."
           value={query}
           onChange={(e) => {
@@ -136,17 +136,14 @@ export function GlobalSearch() {
       </div>
 
       {isOpen && (query.length >= 2 || loading) && (
-        <Card className="absolute top-full left-0 right-0 mt-2 p-2 shadow-2xl border-none z-[100] max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-top-2">
+        <Card className="absolute top-full left-0 right-0 mt-2 p-2 shadow-2xl border-none z-[100] max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-top-2 w-[calc(100vw-2rem)] md:w-full">
           {loading ? (
             <div className="flex items-center justify-center p-8 gap-3 text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin" />
-              <span className="text-sm font-medium">Searching workspace...</span>
+              <span className="text-sm font-medium">Searching...</span>
             </div>
           ) : results.length === 0 ? (
             <div className="p-8 text-center space-y-2">
-              <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
-                <Search className="w-6 h-6 text-slate-300" />
-              </div>
               <p className="text-sm font-medium text-muted-foreground">No results found for "{query}"</p>
             </div>
           ) : (
@@ -155,8 +152,6 @@ export function GlobalSearch() {
                 const resType = result.result_type || "unknown";
                 const resId = result.result_id || index;
                 const title = result.title || "Untitled";
-                const subtitle = result.subtitle || "";
-                const description = result.description || "";
                 
                 return (
                   <button
@@ -170,23 +165,18 @@ export function GlobalSearch() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="font-bold text-sm truncate">{title}</span>
-                        <Badge variant="outline" className="text-[9px] uppercase tracking-wider py-0 h-4 bg-white">
+                        <Badge variant="outline" className="text-[9px] uppercase tracking-wider py-0 h-4 bg-white shrink-0">
                           {resType.replaceAll("_", " ")}
                         </Badge>
                       </div>
-                      {description && (
-                        <p className="text-xs text-muted-foreground line-clamp-1 mb-1">{description}</p>
+                      {result.description && (
+                        <p className="text-[10px] md:text-xs text-muted-foreground line-clamp-1 mb-1">{result.description}</p>
                       )}
                       <div className="flex items-center gap-3">
-                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                        <span className="text-[9px] md:text-[10px] text-muted-foreground flex items-center gap-1">
                           <CalendarIcon className="w-3 h-3" />
                           {result.created_at ? new Date(result.created_at).toLocaleDateString() : 'N/A'}
                         </span>
-                        {subtitle && resType !== 'attachment' && (
-                          <span className="text-[10px] text-primary/60 font-medium truncate italic">
-                            {subtitle}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </button>

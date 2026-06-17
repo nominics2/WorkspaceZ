@@ -36,7 +36,7 @@ const navItems = [
 export function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeWorkspace, workspaces, switchWorkspace, userRole, hasPermission } = useWorkspace();
+  const { activeWorkspace, workspaces, switchWorkspace, hasPermission } = useWorkspace();
   const [mounted, setMounted] = useState(false);
   const supabase = createClient();
 
@@ -53,7 +53,7 @@ export function SidebarNav() {
   const canViewAdminPanel = hasPermission('view_admin_panel');
 
   return (
-    <div className="flex flex-col h-full bg-white border-r w-64">
+    <div className="flex flex-col h-full bg-white w-64 max-w-full">
       <div className="p-6">
         {!mounted ? (
           <div className="w-full h-12 rounded-lg bg-slate-100 animate-pulse" />
@@ -64,8 +64,8 @@ export function SidebarNav() {
                 type="button"
                 className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors"
               >
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
                     <span className="text-white font-bold text-lg">
                       {activeWorkspace?.name?.[0] || 'W'}
                     </span>
@@ -79,7 +79,7 @@ export function SidebarNav() {
                      </p>
                   </div>
                 </div>
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="start">
@@ -102,7 +102,7 @@ export function SidebarNav() {
           return (
             <Link key={item.href} href={item.href}>
               <span className={cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
                 isActive 
                   ? "bg-primary/10 text-primary" 
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -116,7 +116,7 @@ export function SidebarNav() {
         {canViewAdminPanel && (
           <Link href="/workspace">
             <span className={cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
+              "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
               pathname === "/workspace" 
                 ? "bg-primary/10 text-primary" 
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -128,10 +128,10 @@ export function SidebarNav() {
         )}
       </nav>
 
-      <div className="p-4 border-t space-y-2">
+      <div className="p-4 border-t space-y-2 mb-safe">
         <Link href="/settings">
           <span className={cn(
-            "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground",
+            "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground",
             pathname === "/settings" && "bg-primary/10 text-primary"
           )}>
             <Settings className="w-5 h-5" />
@@ -140,7 +140,7 @@ export function SidebarNav() {
         </Link>
         <Button 
           variant="ghost" 
-          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-10 md:h-11"
           onClick={handleLogout}
         >
           <LogOut className="w-5 h-5 mr-3" />

@@ -110,7 +110,6 @@ export default function WorkspaceAdminPage() {
     setLoading(true);
 
     try {
-      // 1. Fetch workspace settings
       const { data: wsData } = await supabase
         .from('workspaces')
         .select('*')
@@ -118,14 +117,12 @@ export default function WorkspaceAdminPage() {
         .single();
       setWorkspaceInfo(wsData);
 
-      // 2. Fetch members
       const { data: membersList } = await supabase
         .from('workspace_members')
         .select('*, profiles(full_name, username, avatar_url, email)')
         .eq('workspace_id', activeWorkspace.id);
       setMembers(membersList || []);
 
-      // 3. Fetch storage usage
       const { data: storageInfo } = await supabase
         .from('workspace_storage_usage')
         .select('*')
@@ -133,7 +130,6 @@ export default function WorkspaceAdminPage() {
         .maybeSingle();
       setStorage(storageInfo);
 
-      // 4. Fetch work allocations
       const { data: allocList } = await supabase
         .from('work_allocations')
         .select('*, profiles!work_allocations_user_id_fkey(full_name), creator:profiles!work_allocations_assigned_by_fkey(full_name)')
@@ -141,7 +137,6 @@ export default function WorkspaceAdminPage() {
         .order('created_at', { ascending: false });
       setAllocations(allocList || []);
 
-      // 5. Fetch sub-workspaces
       const { data: swList } = await supabase
         .from('sub_workspaces')
         .select('*')
@@ -149,21 +144,18 @@ export default function WorkspaceAdminPage() {
         .order('name', { ascending: true });
       setSubWorkspaces(swList || []);
 
-      // 6. Fetch Permission Definitions
       const { data: defs } = await supabase
         .from('role_permission_definitions')
         .select('*')
         .order('category', { ascending: true });
       setPermissionDefs(defs || []);
 
-      // 7. Fetch Workspace Role Permissions
       const { data: perms } = await supabase
         .from('workspace_role_permissions')
         .select('*')
         .eq('workspace_id', activeWorkspace.id);
       setWsPermissions(perms || []);
 
-      // 8. Fetch Audit Logs
       const { data: logs } = await supabase
         .from('admin_audit_logs')
         .select('*, actor:profiles!actor_id(full_name), target:profiles!target_user_id(full_name)')
@@ -423,18 +415,14 @@ export default function WorkspaceAdminPage() {
 
   const handleDeleteTeam = async (id: string) => {
     try {
-      // Clean up task references first
       await supabase.from('tasks').update({ sub_workspace_id: null }).eq('sub_workspace_id', id);
-      
       const { error } = await supabase.from('sub_workspaces').delete().eq('id', id);
       if (error) throw error;
-
       await supabase.rpc('create_admin_audit_log', {
         p_workspace_id: activeWorkspace?.id,
         p_action: 'sub_workspace_deleted',
         p_details: { id }
       });
-
       toast({ title: "Team removed" });
       setDeletingTeam(null);
       fetchData();
@@ -448,10 +436,8 @@ export default function WorkspaceAdminPage() {
   const handleTogglePermission = async (role: string, permissionKey: string, currentEnabled: boolean) => {
     if (userRole !== 'superadmin') return;
     if (!activeWorkspace || !userProfile) return;
-
     const id = `${role}-${permissionKey}`;
     setUpdatingPerm(id);
-
     try {
       const { error } = await supabase.rpc('set_workspace_role_permission', {
         p_workspace_id: activeWorkspace.id,
@@ -459,9 +445,7 @@ export default function WorkspaceAdminPage() {
         p_permission_key: permissionKey,
         p_enabled: !currentEnabled
       });
-
       if (error) throw error;
-      
       toast({ title: "Permission Updated" });
       fetchData();
     } catch (err: any) {
@@ -472,12 +456,11 @@ export default function WorkspaceAdminPage() {
     }
   };
 
-  const isSuper = userRole === 'superadmin';
-  const isAdminOrSuper = isSuper || userRole === 'admin';
+  const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin';
   const canManageMembers = hasPermission('manage_members');
   const canManageAllocations = hasPermission('manage_work_allocations');
   const canManageSettings = hasPermission('manage_workspace_settings');
-  const canViewAuditLog = isSuper || hasPermission('view_admin_panel');
+  const canViewAuditLog = userRole === 'superadmin' || hasPermission('view_admin_panel');
 
   const filteredMembers = members.filter(m => {
     if (statusFilter === "all") return true;
@@ -496,273 +479,166 @@ export default function WorkspaceAdminPage() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
+    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Layers className="w-8 h-8 text-primary" />
+          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
+            <Layers className="w-6 h-6 md:w-8 md:h-8 text-primary" />
             Admin Panel
           </h1>
-          <p className="text-muted-foreground">Manage workspace settings, members, roles, allocations, and storage.</p>
+          <p className="text-sm text-muted-foreground">Manage workspace settings, members, and access.</p>
         </div>
         {isAdminOrSuper && (
-          <div className="flex items-center gap-2 bg-white p-2 pr-4 rounded-xl border shadow-sm">
-            <div className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-bold font-mono text-primary">
+          <div className="flex items-center gap-2 bg-white p-2 pr-4 rounded-xl border shadow-sm w-full md:w-auto">
+            <div className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-bold font-mono text-primary flex-1 text-center">
               {activeWorkspace?.join_code}
             </div>
-            <Button variant="ghost" size="icon" onClick={handleCopyJoinCode} title="Copy Join Code">
+            <Button variant="ghost" size="icon" onClick={handleCopyJoinCode} title="Copy Join Code" className="shrink-0">
               <Copy className="w-4 h-4" />
             </Button>
           </div>
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
         <Card className="border-none shadow-sm">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-blue-50 rounded-xl">
-              <Users className="w-6 h-6 text-blue-500" />
+          <CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4">
+            <div className="p-2 md:p-3 bg-blue-50 rounded-xl">
+              <Users className="w-4 h-4 md:w-6 md:h-6 text-blue-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Members</p>
-              <p className="text-2xl font-bold">{members.filter(m => m.status === 'active').length}</p>
+              <p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Members</p>
+              <p className="text-lg md:text-2xl font-bold">{members.filter(m => m.status === 'active').length}</p>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-none shadow-sm">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-violet-50 rounded-xl">
-              <Layout className="w-6 h-6 text-violet-500" />
+          <CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4">
+            <div className="p-2 md:p-3 bg-violet-50 rounded-xl">
+              <Layout className="w-4 h-4 md:w-6 md:h-6 text-violet-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Teams</p>
-              <p className="text-2xl font-bold">{subWorkspaces.length}</p>
+              <p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Teams</p>
+              <p className="text-lg md:text-2xl font-bold">{subWorkspaces.length}</p>
             </div>
           </CardContent>
         </Card>
         
         <Card className="border-none shadow-sm">
-          <CardContent className="p-6 flex items-center gap-4">
-            <div className="p-3 bg-emerald-50 rounded-xl">
-              <Briefcase className="w-6 h-6 text-emerald-500" />
+          <CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4">
+            <div className="p-2 md:p-3 bg-emerald-50 rounded-xl">
+              <Briefcase className="w-4 h-4 md:w-6 md:h-6 text-emerald-500" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground font-medium">Allocations</p>
-              <p className="text-2xl font-bold">{allocations.length}</p>
+              <p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Allocations</p>
+              <p className="text-lg md:text-2xl font-bold">{allocations.length}</p>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-none shadow-sm">
-          <CardContent className="p-6">
+          <CardContent className="p-4 md:p-6">
              <div className="flex items-center justify-between mb-2">
-               <div className="flex items-center gap-3">
-                 <div className="p-2 bg-amber-50 rounded-lg">
-                   <HardDrive className="w-4 h-4 text-amber-500" />
-                 </div>
-                 <p className="text-sm text-muted-foreground font-medium">Storage</p>
+               <div className="flex items-center gap-2">
+                 <HardDrive className="w-3 h-3 md:w-4 md:h-4 text-amber-500" />
+                 <p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Storage</p>
                </div>
-               <p className="text-xs font-bold text-muted-foreground">
-                 {((storage?.total_bytes_used || 0) / (1024 * 1024)).toFixed(1)} MB / 1 GB
+               <p className="text-[10px] font-bold text-muted-foreground">
+                 {((storage?.total_bytes_used || 0) / (1024 * 1024)).toFixed(0)}MB
                </p>
              </div>
-             <Progress value={((storage?.total_bytes_used || 0) / (1024 * 1024 * 1024)) * 100} className="h-2" />
+             <Progress value={((storage?.total_bytes_used || 0) / (1024 * 1024 * 1024)) * 100} className="h-1.5" />
           </CardContent>
         </Card>
       </div>
 
       <Tabs defaultValue="members" className="space-y-6">
-        <TabsList className="bg-white border p-1 rounded-xl overflow-x-auto h-auto whitespace-nowrap">
-          <TabsTrigger value="members" className="rounded-lg px-6">Members</TabsTrigger>
-          <TabsTrigger value="teams" className="rounded-lg px-6">Teams</TabsTrigger>
-          <TabsTrigger value="allocations" className="rounded-lg px-6">Allocations</TabsTrigger>
-          <TabsTrigger value="permissions" className="rounded-lg px-6">Permissions</TabsTrigger>
-          {canViewAuditLog && <TabsTrigger value="audit" className="rounded-lg px-6">Audit Log</TabsTrigger>}
-          {isAdminOrSuper && <TabsTrigger value="settings" className="rounded-lg px-6">Access Control</TabsTrigger>}
+        <TabsList className="bg-white border p-1 rounded-xl w-full flex overflow-x-auto h-auto no-scrollbar">
+          <TabsTrigger value="members" className="rounded-lg px-4 flex-1 md:flex-none">Members</TabsTrigger>
+          <TabsTrigger value="teams" className="rounded-lg px-4 flex-1 md:flex-none">Teams</TabsTrigger>
+          <TabsTrigger value="allocations" className="rounded-lg px-4 flex-1 md:flex-none">Allocations</TabsTrigger>
+          <TabsTrigger value="permissions" className="rounded-lg px-4 flex-1 md:flex-none">Permissions</TabsTrigger>
+          {canViewAuditLog && <TabsTrigger value="audit" className="rounded-lg px-4 flex-1 md:flex-none">Audit</TabsTrigger>}
+          {isAdminOrSuper && <TabsTrigger value="settings" className="rounded-lg px-4 flex-1 md:flex-none">Settings</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="members" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
             <h2 className="text-xl font-bold">Workspace Members</h2>
-            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg">
-              <Button 
-                variant={statusFilter === "all" ? "secondary" : "ghost"} 
-                size="sm" 
-                onClick={() => setStatusFilter("all")}
-                className="text-xs h-8"
-              >
-                All
+            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg overflow-x-auto no-scrollbar">
+              <Button variant={statusFilter === "all" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("all")} className="text-xs h-7 px-3">All</Button>
+              <Button variant={statusFilter === "active" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("active")} className="text-xs h-7 px-3">Active</Button>
+              <Button variant={statusFilter === "pending" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("pending")} className="text-xs h-7 px-3">
+                Pending {members.filter(m => m.status === 'pending').length > 0 && <span className="ml-1 w-1.5 h-1.5 bg-primary rounded-full" />}
               </Button>
-              <Button 
-                variant={statusFilter === "active" ? "secondary" : "ghost"} 
-                size="sm" 
-                onClick={() => setStatusFilter("active")}
-                className="text-xs h-8"
-              >
-                Active
-              </Button>
-              <Button 
-                variant={statusFilter === "pending" ? "secondary" : "ghost"} 
-                size="sm" 
-                onClick={() => setStatusFilter("pending")}
-                className="text-xs h-8"
-              >
-                Pending {members.filter(m => m.status === 'pending').length > 0 && <Badge className="ml-1 h-4 w-4 p-0 flex items-center justify-center bg-primary text-[8px]">{members.filter(m => m.status === 'pending').length}</Badge>}
-              </Button>
-              <Button 
-                variant={statusFilter === "inactive" ? "secondary" : "ghost"} 
-                size="sm" 
-                onClick={() => setStatusFilter("inactive")}
-                className="text-xs h-8"
-              >
-                Inactive
-              </Button>
+              <Button variant={statusFilter === "inactive" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("inactive")} className="text-xs h-7 px-3">Inactive</Button>
             </div>
           </div>
 
-          {!canManageMembers && !isSuper ? (
-             <div className="py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Shield className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-muted-foreground">You do not have permission to manage members.</p>
+          {!canManageMembers && userRole !== 'superadmin' ? (
+             <div className="py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
+                <Shield className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">Management permissions required.</p>
              </div>
           ) : (
             <div className="grid grid-cols-1 gap-3">
               {filteredMembers.length === 0 ? (
-                <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl border-2 border-dashed">
-                  No {statusFilter} members found.
-                </p>
+                <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl border-2 border-dashed">No members found.</p>
               ) : (
                 filteredMembers.map((member) => (
-                  <Card key={member.id} className={cn("border-none shadow-sm group", member.status === 'inactive' && "opacity-75")}>
-                    <CardContent className="p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm overflow-hidden">
+                  <Card key={member.id} className={cn("border-none shadow-sm", member.status === 'inactive' && "opacity-60")}>
+                    <CardContent className="p-3 md:p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+                        <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm shrink-0 overflow-hidden">
                           {member.profiles?.avatar_url ? (
                             <img src={member.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
                           ) : (
                             <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
                           )}
                         </div>
-                        <div className="font-bold text-foreground flex items-center gap-2">
-                          <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
-                              <span>{member.profiles?.full_name}</span>
-                              {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
-                              <Badge variant={member.status === 'active' ? 'default' : 'outline'} className={cn(
-                                "text-[10px] h-4",
-                                member.status === 'active' ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" : 
-                                member.status === 'pending' ? "bg-amber-500/10 text-amber-600 border-amber-500/20" :
-                                "bg-slate-50 text-slate-400"
-                              )}>
-                                {member.status}
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-muted-foreground font-normal">{member.profiles?.username} • {member.profiles?.email}</p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm md:text-base truncate">{member.profiles?.full_name}</span>
+                            <Badge variant={member.status === 'active' ? 'default' : 'outline'} className="text-[9px] h-3.5 px-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 capitalize">
+                              {member.status}
+                            </Badge>
                           </div>
+                          <p className="text-[10px] md:text-xs text-muted-foreground truncate">{member.profiles?.username} • {member.role}</p>
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-6">
-                        <div className="text-right hidden sm:block">
-                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">Role</p>
-                          {member.role === 'superadmin' ? (
-                            <Badge variant="default" className="mt-1">Superadmin - Full Access</Badge>
-                          ) : member.status === 'pending' ? (
-                            <Badge variant="outline" className="mt-1">Requesting Access</Badge>
-                          ) : (
-                            <Badge 
-                              variant={member.role === 'admin' ? 'secondary' : 'outline'} 
-                              className="capitalize mt-1"
-                            >
-                              {member.role}
-                            </Badge>
-                          )}
-                        </div>
-
-                        {(isSuper || canManageMembers) && (
-                          <div className="flex items-center gap-2">
-                            {member.status === 'pending' ? (
-                              <>
-                                <Button 
-                                  size="sm" 
-                                  variant="default" 
-                                  className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700"
-                                  onClick={() => handleApproveJoin(member.user_id)}
-                                  disabled={isStatusUpdating === member.user_id}
-                                >
-                                  {isStatusUpdating === member.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
-                                  Approve
-                                </Button>
-                                <Button 
-                                  size="sm" 
-                                  variant="outline" 
-                                  className="h-8 gap-1 text-rose-600 border-rose-200 hover:bg-rose-50"
-                                  onClick={() => handleRejectJoin(member.user_id)}
-                                  disabled={isStatusUpdating === member.user_id}
-                                >
-                                  {isStatusUpdating === member.user_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
-                                  Reject
-                                </Button>
-                              </>
-                            ) : (
-                              <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
-                                <DropdownMenuTrigger asChild>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="text-muted-foreground hover:text-foreground"
-                                    disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}
-                                  >
-                                    {updatingRole === member.user_id || isStatusUpdating === member.user_id ? 
-                                      <Loader2 className="w-4 h-4 animate-spin" /> : 
-                                      <MoreVertical className="w-4 h-4" />
-                                    }
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-56">
-                                  {isSuper && member.role !== 'superadmin' && (
-                                    <>
-                                      <DropdownMenuLabel>Change Role</DropdownMenuLabel>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="gap-2">
-                                        <Shield className="w-3.5 h-3.5" /> Admin
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="gap-2">
-                                        <Briefcase className="w-3.5 h-3.5" /> Manager
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="gap-2">
-                                        <Users className="w-3.5 h-3.5" /> Member
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                    </>
-                                  )}
-                                  
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  {member.status === 'active' ? (
-                                    <DropdownMenuItem 
-                                      className="text-rose-500 gap-2"
-                                      onClick={() => setDeactivatingMember(member)}
-                                      disabled={
-                                        member.user_id === userProfile?.id || 
-                                        member.role === 'superadmin' || 
-                                        (member.role === 'admin' && !isSuper)
-                                      }
-                                    >
-                                      <UserX className="w-3.5 h-3.5" /> Deactivate
-                                    </DropdownMenuItem>
-                                  ) : (
-                                    <DropdownMenuItem 
-                                      className="text-emerald-500 gap-2"
-                                      onClick={() => handleReactivate(member.user_id)}
-                                    >
-                                      <UserCheck className="w-3.5 h-3.5" /> Reactivate
-                                    </DropdownMenuItem>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            )}
+                      <div className="flex items-center gap-2">
+                        {member.status === 'pending' ? (
+                          <div className="flex items-center gap-1">
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600" onClick={() => handleApproveJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><UserCheck className="w-4 h-4" /></Button>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" onClick={() => handleRejectJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><XCircle className="w-4 h-4" /></Button>
                           </div>
+                        ) : (
+                          <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}>
+                                {updatingRole === member.user_id || isStatusUpdating === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              {userRole === 'superadmin' && member.role !== 'superadmin' && (
+                                <>
+                                  <DropdownMenuLabel>Role</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')}>Admin</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')}>Manager</DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')}>Member</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              {member.status === 'active' ? (
+                                <DropdownMenuItem className="text-rose-500" onClick={() => setDeactivatingMember(member)} disabled={member.user_id === userProfile?.id || member.role === 'superadmin'}><UserX className="w-4 h-4 mr-2" /> Deactivate</DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem className="text-emerald-500" onClick={() => handleReactivate(member.user_id)}><UserCheck className="w-4 h-4 mr-2" /> Reactivate</DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </div>
                     </CardContent>
@@ -776,46 +652,40 @@ export default function WorkspaceAdminPage() {
         <TabsContent value="teams" className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold">Workspace Teams</h2>
-            {(canManageSettings || isSuper) && (
-              <Button onClick={() => { setEditingTeam(null); setIsCreatingTeam(true); }} className="flex items-center gap-2">
-                <Plus className="w-4 h-4" /> Create Team
+            {(canManageSettings || userRole === 'superadmin') && (
+              <Button size="sm" onClick={() => { setEditingTeam(null); setIsCreatingTeam(true); }} className="gap-2">
+                <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Create Team</span>
               </Button>
             )}
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {subWorkspaces.length === 0 ? (
-              <div className="md:col-span-3 py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Layout className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-muted-foreground">No teams defined yet.</p>
+              <div className="md:col-span-3 py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
+                <Layout className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground">No teams defined.</p>
               </div>
             ) : (
               subWorkspaces.map((team) => (
-                <Card key={team.id} className="border-none shadow-sm group">
-                  <CardHeader className="pb-2">
+                <Card key={team.id} className="border-none shadow-sm">
+                  <CardHeader className="p-4 pb-2">
                     <div className="flex items-center justify-between">
-                      <Badge variant="secondary" className="bg-violet-50 text-violet-600 hover:bg-violet-100 border-none">Team</Badge>
-                      {(canManageSettings || isSuper) && (
+                      <Badge variant="secondary" className="bg-violet-50 text-violet-600 text-[10px] h-4">Team</Badge>
+                      {(canManageSettings || userRole === 'superadmin') && (
                         <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
-                              <MoreVertical className="w-4 h-4" />
-                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7"><MoreVertical className="w-4 h-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsCreatingTeam(true); }}>Edit Team</DropdownMenuItem>
-                            <DropdownMenuItem className="text-rose-500" onClick={() => setDeletingTeam(team)}>Delete Team</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsCreatingTeam(true); }}>Edit</DropdownMenuItem>
+                            <DropdownMenuItem className="text-rose-500" onClick={() => setDeletingTeam(team)}>Delete</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
                     </div>
-                    <CardTitle className="text-lg mt-2">{team.name}</CardTitle>
+                    <CardTitle className="text-base mt-1">{team.name}</CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground line-clamp-2">{team.description || 'No description provided.'}</p>
-                    <p className="text-[10px] text-muted-foreground mt-4 pt-4 border-t flex items-center gap-1.5">
-                      <Clock className="w-3 h-3" /> Created {new Date(team.created_at).toLocaleDateString()}
-                    </p>
+                  <CardContent className="p-4 pt-0">
+                    <p className="text-xs text-muted-foreground line-clamp-2">{team.description || 'No description.'}</p>
                   </CardContent>
                 </Card>
               ))
@@ -823,116 +693,42 @@ export default function WorkspaceAdminPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="allocations" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">Member Work Allocations</h2>
-            {(canManageAllocations || isSuper) && (
-              <Button onClick={() => setIsAllocating(true)} className="flex items-center gap-2">
-                <Plus className="w-4 h-4" /> Create Allocation
-              </Button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {allocations.length === 0 ? (
-              <div className="md:col-span-2 py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Briefcase className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-4" />
-                <p className="text-muted-foreground">No work allocations defined yet.</p>
-              </div>
-            ) : (
-              allocations.map((alloc) => (
-                <Card key={alloc.id} className="border-none shadow-sm relative overflow-hidden group">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-widest text-primary border-primary/20">Allocation</Badge>
-                      {(canManageAllocations || isSuper) && (
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => handleDeleteAllocation(alloc.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                    <CardTitle className="text-lg mt-2">{alloc.title}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <p className="text-sm text-muted-foreground line-clamp-2">{alloc.description}</p>
-                    <div className="flex items-center justify-between pt-4 border-t">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold">
-                          {alloc.profiles?.full_name?.[0]}
-                        </div>
-                        <span className="text-xs font-bold">{alloc.profiles?.full_name}</span>
-                      </div>
-                      <span className="text-[10px] text-muted-foreground font-medium">By {alloc.creator?.full_name}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="permissions" className="space-y-6">
-          <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-primary" /> Role Permissions Matrix
-              </CardTitle>
-              <CardDescription>
-                {isSuper ? "Configure granular access for different workspace roles." : "View current workspace permissions."}
-              </CardDescription>
+        <TabsContent value="permissions" className="space-y-6 overflow-x-auto">
+          <Card className="border-none shadow-sm min-w-[600px]">
+            <CardHeader className="p-4 md:p-6">
+              <CardTitle className="text-lg flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-primary" /> Permissions Matrix</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b">
-                      <th className="text-left p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Permission</th>
-                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Superadmin</th>
-                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Admin</th>
-                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Manager</th>
-                      <th className="text-center p-4 text-xs font-bold uppercase tracking-wider text-muted-foreground">Member</th>
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="text-left p-3 font-bold uppercase tracking-wider text-muted-foreground">Permission</th>
+                      <th className="text-center p-3 font-bold uppercase tracking-wider text-muted-foreground">Superadmin</th>
+                      <th className="text-center p-3 font-bold uppercase tracking-wider text-muted-foreground">Admin</th>
+                      <th className="text-center p-3 font-bold uppercase tracking-wider text-muted-foreground">Manager</th>
+                      <th className="text-center p-3 font-bold uppercase tracking-wider text-muted-foreground">Member</th>
                     </tr>
                   </thead>
                   <tbody>
                     {Object.keys(groupedPermissions).map((cat) => (
                       <Fragment key={cat}>
-                        <tr className="bg-slate-100/50">
-                          <td colSpan={5} className="p-2 px-4 text-[10px] font-bold uppercase tracking-widest text-primary">{cat}</td>
-                        </tr>
+                        <tr className="bg-slate-100/50"><td colSpan={5} className="p-2 px-3 text-[10px] font-bold uppercase tracking-widest text-primary">{cat}</td></tr>
                         {groupedPermissions[cat].map((def: any) => (
                           <tr key={def.permission_key} className="border-b hover:bg-slate-50 transition-colors">
-                            <td className="p-4">
-                              <p className="text-sm font-bold">{def.label}</p>
-                              <p className="text-[10px] text-muted-foreground">{def.description}</p>
-                            </td>
-                            <td className="p-4 text-center">
-                              <div className="flex justify-center">
-                                <Badge variant="secondary" className="gap-1.5 opacity-60">
-                                  <Lock className="w-2.5 h-2.5" /> Full Access - Locked
-                                </Badge>
-                              </div>
-                            </td>
+                            <td className="p-3"><p className="font-bold">{def.label}</p><p className="text-[10px] text-muted-foreground">{def.description}</p></td>
+                            <td className="p-3 text-center"><Badge variant="outline" className="text-[8px] opacity-60">Locked</Badge></td>
                             {['admin', 'manager', 'member'].map(role => {
                               const perm = wsPermissions.find(p => p.role === role && p.permission_key === def.permission_key);
                               const enabled = !!perm?.enabled;
                               const isUpdating = updatingPerm === `${role}-${def.permission_key}`;
                               return (
-                                <td key={role} className="p-4 text-center">
+                                <td key={role} className="p-3 text-center">
                                   <div className="flex justify-center">
-                                    {isSuper ? (
-                                      <Switch 
-                                        checked={enabled} 
-                                        onCheckedChange={() => handleTogglePermission(role, def.permission_key, enabled)}
-                                        disabled={isUpdating}
-                                      />
+                                    {userRole === 'superadmin' ? (
+                                      <Switch checked={enabled} onCheckedChange={() => handleTogglePermission(role, def.permission_key, enabled)} disabled={isUpdating} className="scale-75 md:scale-100" />
                                     ) : (
-                                      enabled ? <CheckCircle2 className="w-5 h-5 text-emerald-500 mx-auto" /> : <ShieldAlert className="w-5 h-5 text-slate-200 mx-auto" />
+                                      enabled ? <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" /> : <ShieldAlert className="w-4 h-4 text-slate-200 mx-auto" />
                                     )}
                                   </div>
                                 </td>
@@ -950,226 +746,89 @@ export default function WorkspaceAdminPage() {
         </TabsContent>
 
         <TabsContent value="audit" className="space-y-4">
-          {!canViewAuditLog ? (
-             <div className="py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <History className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-muted-foreground">You do not have permission to view audit logs.</p>
-             </div>
-          ) : (
-            <div className="space-y-4">
-              <h2 className="text-xl font-bold flex items-center gap-2">
-                <History className="w-5 h-5 text-primary" /> Admin Activity
-              </h2>
-              {auditLogs.length === 0 ? (
-                <Card className="p-12 text-center text-muted-foreground bg-slate-50 border-dashed border-2">
-                   No admin activity yet.
+          <div className="space-y-3">
+            {auditLogs.length === 0 ? (
+              <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl">No logs found.</p>
+            ) : (
+              auditLogs.map((log) => (
+                <Card key={log.id} className="border-none shadow-sm">
+                  <CardContent className="p-3 md:p-4 flex gap-3">
+                    <History className="w-4 h-4 text-primary shrink-0 mt-1" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold capitalize">{log.action.replace(/_/g, ' ')}</p>
+                      <p className="text-[10px] text-muted-foreground leading-snug">
+                        <span className="font-bold text-foreground">{(log.actor as any)?.full_name}</span> performed action 
+                        {log.target_user_id && <> for <span className="font-bold text-foreground">{(log.target as any)?.full_name}</span></>}
+                      </p>
+                      <p className="text-[8px] text-muted-foreground mt-1">{new Date(log.created_at).toLocaleString()}</p>
+                    </div>
+                  </CardContent>
                 </Card>
-              ) : (
-                <div className="space-y-3">
-                   {auditLogs.map((log) => (
-                     <Card key={log.id} className="border-none shadow-sm overflow-hidden">
-                       <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                          <div className="flex items-start gap-3">
-                             <div className="p-2 bg-primary/5 rounded-lg mt-1">
-                                <Shield className="w-4 h-4 text-primary" />
-                             </div>
-                             <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                   <p className="text-sm font-bold text-foreground capitalize">{log.action.replace(/_/g, ' ')}</p>
-                                   <span className="text-[10px] text-muted-foreground">{new Date(log.created_at).toLocaleString()}</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                   <span className="font-bold text-foreground">{(log.actor as any)?.full_name || 'System'}</span>
-                                   {log.target_user_id ? (
-                                     <> performed action for <span className="font-bold text-foreground">{(log.target as any)?.full_name}</span></>
-                                   ) : (
-                                     <> updated workspace settings</>
-                                   )}
-                                </p>
-                                {log.details && (
-                                   <div className="mt-3 p-2 bg-slate-50 rounded border text-[10px] font-mono flex items-center gap-2">
-                                      <Info className="w-3 h-3 text-primary" />
-                                      <span>
-                                         {JSON.stringify(log.details).substring(0, 100)}
-                                      </span>
-                                   </div>
-                                )}
-                             </div>
-                          </div>
-                       </CardContent>
-                     </Card>
-                   ))}
-                </div>
-              )}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-6">
            <Card className="border-none shadow-sm">
-             <CardHeader>
-               <CardTitle className="flex items-center gap-2">
-                 <Shield className="w-5 h-5 text-primary" /> Workspace Security
-               </CardTitle>
-               <CardDescription>Configure how users access this workspace</CardDescription>
-             </CardHeader>
-             <CardContent className="space-y-6">
-                <div className="p-6 bg-slate-50 rounded-xl border space-y-4">
-                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                      <div>
-                        <p className="text-sm font-bold">Join Code Access</p>
-                        <p className="text-xs text-muted-foreground">Members can join using this unique code.</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                         <div className="px-6 py-2 bg-white border rounded-lg font-bold font-mono text-primary tracking-widest">
-                           {activeWorkspace?.join_code}
-                         </div>
-                         <Button variant="outline" size="icon" onClick={handleCopyJoinCode}>
-                           <Copy className="w-4 h-4" />
-                         </Button>
-                      </div>
-                   </div>
-                   
-                   <div className="pt-4 border-t flex items-center justify-between gap-4">
-                      <div className="space-y-0.5">
-                        <Label className="text-sm font-bold">Require Join Approval</Label>
-                        <p className="text-xs text-muted-foreground">
-                          New members must be manually approved before joining.
-                        </p>
-                      </div>
-                      <Switch 
-                        checked={workspaceInfo?.require_join_approval || false} 
-                        onCheckedChange={handleToggleJoinApproval}
-                        disabled={!isAdminOrSuper && !canManageMembers}
-                      />
-                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-4 border rounded-xl space-y-2">
-                    <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center mb-2">
-                      <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                    </div>
-                    <p className="font-bold text-sm">Role Based Permissions</p>
-                    <p className="text-xs text-muted-foreground">Admin functions are restricted to verified roles only.</p>
-                  </div>
-                  <div className="p-4 border rounded-xl space-y-2">
-                    <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center mb-2">
-                      <UserPlus className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <p className="font-bold text-sm">Invite Only Mode</p>
-                    <p className="text-xs text-muted-foreground">When join approval is on, code access is restricted.</p>
-                  </div>
+             <CardHeader className="p-4 md:p-6"><CardTitle className="text-lg">Access Control</CardTitle></CardHeader>
+             <CardContent className="p-4 md:p-6 space-y-4">
+                <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 rounded-lg border">
+                  <div><p className="text-sm font-bold">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div>
+                  <Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!userRole === 'superadmin' && !canManageMembers} />
                 </div>
              </CardContent>
            </Card>
         </TabsContent>
       </Tabs>
 
+      {/* Responsive Dialogs */}
       <Dialog open={isAllocating} onOpenChange={(open) => { setIsAllocating(open); if (!open) forceUnlockUI(); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create Work Allocation</DialogTitle>
-            <DialogDescription>Assign a high-level focus area to a member.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateAllocation} className="space-y-4 py-4">
-             <div className="space-y-2">
-               <Label>Assign To Member</Label>
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl">
+          <DialogHeader><DialogTitle>New Allocation</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateAllocation} className="space-y-4">
+             <div className="space-y-1">
+               <Label className="text-xs font-bold">Member</Label>
                <Select name="user_id" required>
-                 <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
-                 <SelectContent>
-                   {members.filter(m => m.status === 'active').map(m => (
-                     <SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>
-                   ))}
-                 </SelectContent>
+                 <SelectTrigger className="h-11 text-base md:text-sm"><SelectValue placeholder="Choose member" /></SelectTrigger>
+                 <SelectContent>{members.filter(m => m.status === 'active').map(m => (<SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>))}</SelectContent>
                </Select>
              </div>
-             <div className="space-y-2">
-               <Label>Allocation Title</Label>
-               <Input name="title" placeholder="e.g. Backend Development Focus" required disabled={submitting} />
+             <div className="space-y-1">
+               <Label className="text-xs font-bold">Title</Label>
+               <Input name="title" className="h-11 text-base md:text-sm" required disabled={submitting} />
              </div>
-             <div className="space-y-2">
-               <Label>Focus Details</Label>
-               <Textarea name="description" placeholder="What should this member focus on?" rows={4} disabled={submitting} />
+             <div className="space-y-1">
+               <Label className="text-xs font-bold">Focus</Label>
+               <Textarea name="description" className="text-base md:text-sm" rows={3} disabled={submitting} />
              </div>
-             <DialogFooter className="pt-4">
-                <Button type="button" variant="ghost" onClick={() => { setIsAllocating(false); forceUnlockUI(); }} disabled={submitting}>Cancel</Button>
-                <Button type="submit" disabled={submitting}>
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                  Assign Allocation
-                </Button>
+             <DialogFooter className="flex-row gap-2">
+                <Button type="button" variant="ghost" onClick={() => setIsAllocating(false)} className="flex-1">Cancel</Button>
+                <Button type="submit" className="flex-1" disabled={submitting}>Assign</Button>
              </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isCreatingTeam} onOpenChange={(open) => { setIsCreatingTeam(open); if (!open) { setEditingTeam(null); forceUnlockUI(); } }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingTeam ? 'Edit Team' : 'Create New Team'}</DialogTitle>
-            <DialogDescription>Organize your workspace into functional sub-groups.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateTeam} className="space-y-4 py-4">
-             <div className="space-y-2">
-               <Label>Team Name</Label>
-               <Input name="name" defaultValue={editingTeam?.name} placeholder="e.g. Engineering, Marketing..." required disabled={submitting} />
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl">
+          <DialogHeader><DialogTitle>{editingTeam ? 'Edit Team' : 'New Team'}</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateTeam} className="space-y-4">
+             <div className="space-y-1">
+               <Label className="text-xs font-bold">Name</Label>
+               <Input name="name" defaultValue={editingTeam?.name} className="h-11 text-base md:text-sm" required disabled={submitting} />
              </div>
-             <div className="space-y-2">
-               <Label>Description</Label>
-               <Textarea name="description" defaultValue={editingTeam?.description} placeholder="What does this team focus on?" rows={4} disabled={submitting} />
+             <div className="space-y-1">
+               <Label className="text-xs font-bold">Description</Label>
+               <Textarea name="description" defaultValue={editingTeam?.description} className="text-base md:text-sm" rows={3} disabled={submitting} />
              </div>
-             <DialogFooter className="pt-4">
-                <Button type="button" variant="ghost" onClick={() => { setIsCreatingTeam(false); setEditingTeam(null); forceUnlockUI(); }} disabled={submitting}>Cancel</Button>
-                <Button type="submit" disabled={submitting}>
-                  {submitting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                  {editingTeam ? 'Update Team' : 'Create Team'}
-                </Button>
+             <DialogFooter className="flex-row gap-2">
+                <Button type="button" variant="ghost" onClick={() => setIsCreatingTeam(false)} className="flex-1">Cancel</Button>
+                <Button type="submit" className="flex-1" disabled={submitting}>{editingTeam ? 'Update' : 'Create'}</Button>
              </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => { if (!open) { setDeactivatingMember(null); forceUnlockUI(); } }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will deactivate <span className="font-bold text-foreground">{deactivatingMember?.profiles?.full_name}</span>. 
-              They will lose all access to this workspace until reactivated.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeactivatingMember(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => deactivatingMember && handleDeactivate(deactivatingMember.user_id)}
-              className="bg-rose-600 hover:bg-rose-700"
-            >
-              Confirm Deactivation
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog open={!!deletingTeam} onOpenChange={(open) => { if (!open) { setDeletingTeam(null); forceUnlockUI(); } }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Team?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete <span className="font-bold text-foreground">{deletingTeam?.name}</span>? 
-              Deleting this team will remove the grouping from related tasks. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeletingTeam(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => deletingTeam && handleDeleteTeam(deletingTeam.id)}
-              className="bg-rose-600 hover:bg-rose-700"
-            >
-              Confirm Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
