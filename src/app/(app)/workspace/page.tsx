@@ -291,10 +291,10 @@ export default function WorkspaceAdminPage() {
                       )}
                     </div>
                     <div>
-                      <p className="font-bold text-foreground flex items-center gap-2">
-                        {member.profiles?.full_name}
+                      <div className="font-bold text-foreground flex items-center gap-2">
+                        <span>{member.profiles?.full_name}</span>
                         {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
-                      </p>
+                      </div>
                       <p className="text-xs text-muted-foreground">{member.profiles?.username} • {member.profiles?.email}</p>
                     </div>
                   </div>
