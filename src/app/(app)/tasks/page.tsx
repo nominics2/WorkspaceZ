@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
@@ -10,7 +11,12 @@ import {
   Calendar as CalendarIcon,
   CheckCircle2,
   Clock,
-  MessageSquare
+  MessageSquare,
+  Paperclip,
+  Download,
+  Trash2,
+  FileIcon,
+  X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,24 +64,27 @@ export default function TasksPage() {
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [subtasks, setSubtasks] = useState<any[]>([]);
   const [comments, setComments] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [newComment, setNewComment] = useState("");
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
 
   const supabase = createClient();
   const { toast } = useToast();
 
-  const forceUnlockUI = () => {
+  const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
       setTimeout(() => {
         document.body.style.pointerEvents = "";
       }, 0);
     }
-  };
+  }, []);
 
   useEffect(() => {
+    forceUnlockUI();
     return () => forceUnlockUI();
-  }, []);
+  }, [forceUnlockUI]);
 
   const fetchTasks = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -102,18 +111,22 @@ export default function TasksPage() {
 
   const fetchTaskDetails = async (taskId: string) => {
     try {
-      const { data: st } = await supabase.from('subtasks').select('*').eq('task_id', taskId).order('created_at', { ascending: true });
+      const [
+        { data: st }, 
+        { data: c }, 
+        { data: al }, 
+        { data: att }
+      ] = await Promise.all([
+        supabase.from('subtasks').select('*').eq('task_id', taskId).order('created_at', { ascending: true }),
+        supabase.from('task_comments').select('*, profiles(full_name)').eq('task_id', taskId).order('created_at', { ascending: true }),
+        supabase.from('task_activity_logs').select('*').eq('task_id', taskId).order('created_at', { ascending: false }),
+        supabase.from('attachments').select('*').eq('task_id', taskId).order('created_at', { ascending: false })
+      ]);
+
       setSubtasks(st || []);
-
-      const { data: c } = await supabase
-        .from('task_comments')
-        .select('*, profiles(full_name)')
-        .eq('task_id', taskId)
-        .order('created_at', { ascending: true });
       setComments(c || []);
-
-      const { data: al } = await supabase.from('task_activity_logs').select('*').eq('task_id', taskId).order('created_at', { ascending: false });
       setActivityLogs(al || []);
+      setAttachments(att || []);
     } catch (err: any) {
       console.error("Error fetching task details:", err);
     }
@@ -123,6 +136,82 @@ export default function TasksPage() {
     setSelectedTask(task);
     setIsDetailOpen(true);
     fetchTaskDetails(task.id);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedTask || !activeWorkspace || !userProfile) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ variant: "destructive", title: "File too large", description: "Maximum file size is 5MB." });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${file.name}`;
+      const filePath = `${activeWorkspace.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('workspace-attachments')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { error: dbError } = await supabase.from('attachments').insert({
+        workspace_id: activeWorkspace.id,
+        task_id: selectedTask.id,
+        uploaded_by: userProfile.id,
+        file_name: file.name,
+        file_path: filePath,
+        file_type: file.type,
+        file_size_bytes: file.size
+      });
+
+      if (dbError) throw dbError;
+
+      toast({ title: "Upload successful", description: `${file.name} has been attached.` });
+      fetchTaskDetails(selectedTask.id);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Upload failed", description: err.message });
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDownloadAttachment = async (attachment: any) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('workspace-attachments')
+        .createSignedUrl(attachment.file_path, 60);
+
+      if (error) throw error;
+      if (data?.signedUrl) {
+        window.open(data.signedUrl, '_blank');
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Download failed", description: err.message });
+    }
+  };
+
+  const handleDeleteAttachment = async (attachment: any) => {
+    try {
+      const { error: storageError } = await supabase.storage
+        .from('workspace-attachments')
+        .remove([attachment.file_path]);
+
+      if (storageError) throw storageError;
+
+      const { error: dbError } = await supabase.from('attachments').delete().eq('id', attachment.id);
+      if (dbError) throw dbError;
+
+      toast({ title: "File deleted" });
+      fetchTaskDetails(selectedTask.id);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Delete failed", description: err.message });
+    }
   };
 
   const handleCreateTask = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -252,6 +341,14 @@ export default function TasksPage() {
     } catch (err: any) {
       console.error(err);
     }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   const filteredTasks = tasks.filter(t => 
@@ -480,6 +577,67 @@ export default function TasksPage() {
                       />
                       <Button size="sm" variant="secondary" onClick={handleAddSubtask} disabled={saving}>Add</Button>
                     </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold flex items-center gap-2">
+                      <Paperclip className="w-4 h-4 text-primary" /> Attachments
+                    </h4>
+                    <Label htmlFor="file-upload" className="cursor-pointer">
+                      <div className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors bg-primary/10 text-primary hover:bg-primary/20",
+                        isUploading && "opacity-50 pointer-events-none"
+                      )}>
+                        {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                        Upload File
+                      </div>
+                      <input 
+                        id="file-upload" 
+                        type="file" 
+                        className="hidden" 
+                        onChange={handleFileUpload}
+                        disabled={isUploading}
+                      />
+                    </Label>
+                  </div>
+                  <div className="space-y-2">
+                    {attachments.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic">No files attached yet.</p>
+                    ) : (
+                      attachments.map((file) => (
+                        <div key={file.id} className="flex items-center justify-between p-3 bg-white border rounded-lg group hover:border-primary/50 transition-colors">
+                          <div className="flex items-center gap-3 overflow-hidden">
+                            <div className="w-8 h-8 rounded bg-slate-100 flex items-center justify-center shrink-0">
+                              <FileIcon className="w-4 h-4 text-slate-500" />
+                            </div>
+                            <div className="overflow-hidden">
+                              <p className="text-xs font-bold truncate">{file.file_name}</p>
+                              <p className="text-[10px] text-muted-foreground">{formatFileSize(file.file_size_bytes)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-primary"
+                              onClick={() => handleDownloadAttachment(file)}
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-rose-500"
+                              onClick={() => handleDeleteAttachment(file)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
 

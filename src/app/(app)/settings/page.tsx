@@ -1,17 +1,50 @@
+
 "use client";
 
+import { useEffect, useState, useCallback } from "react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { HardDrive, Shield, Bell, User, Cloud } from "lucide-react";
-import { MOCK_WORKSPACE, MOCK_USER } from "@/lib/mock-data";
+import { HardDrive, Shield, Bell, User, Cloud, Loader2 } from "lucide-react";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { createClient } from "@/lib/supabase/client";
 
 export default function SettingsPage() {
-  const usagePercentage = (MOCK_WORKSPACE.storageUsed / MOCK_WORKSPACE.storageLimit) * 100;
-  const usedGB = (MOCK_WORKSPACE.storageUsed / (1024 * 1024 * 1024)).toFixed(2);
-  const totalGB = (MOCK_WORKSPACE.storageLimit / (1024 * 1024 * 1024)).toFixed(1);
+  const { activeWorkspace, userProfile } = useWorkspace();
+  const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 1024 * 1024 * 1024 }); // Default 1GB
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+
+  const fetchStorageUsage = useCallback(async () => {
+    if (!activeWorkspace) return;
+    setLoading(true);
+    try {
+      // Fetch total bytes from attachments table for this workspace
+      const { data, error } = await supabase
+        .from('attachments')
+        .select('file_size_bytes')
+        .eq('workspace_id', activeWorkspace.id);
+
+      if (error) throw error;
+
+      const totalUsed = data?.reduce((acc, curr) => acc + (curr.file_size_bytes || 0), 0) || 0;
+      setStorageUsage(prev => ({ ...prev, used: totalUsed }));
+    } catch (err) {
+      console.error("Error fetching storage usage:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeWorkspace, supabase]);
+
+  useEffect(() => {
+    fetchStorageUsage();
+  }, [fetchStorageUsage]);
+
+  const usagePercentage = (storageUsage.used / storageUsage.limit) * 100;
+  const usedMB = (storageUsage.used / (1024 * 1024)).toFixed(2);
+  const totalGB = (storageUsage.limit / (1024 * 1024 * 1024)).toFixed(1);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
       <div>
         <h1 className="text-3xl font-bold">Settings</h1>
         <p className="text-muted-foreground">Manage your account and workspace preferences</p>
@@ -42,42 +75,54 @@ export default function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-slate-200" />
+                <div className="w-16 h-16 rounded-full bg-slate-200 overflow-hidden">
+                  {userProfile?.avatar_url ? (
+                    <img src={userProfile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-bold text-xl">
+                      {userProfile?.full_name?.[0]}
+                    </div>
+                  )}
+                </div>
                 <div>
-                  <p className="font-bold text-lg">{MOCK_USER.name}</p>
-                  <p className="text-sm text-muted-foreground">{MOCK_USER.email}</p>
+                  <p className="font-bold text-lg">{userProfile?.full_name}</p>
+                  <p className="text-sm text-muted-foreground">{userProfile?.username}</p>
                   <div className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-primary/10 text-primary mt-1">
-                    {MOCK_USER.role}
+                    {activeWorkspace?.name} Member
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Storage Usage (Only for Superadmin) */}
-          {MOCK_USER.role === 'Superadmin' && (
-            <Card className="border-none shadow-sm">
-              <CardHeader className="flex flex-row items-center gap-3">
-                <div className="p-2 bg-blue-50 rounded-lg">
-                  <HardDrive className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle>Workspace Storage</CardTitle>
-                  <CardDescription>Resource usage for {MOCK_WORKSPACE.name}</CardDescription>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="font-medium">Used Space</span>
-                  <span className="text-muted-foreground">{usedGB} GB of {totalGB} GB ({usagePercentage.toFixed(1)}%)</span>
-                </div>
-                <Progress value={usagePercentage} className="h-3" />
-                <p className="text-xs text-muted-foreground italic">
-                  Need more space? Contact WorkspaceZ support to upgrade your limits.
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          {/* Storage Usage */}
+          <Card className="border-none shadow-sm">
+            <CardHeader className="flex flex-row items-center gap-3">
+              <div className="p-2 bg-blue-50 rounded-lg">
+                <HardDrive className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle>Workspace Storage</CardTitle>
+                <CardDescription>Resource usage for {activeWorkspace?.name || 'Workspace'}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loading ? (
+                <div className="flex justify-center py-4"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+              ) : (
+                <>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium">Used Space</span>
+                    <span className="text-muted-foreground">{usedMB} MB of {totalGB} GB ({usagePercentage.toFixed(1)}%)</span>
+                  </div>
+                  <Progress value={usagePercentage} className="h-3" />
+                  <p className="text-xs text-muted-foreground italic">
+                    Workspace storage is limited to 1GB. Contact support for upgrades.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
