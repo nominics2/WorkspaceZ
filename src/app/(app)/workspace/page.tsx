@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
   Users, 
   Layers, 
@@ -362,12 +362,14 @@ export default function WorkspaceAdminPage() {
                           <span className="text-primary font-bold">{member.profiles?.full_name?.[0]}</span>
                         )}
                       </div>
-                      <div>
-                        <div className="font-bold text-foreground flex items-center gap-2">
-                          <span>{member.profiles?.full_name}</span>
-                          {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
+                      <div className="font-bold text-foreground flex items-center gap-2">
+                        <div className="flex flex-col">
+                          <div className="flex items-center gap-2">
+                            <span>{member.profiles?.full_name}</span>
+                            {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[10px] h-4">You</Badge>}
+                          </div>
+                          <p className="text-xs text-muted-foreground font-normal">{member.profiles?.username} • {member.profiles?.email}</p>
                         </div>
-                        <p className="text-xs text-muted-foreground">{member.profiles?.username} • {member.profiles?.email}</p>
                       </div>
                     </div>
                     
