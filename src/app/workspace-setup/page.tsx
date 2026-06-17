@@ -22,13 +22,13 @@ export default function WorkspaceSetupPage() {
 
   useEffect(() => {
     async function checkUser() {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) {
-        // No session found, redirect to login
+      // getSession is better for initial load to check persistence
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error || !session?.user) {
         router.push("/");
         return;
       }
-      setUser(user);
+      setUser(session.user);
       setLoading(false);
     }
     checkUser();

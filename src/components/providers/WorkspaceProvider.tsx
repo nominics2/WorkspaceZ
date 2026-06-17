@@ -33,14 +33,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      // Use getSession for initial persistence check
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.user) {
         if (pathname !== '/' && !pathname.startsWith('/onboarding') && pathname !== '/workspace-setup') {
           router.push('/');
         }
         setLoading(false);
         return;
       }
+
+      const user = session.user;
 
       // Fetch Profile
       const { data: profile } = await supabase
@@ -87,7 +91,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     fetchData();
     
-    // Listen for auth changes
+    // Listen for auth changes to maintain persistence
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN') {
         fetchData();

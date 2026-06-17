@@ -56,6 +56,9 @@ export default function LoginPage() {
           throw new Error("Login failed. Please try again.");
         }
 
+        // Wait a brief moment for session to sync
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         // Check if user has an active workspace membership
         const { data: memberData, error: memberError } = await supabase
           .from('workspace_members')
@@ -90,6 +93,8 @@ export default function LoginPage() {
     setIsRegister(!isRegister);
     setEmail("");
     setPassword("");
+    setFullName("");
+    setUsername("");
   };
 
   return (
