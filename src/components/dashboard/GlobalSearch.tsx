@@ -53,22 +53,25 @@ export function GlobalSearch() {
     setQuery("");
 
     const resType = result.result_type || "unknown";
+    const resId = result.result_id;
+
+    if (!resId) return;
 
     switch (resType) {
       case "task":
-        router.push(`/tasks?taskId=${result.id}`);
+        router.push(`/tasks?taskId=${resId}`);
         break;
       case "note":
-        router.push(`/notes?noteId=${result.id}`);
+        router.push(`/notes?noteId=${resId}`);
         break;
       case "chat_message":
-        router.push(`/chat?messageId=${result.id}`);
+        router.push(`/chat?messageId=${resId}`);
         break;
       case "member":
-        router.push(`/workspace?tab=members&userId=${result.id}`);
+        router.push(`/workspace?tab=members&userId=${resId}`);
         break;
       case "sub_workspace":
-        router.push(`/tasks?teamId=${result.id}`);
+        router.push(`/tasks?teamId=${resId}`);
         break;
       case "attachment":
         try {
@@ -136,7 +139,7 @@ export function GlobalSearch() {
         <Card className="absolute top-full left-0 right-0 mt-2 p-2 shadow-2xl border-none z-[100] max-h-[70vh] overflow-y-auto animate-in fade-in slide-in-from-top-2">
           {loading ? (
             <div className="flex items-center justify-center p-8 gap-3 text-muted-foreground">
-              <Loader2 className="w-5 {h-5} animate-spin" />
+              <Loader2 className="w-5 h-5 animate-spin" />
               <span className="text-sm font-medium">Searching workspace...</span>
             </div>
           ) : results.length === 0 ? (
@@ -148,15 +151,16 @@ export function GlobalSearch() {
             </div>
           ) : (
             <div className="space-y-1">
-              {results.map((result) => {
+              {results.map((result, index) => {
                 const resType = result.result_type || "unknown";
+                const resId = result.result_id || index;
                 const title = result.title || "Untitled";
                 const subtitle = result.subtitle || "";
                 const description = result.description || "";
                 
                 return (
                   <button
-                    key={`${resType}-${result.id}`}
+                    key={`${resType}-${resId}`}
                     className="w-full flex items-start gap-4 p-3 rounded-lg hover:bg-slate-50 transition-colors text-left group/item"
                     onClick={() => handleResultClick(result)}
                   >
