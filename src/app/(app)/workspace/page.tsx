@@ -346,7 +346,7 @@ export default function WorkspaceAdminPage() {
         <TabsContent value="members" className="space-y-4">
           {!canManageMembers && !isSuper ? (
              <div className="py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Shield className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <Shield className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-4" />
                 <p className="text-muted-foreground">You do not have permission to manage members.</p>
              </div>
           ) : (
@@ -443,7 +443,7 @@ export default function WorkspaceAdminPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {allocations.length === 0 ? (
               <div className="md:col-span-2 py-20 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Briefcase className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                <Briefcase className="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-4" />
                 <p className="text-muted-foreground">No work allocations defined yet.</p>
               </div>
             ) : (
@@ -513,9 +513,9 @@ export default function WorkspaceAdminPage() {
                           <td colSpan={5} className="p-2 px-4 text-[10px] font-bold uppercase tracking-widest text-primary">{cat}</td>
                         </tr>
                         {groupedPermissions[cat].map((def: any) => (
-                          <tr key={def.key} className="border-b hover:bg-slate-50 transition-colors">
+                          <tr key={def.permission_key} className="border-b hover:bg-slate-50 transition-colors">
                             <td className="p-4">
-                              <p className="text-sm font-bold">{def.name}</p>
+                              <p className="text-sm font-bold">{def.label}</p>
                               <p className="text-[10px] text-muted-foreground">{def.description}</p>
                             </td>
                             <td className="p-4 text-center">
@@ -526,16 +526,16 @@ export default function WorkspaceAdminPage() {
                               </div>
                             </td>
                             {['admin', 'manager', 'member'].map(role => {
-                              const perm = wsPermissions.find(p => p.role === role && p.permission_key === def.key);
+                              const perm = wsPermissions.find(p => p.role === role && p.permission_key === def.permission_key);
                               const enabled = !!perm?.enabled;
-                              const isUpdating = updatingPerm === `${role}-${def.key}`;
+                              const isUpdating = updatingPerm === `${role}-${def.permission_key}`;
                               return (
                                 <td key={role} className="p-4 text-center">
                                   <div className="flex justify-center">
                                     {isSuper ? (
                                       <Switch 
                                         checked={enabled} 
-                                        onCheckedChange={() => handleTogglePermission(role, def.key, enabled)}
+                                        onCheckedChange={() => handleTogglePermission(role, def.permission_key, enabled)}
                                         disabled={isUpdating}
                                       />
                                     ) : (
