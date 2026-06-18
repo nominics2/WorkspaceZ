@@ -1,8 +1,11 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import { SidebarNav } from "@/components/dashboard/SidebarNav";
 import { WorkspaceProvider } from "@/components/providers/WorkspaceProvider";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
-import { Menu } from "lucide-react";
+import { Menu, Bell } from "lucide-react";
 import { 
   Sheet, 
   SheetContent, 
@@ -17,6 +20,12 @@ export default function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
     <WorkspaceProvider>
       <div className="flex h-screen overflow-hidden bg-background text-foreground transition-colors duration-300">
@@ -30,25 +39,37 @@ export default function AppLayout({
             <div className="flex items-center gap-3 flex-1 min-w-0">
               {/* Mobile Sidebar Trigger */}
               <div className="lg:hidden">
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-10 w-10 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100">
-                      <Menu className="w-6 h-6" />
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="left" className="p-0 w-64 border-r dark:border-slate-800">
-                    <SheetHeader className="sr-only">
-                      <SheetTitle>Navigation Menu</SheetTitle>
-                    </SheetHeader>
-                    <SidebarNav />
-                  </SheetContent>
-                </Sheet>
+                {mounted ? (
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-10 w-10 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100">
+                        <Menu className="w-6 h-6" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="p-0 w-64 border-r dark:border-slate-800">
+                      <SheetHeader className="sr-only">
+                        <SheetTitle>Navigation Menu</SheetTitle>
+                      </SheetHeader>
+                      <SidebarNav />
+                    </SheetContent>
+                  </Sheet>
+                ) : (
+                  <Button variant="ghost" size="icon" disabled className="h-10 w-10 text-slate-500 dark:text-slate-400 opacity-50">
+                    <Menu className="w-6 h-6" />
+                  </Button>
+                )}
               </div>
               <GlobalSearch />
             </div>
             
             <div className="flex items-center gap-2 md:gap-4 ml-4 shrink-0">
-               <NotificationBell />
+               {mounted ? (
+                 <NotificationBell />
+               ) : (
+                 <Button variant="ghost" size="icon" disabled className="h-10 w-10 text-slate-500 dark:text-slate-400 opacity-50">
+                   <Bell className="h-5 w-5" />
+                 </Button>
+               )}
             </div>
           </header>
 
