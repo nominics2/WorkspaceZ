@@ -322,7 +322,7 @@ function TasksPageContent() {
 
     setSaving(true);
     try {
-      const { data: createdTask, error } = await supabase.from('tasks').insert({
+      const { error } = await supabase.from('tasks').insert({
         workspace_id: activeWorkspace?.id,
         sub_workspace_id: subWsId && subWsId !== "none" ? subWsId : null,
         title,
@@ -334,17 +334,9 @@ function TasksPageContent() {
         assigned_to: assignedTo && assignedTo !== "none" ? assignedTo : userProfile.id,
         progress_mode: 'auto',
         manual_progress: 0
-      }).select().single();
+      });
 
       if (error) throw error;
-
-      // Notify team if sub_workspace is assigned
-      if (createdTask.sub_workspace_id) {
-        supabase.rpc("notify_task_team_members", {
-          p_task_id: createdTask.id,
-          p_event: "task_assigned_to_team",
-        });
-      }
 
       toast({ title: "Success", description: "Task created successfully" });
       setIsCreateOpen(false);
@@ -519,14 +511,6 @@ function TasksPageContent() {
 
       if (error) throw error;
       
-      // Notify team if a new team is assigned
-      if (newTeamId) {
-        supabase.rpc("notify_task_team_members", {
-          p_task_id: selectedTask.id,
-          p_event: "task_assigned_to_team",
-        });
-      }
-
       setSelectedTask({ ...selectedTask, sub_workspace_id: newTeamId });
       toast({ title: "Team assignment updated" });
       fetchData();
