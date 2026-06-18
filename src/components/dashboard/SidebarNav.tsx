@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -19,7 +18,8 @@ import {
   ChevronRight,
   User,
   PanelLeft,
-  ChevronLeft
+  ChevronLeft,
+  Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
