@@ -49,11 +49,6 @@ export default function AppLayout({
             
             <div className="flex items-center gap-2 md:gap-4 ml-4 shrink-0">
                <NotificationBell />
-               <div className="hidden sm:flex flex-col items-end gap-0.5">
-                  <img src="/brand/wordmark.png" alt="WorkspaceZ" className="h-3.5 w-auto object-contain dark:hidden" />
-                  <img src="/brand/wordmark-dark.png" alt="WorkspaceZ" className="h-3.5 w-auto object-contain hidden dark:block" />
-                  <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter">Productivity Suite</p>
-               </div>
             </div>
           </header>
 

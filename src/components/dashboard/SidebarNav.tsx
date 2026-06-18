@@ -60,17 +60,11 @@ export function SidebarNav() {
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 w-64 max-w-full">
-      {/* Branding Section */}
+      {/* Branding Section - Only Logomark */}
       <div className="px-6 pt-8 pb-4">
-        <div className="flex items-center gap-2.5">
-          <div className="shrink-0">
-             <img src="/brand/logomark.png" alt="W" className="w-8 h-8 object-contain dark:hidden" />
-             <img src="/brand/logomark-dark.png" alt="W" className="w-8 h-8 object-contain hidden dark:block" />
-          </div>
-          <div className="overflow-hidden">
-             <img src="/brand/wordmark.png" alt="WorkspaceZ" className="h-4 w-auto object-contain dark:hidden" />
-             <img src="/brand/wordmark-dark.png" alt="WorkspaceZ" className="h-4 w-auto object-contain hidden dark:block" />
-          </div>
+        <div className="shrink-0">
+           <img src="/brand/logomark.png" alt="WorkspaceZ" className="w-10 h-10 object-contain dark:hidden" />
+           <img src="/brand/logomark-dark.png" alt="WorkspaceZ" className="w-10 h-10 object-contain hidden dark:block" />
         </div>
       </div>
 
