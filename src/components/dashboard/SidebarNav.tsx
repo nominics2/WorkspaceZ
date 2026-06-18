@@ -60,7 +60,21 @@ export function SidebarNav() {
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-slate-950 w-64 max-w-full">
-      <div className="p-6">
+      {/* Branding Section */}
+      <div className="px-6 pt-8 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="shrink-0">
+             <img src="/brand/logomark.png" alt="W" className="w-8 h-8 object-contain dark:hidden" />
+             <img src="/brand/logomark-dark.png" alt="W" className="w-8 h-8 object-contain hidden dark:block" />
+          </div>
+          <div className="overflow-hidden">
+             <img src="/brand/wordmark.png" alt="WorkspaceZ" className="h-4 w-auto object-contain dark:hidden" />
+             <img src="/brand/wordmark-dark.png" alt="WorkspaceZ" className="h-4 w-auto object-contain hidden dark:block" />
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 px-6 pt-2">
         {!mounted ? (
           <div className="w-full h-12 rounded-lg bg-slate-100 dark:bg-slate-900 animate-pulse" />
         ) : (
@@ -68,33 +82,33 @@ export function SidebarNav() {
             <DropdownMenuTrigger asChild>
               <button 
                 type="button"
-                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-800"
+                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors border border-slate-100 dark:border-slate-800 shadow-sm"
               >
                 <div className="flex items-center gap-2 overflow-hidden">
-                  <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0 shadow-sm">
-                    <span className="text-white font-bold text-lg">
+                  <div className="w-7 h-7 bg-primary/10 dark:bg-primary/20 rounded flex items-center justify-center shrink-0 border border-primary/20">
+                    <span className="text-primary font-bold text-sm">
                       {activeWorkspace?.name?.[0] || 'W'}
                     </span>
                   </div>
                   <div className="text-left overflow-hidden">
-                     <h1 className="text-sm font-bold truncate text-slate-950 dark:text-slate-100">
-                       {activeWorkspace?.name || 'WorkspaceZ'}
+                     <h1 className="text-xs font-bold truncate text-slate-950 dark:text-slate-100">
+                       {activeWorkspace?.name || 'Loading...'}
                      </h1>
-                     <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                     <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate uppercase tracking-tighter">
                        {activeWorkspace?.join_code || ''}
                      </p>
                   </div>
                 </div>
-                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="start">
+            <DropdownMenuContent className="w-56 dark:bg-slate-900 dark:border-slate-800" align="start">
               {workspaces.map((ws) => (
-                <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)}>
+                <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)} className="dark:text-slate-300">
                   {ws.name}
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuItem onClick={() => router.push('/workspace-setup')} className="text-primary font-medium">
+              <DropdownMenuItem onClick={() => router.push('/workspace-setup')} className="text-primary font-bold">
                 Create/Join New
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -102,7 +116,7 @@ export function SidebarNav() {
         )}
       </div>
 
-      <nav className="flex-1 px-4 space-y-1">
+      <nav className="flex-1 px-4 space-y-1 pt-4">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -110,7 +124,7 @@ export function SidebarNav() {
               <span className={cn(
                 "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
                 isActive 
-                  ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400" 
+                  ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold" 
                   : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100"
               )}>
                 <item.icon className="w-5 h-5" />
@@ -125,7 +139,7 @@ export function SidebarNav() {
             <span className={cn(
               "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
               pathname === "/trash" 
-                ? "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400" 
+                ? "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold" 
                 : "text-slate-600 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400"
             )}>
               <Trash2 className="w-5 h-5" />
@@ -139,7 +153,7 @@ export function SidebarNav() {
             <span className={cn(
               "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
               pathname === "/workspace" 
-                ? "bg-primary/10 text-primary" 
+                ? "bg-primary/10 text-primary font-bold" 
                 : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100"
               )}>
               <Layers className="w-5 h-5" />
@@ -162,7 +176,7 @@ export function SidebarNav() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1">
                   <p className="text-xs font-bold truncate text-slate-950 dark:text-slate-100">{userProfile.full_name}</p>
-                  {isVerified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
+                  {isVerified && <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
                 </div>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">@{userProfile.username}</p>
               </div>
@@ -172,7 +186,7 @@ export function SidebarNav() {
         <Link href="/settings">
           <span className={cn(
             "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100",
-            pathname === "/settings" && "bg-primary/10 text-primary"
+            pathname === "/settings" && "bg-primary/10 text-primary font-bold"
           )}>
             <Settings className="w-4 h-4" />
             Settings

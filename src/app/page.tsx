@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
-import { Layers, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -105,19 +105,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50">
-      <Card className="w-full max-w-md shadow-xl border-none">
-        <CardHeader className="text-center space-y-4">
-          <div className="mx-auto w-12 h-12 bg-primary rounded-xl flex items-center justify-center">
-            <Layers className="text-white w-7 h-7" />
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+      <Card className="w-full max-w-md shadow-xl border-none dark:bg-slate-900">
+        <CardHeader className="text-center space-y-6 pt-10">
+          <div className="mx-auto flex justify-center items-center">
+             <img 
+               src="/brand/full-logo.png" 
+               alt="WorkspaceZ" 
+               className="w-[200px] h-auto object-contain dark:hidden"
+             />
+             <img 
+               src="/brand/full-logo-dark.png" 
+               alt="WorkspaceZ" 
+               className="w-[200px] h-auto object-contain hidden dark:block"
+             />
           </div>
-          <div>
-            <CardTitle className="text-2xl font-bold">
-              {isRegister ? "Create Account" : "Welcome to WorkspaceZ"}
+          <div className="space-y-1">
+            <CardTitle className="text-2xl font-bold dark:text-slate-100">
+              {isRegister ? "Create Account" : "Welcome Back"}
             </CardTitle>
-            <CardTitle className="text-sm font-normal text-muted-foreground mt-2">
+            <p className="text-sm font-normal text-muted-foreground">
                {isRegister ? "Join teams and manage tasks effectively" : "Modern workspace management for teams"}
-            </CardTitle>
+            </p>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
@@ -125,7 +134,7 @@ export default function LoginPage() {
             {isRegister && (
               <>
                 <div className="space-y-2">
-                  <Label htmlFor="fullName">Full Name</Label>
+                  <Label htmlFor="fullName" className="dark:text-slate-300">Full Name</Label>
                   <Input 
                     id="fullName" 
                     placeholder="Alex Johnson" 
@@ -133,10 +142,11 @@ export default function LoginPage() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     disabled={loading}
+                    className="dark:bg-slate-800 dark:border-slate-700"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="username">Username</Label>
+                  <Label htmlFor="username" className="dark:text-slate-300">Username</Label>
                   <Input 
                     id="username" 
                     placeholder="alexj" 
@@ -144,12 +154,13 @@ export default function LoginPage() {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     disabled={loading}
+                    className="dark:bg-slate-800 dark:border-slate-700"
                   />
                 </div>
               </>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="dark:text-slate-300">Email</Label>
               <Input 
                 id="email" 
                 type="email" 
@@ -158,10 +169,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading}
+                className="dark:bg-slate-800 dark:border-slate-700"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="dark:text-slate-300">Password</Label>
               <Input 
                 id="password" 
                 type="password" 
@@ -169,11 +181,12 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
+                className="dark:bg-slate-800 dark:border-slate-700"
               />
             </div>
           </CardContent>
-          <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full py-6 text-lg font-semibold" disabled={loading}>
+          <CardFooter className="flex flex-col gap-4 pb-10">
+            <Button type="submit" className="w-full py-6 text-lg font-semibold shadow-lg shadow-primary/20" disabled={loading}>
               {loading && <Loader2 className="w-5 h-5 animate-spin mr-2" />}
               {isRegister ? "Sign Up" : "Sign In"}
             </Button>
@@ -181,7 +194,7 @@ export default function LoginPage() {
               {isRegister ? "Already have an account?" : "Don't have an account?"} {" "}
               <Button 
                 variant="link" 
-                className="p-0 h-auto font-semibold" 
+                className="p-0 h-auto font-semibold text-primary" 
                 type="button"
                 onClick={toggleMode}
               >
