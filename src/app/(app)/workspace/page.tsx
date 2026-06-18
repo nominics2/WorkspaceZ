@@ -305,6 +305,8 @@ export default function WorkspaceAdminPage() {
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      forceUnlockUI();
     }
   };
 
@@ -533,6 +535,7 @@ export default function WorkspaceAdminPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSubmitting(false);
+      forceUnlockUI();
     }
   };
 
@@ -554,6 +557,7 @@ export default function WorkspaceAdminPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setIsStatusUpdating(null);
+      forceUnlockUI();
     }
   };
 
@@ -575,6 +579,7 @@ export default function WorkspaceAdminPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setIsStatusUpdating(null);
+      forceUnlockUI();
     }
   };
 
@@ -633,6 +638,7 @@ export default function WorkspaceAdminPage() {
       });
     } finally {
       setIsRunningChecks(false);
+      forceUnlockUI();
     }
   };
 
@@ -1100,7 +1106,7 @@ export default function WorkspaceAdminPage() {
           <form onSubmit={handleCreateAllocation} className="space-y-4">
              <div className="space-y-1">
                <Label className="text-xs font-bold dark:text-slate-300">Member</Label>
-               <Select name="user_id" required>
+               <Select name="user_id" required onOpenChange={(open) => !open && forceUnlockUI()}>
                  <SelectTrigger className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Choose member" /></SelectTrigger>
                  <SelectContent className="dark:bg-slate-900 dark:border-slate-800">{members.filter(m => m.status === 'active').map(m => (<SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>))}</SelectContent>
                </Select>
@@ -1114,7 +1120,7 @@ export default function WorkspaceAdminPage() {
                <Textarea name="description" className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
              </div>
              <DialogFooter className="flex-row gap-2">
-                <Button type="button" variant="ghost" onClick={() => setIsAllocating(false)} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+                <Button type="button" variant="ghost" onClick={() => { setIsAllocating(false); forceUnlockUI(); }} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
                 <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>Assign</Button>
              </DialogFooter>
           </form>
@@ -1134,14 +1140,14 @@ export default function WorkspaceAdminPage() {
                <Textarea name="description" defaultValue={editingTeam?.description} className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
              </div>
              <DialogFooter className="flex-row gap-2">
-                <Button type="button" variant="ghost" onClick={() => setIsCreatingTeam(false)} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+                <Button type="button" variant="ghost" onClick={() => { setIsCreatingTeam(false); forceUnlockUI(); }} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
                 <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>{editingTeam ? 'Update' : 'Create'}</Button>
              </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => !open && setDeactivatingMember(null)}>
+      <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => { if (!open) { setDeactivatingMember(null); forceUnlockUI(); } }}>
         <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
           <AlertDialogHeader>
             <AlertDialogTitle className="dark:text-slate-100">Deactivate Member?</AlertDialogTitle>
@@ -1150,7 +1156,7 @@ export default function WorkspaceAdminPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deactivatingLoading} onClick={() => setDeactivatingMember(null)} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deactivatingLoading} onClick={() => { setDeactivatingMember(null); forceUnlockUI(); }} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
             <AlertDialogAction disabled={deactivatingLoading} onClick={() => handleDeactivate(deactivatingMember?.user_id)} className="bg-rose-500 hover:bg-rose-600">
               {deactivatingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <UserX className="w-4 h-4 mr-2" />}
               Deactivate
@@ -1159,7 +1165,7 @@ export default function WorkspaceAdminPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!deletingTeam} onOpenChange={(open) => !open && setDeletingTeam(null)}>
+      <AlertDialog open={!!deletingTeam} onOpenChange={(open) => { if (!open) { setDeletingTeam(null); forceUnlockUI(); } }}>
         <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
           <AlertDialogHeader>
             <AlertDialogTitle className="dark:text-slate-100">Delete Team?</AlertDialogTitle>
@@ -1168,7 +1174,7 @@ export default function WorkspaceAdminPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setDeletingTeam(null)} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => { setDeletingTeam(null); forceUnlockUI(); }} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteTeam} className="bg-rose-500 hover:bg-rose-600">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
               Delete Team
@@ -1246,7 +1252,7 @@ export default function WorkspaceAdminPage() {
                <div className="space-y-3 pt-2">
                   <Label className="text-xs font-bold dark:text-slate-300">Add Team Member</Label>
                   <div className="flex gap-2">
-                     <Select value={memberToTeamId || ""} onValueChange={setMemberToTeamId}>
+                     <Select value={memberToTeamId || ""} onValueChange={setMemberToTeamId} onOpenChange={(open) => !open && forceUnlockUI()}>
                         <SelectTrigger className="flex-1 h-11 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
                            <SelectValue placeholder="Select workspace member..." />
                         </SelectTrigger>
@@ -1300,7 +1306,7 @@ export default function WorkspaceAdminPage() {
           </div>
 
           <DialogFooter className="p-6 pt-0 bg-slate-50 dark:bg-slate-900/40 border-t dark:border-slate-800">
-             <Button variant="ghost" onClick={() => setIsManagingMembers(false)} className="dark:text-slate-300">Close Panel</Button>
+             <Button variant="ghost" onClick={() => { setIsManagingMembers(false); forceUnlockUI(); }} className="dark:text-slate-300">Close Panel</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
