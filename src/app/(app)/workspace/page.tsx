@@ -89,6 +89,7 @@ export default function WorkspaceAdminPage() {
   const [updatingPerm, setUpdatingPerm] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "pending">("active");
   const [deactivatingMember, setDeactivatingMember] = useState<any>(null);
+  const [deactivatingLoading, setDeactivatingLoading] = useState(false);
   const [deletingTeam, setDeletingTeam] = useState<any>(null);
   const [isStatusUpdating, setIsStatusUpdating] = useState<string | null>(null);
   const [isRunningChecks, setIsRunningChecks] = useState(false);
@@ -243,6 +244,7 @@ export default function WorkspaceAdminPage() {
 
   const handleDeactivate = async (memberUserId: string) => {
     if (!canManageMembers) return;
+    setDeactivatingLoading(true);
     setIsStatusUpdating(memberUserId);
     try {
       const { error } = await supabase.rpc("deactivate_workspace_member", {
@@ -258,6 +260,7 @@ export default function WorkspaceAdminPage() {
     } catch (err: any) {
       toast({ variant: "destructive", title: "Action Failed", description: err.message });
     } finally {
+      setDeactivatingLoading(false);
       setIsStatusUpdating(null);
       forceUnlockUI();
     }
@@ -515,7 +518,7 @@ export default function WorkspaceAdminPage() {
               {activeWorkspace?.join_code}
             </div>
             <Button variant="ghost" size="icon" onClick={handleCopyJoinCode} title="Copy Join Code" className="shrink-0 dark:text-slate-400">
-              <LogOut className="w-4 h-4" /> {/* Copy icon was here, swapping back to correct one if missing */}
+              <Copy className="w-4 h-4" />
             </Button>
           </div>
         )}
@@ -875,6 +878,24 @@ export default function WorkspaceAdminPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => !open && setDeactivatingMember(null)}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-slate-100">Deactivate Member?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              Are you sure you want to deactivate <strong>{deactivatingMember?.profiles?.full_name}</strong>? They will no longer be able to access this workspace.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deactivatingLoading} onClick={() => setDeactivatingMember(null)} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={deactivatingLoading} onClick={() => handleDeactivate(deactivatingMember?.user_id)} className="bg-rose-500 hover:bg-rose-600">
+              {deactivatingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <UserX className="w-4 h-4 mr-2" />}
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
