@@ -303,7 +303,7 @@ function TasksPageContent() {
 
     setSaving(true);
     try {
-      const { error } = await supabase.from('tasks').insert({
+      const { data: createdTask, error } = await supabase.from('tasks').insert({
         workspace_id: activeWorkspace?.id,
         sub_workspace_id: subWsId && subWsId !== "none" ? subWsId : null,
         title,
@@ -315,9 +315,17 @@ function TasksPageContent() {
         assigned_to: assignedTo && assignedTo !== "none" ? assignedTo : userProfile.id,
         progress_mode: 'auto',
         manual_progress: 0
-      });
+      }).select().single();
 
       if (error) throw error;
+
+      // Notify team if sub_workspace is assigned
+      if (createdTask.sub_workspace_id) {
+        supabase.rpc("notify_task_team_members", {
+          p_task_id: createdTask.id,
+          p_event: "task_assigned_to_team",
+        });
+      }
 
       toast({ title: "Success", description: "Task created successfully" });
       setIsCreateOpen(false);
@@ -473,6 +481,38 @@ function TasksPageContent() {
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateTeam = async (teamId: string) => {
+    if (!selectedTask) return;
+    const newTeamId = teamId === "none" ? null : teamId;
+    if (selectedTask.sub_workspace_id === newTeamId) return;
+
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ sub_workspace_id: newTeamId })
+        .eq('id', selectedTask.id);
+
+      if (error) throw error;
+      
+      // Notify team if a new team is assigned
+      if (newTeamId) {
+        supabase.rpc("notify_task_team_members", {
+          p_task_id: selectedTask.id,
+          p_event: "task_assigned_to_team",
+        });
+      }
+
+      setSelectedTask({ ...selectedTask, sub_workspace_id: newTeamId });
+      toast({ title: "Team assignment updated" });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error updating team", description: err.message });
     } finally {
       setSaving(false);
     }
@@ -964,6 +1004,29 @@ function TasksPageContent() {
                          {getAssigneeData(selectedTask).isVerified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
                        </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                      <Layout className="w-3 h-3" /> Team Assignment
+                    </Label>
+                    <Select 
+                      value={selectedTask.sub_workspace_id || "none"} 
+                      onValueChange={handleUpdateTeam}
+                      disabled={saving}
+                    >
+                      <SelectTrigger className="h-9 text-sm bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 dark:text-slate-100">
+                        <SelectValue placeholder="No team assigned" />
+                      </SelectTrigger>
+                      <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
+                        <SelectItem value="none">No Team (General)</SelectItem>
+                        {subWorkspaces.map(team => (
+                          <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
