@@ -17,6 +17,7 @@ interface WorkspaceContextType {
   workspaces: Workspace[];
   userProfile: any | null;
   userRole: string | null;
+  isVerified: boolean;
   permissions: string[];
   loading: boolean;
   switchWorkspace: (id: string) => void;
@@ -33,6 +34,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [userProfile, setUserProfile] = useState<any | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [themePreference, setThemePreferenceState] = useState<ThemePreference>('system');
@@ -92,6 +94,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         .select(`
           workspace_id,
           role,
+          is_verified,
           workspaces (
             id,
             name,
@@ -116,6 +119,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         const currentMembership = members.find(m => m.workspace_id === currentWs.id);
         const role = currentMembership?.role || 'member';
         setUserRole(role);
+        setIsVerified(!!currentMembership?.is_verified);
 
         // Fetch Permissions for this role in this workspace
         if (role === 'superadmin') {
@@ -169,6 +173,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setWorkspaces([]);
         setUserProfile(null);
         setUserRole(null);
+        setIsVerified(false);
         setPermissions([]);
         router.push('/');
       }
@@ -210,6 +215,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       workspaces, 
       userProfile, 
       userRole,
+      isVerified,
       permissions,
       loading, 
       switchWorkspace, 

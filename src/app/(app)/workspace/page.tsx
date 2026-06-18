@@ -26,7 +26,8 @@ import {
   Clock,
   Layout,
   RefreshCw,
-  BellRing
+  BellRing,
+  BadgeCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -99,6 +100,7 @@ export default function WorkspaceAdminPage() {
 
   const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin';
   const canManageMembers = hasPermission('manage_members') || userRole === 'superadmin';
+  const canManageVerified = hasPermission('manage_verified_badges') || userRole === 'superadmin';
   const canManageAllocations = hasPermission('manage_work_allocations') || userRole === 'superadmin';
   const canManageSettings = hasPermission('manage_workspace_settings') || userRole === 'superadmin';
   const canViewAuditLog = userRole === 'superadmin' || hasPermission('view_admin_panel');
@@ -119,7 +121,6 @@ export default function WorkspaceAdminPage() {
   const fetchData = useCallback(async () => {
     if (!activeWorkspace || !userProfile) return;
     
-    // SECURITY: Block non-admins from data fetching on this page
     if (!hasPermission('view_admin_panel') && userRole !== 'superadmin') {
       setLoading(false);
       return;
@@ -198,6 +199,29 @@ export default function WorkspaceAdminPage() {
     if (activeWorkspace?.join_code) {
       navigator.clipboard.writeText(activeWorkspace.join_code);
       toast({ title: "Join code copied!" });
+    }
+  };
+
+  const handleToggleVerified = async (memberUserId: string, currentVerified: boolean) => {
+    if (!canManageVerified) return;
+    setIsStatusUpdating(memberUserId);
+    try {
+      const { error } = await supabase.rpc('set_workspace_member_verified', {
+        p_workspace_id: activeWorkspace?.id,
+        p_member_user_id: memberUserId,
+        p_verified: !currentVerified
+      });
+      if (error) throw error;
+      toast({ 
+        title: !currentVerified ? "Member Verified" : "Verification Removed", 
+        description: `Status updated for the selected member.` 
+      });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setIsStatusUpdating(null);
+      forceUnlockUI();
     }
   };
 
@@ -479,7 +503,6 @@ export default function WorkspaceAdminPage() {
     return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   }
 
-  // SECURITY: Hard block non-admins from viewing this page content
   if (!canViewAuditLog && !loading) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
@@ -619,6 +642,7 @@ export default function WorkspaceAdminPage() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-sm md:text-base truncate dark:text-slate-100">{member.profiles?.full_name}</span>
+                          {member.is_verified && <BadgeCheck className="w-4 h-4 text-primary shrink-0" />}
                           <Badge variant={member.status === 'active' ? 'default' : 'outline'} className="text-[9px] h-3.5 px-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 capitalize">
                             {member.status}
                           </Badge>
@@ -651,6 +675,12 @@ export default function WorkspaceAdminPage() {
                               </>
                             )}
                             <DropdownMenuLabel className="dark:text-slate-100">Actions</DropdownMenuLabel>
+                            {canManageVerified && (
+                              <DropdownMenuItem onClick={() => handleToggleVerified(member.user_id, !!member.is_verified)} className="dark:text-slate-300">
+                                <BadgeCheck className="w-4 h-4 mr-2" />
+                                {member.is_verified ? "Remove Verification" : "Verify Member"}
+                              </DropdownMenuItem>
+                            )}
                             {member.status === 'active' ? (
                               <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10" onClick={() => setDeactivatingMember(member)} disabled={member.user_id === userProfile?.id || member.role === 'superadmin'}><UserX className="w-4 h-4 mr-2" /> Deactivate</DropdownMenuItem>
                             ) : (

@@ -11,7 +11,8 @@ import {
   User,
   Loader2,
   Calendar as CalendarIcon,
-  CheckCircle2
+  CheckCircle2,
+  BadgeCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,11 +91,11 @@ export default function ChatPage() {
     if (!activeWorkspace) return;
     const { data } = await supabase
       .from('workspace_members')
-      .select('user_id, profiles(id, full_name, avatar_url, avatar_preset)')
+      .select('user_id, is_verified, profiles(id, full_name, avatar_url, avatar_preset)')
       .eq('workspace_id', activeWorkspace.id)
       .eq('status', 'active');
     
-    setMembers(data?.map(m => (m.profiles as any)) || []);
+    setMembers(data || []);
   }, [activeWorkspace, supabase]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
@@ -341,6 +342,8 @@ export default function ChatPage() {
                 const isMe = msg.sender_id === userProfile?.id;
                 const profile = msg.profiles;
                 const avatarSrc = profile?.avatar_preset ? `/avatars/${profile.avatar_preset}.png` : profile?.avatar_url;
+                const senderMembership = members.find(m => m.user_id === msg.sender_id);
+                const isVerified = !!senderMembership?.is_verified;
 
                 return (
                   <div key={msg.id} className={cn("flex gap-3 group", isMe ? "flex-row-reverse" : "")}>
@@ -352,7 +355,10 @@ export default function ChatPage() {
                     </Avatar>
                     <div className={cn("max-w-[70%] flex flex-col", isMe ? "items-end" : "items-start")}>
                       <div className={cn("flex items-center gap-2 mb-1 px-1", isMe ? "flex-row-reverse" : "")}>
-                        <span className="text-xs font-bold dark:text-slate-300">{profile?.full_name || 'User'}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs font-bold dark:text-slate-300">{profile?.full_name || 'User'}</span>
+                          {isVerified && <BadgeCheck className="w-3 h-3 text-primary" />}
+                        </div>
                         <span className="text-[10px] text-muted-foreground">
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
@@ -492,7 +498,7 @@ export default function ChatPage() {
                 <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Select member" /></SelectTrigger>
                 <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                   {members.map(m => (
-                    <SelectItem key={m.id} value={m.id}>{m.full_name}</SelectItem>
+                    <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

@@ -13,7 +13,8 @@ import {
   LogOut,
   Layers,
   ChevronDown,
-  Trash2
+  Trash2,
+  BadgeCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ const navItems = [
 export function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { activeWorkspace, workspaces, switchWorkspace, hasPermission, userRole, userProfile } = useWorkspace();
+  const { activeWorkspace, workspaces, switchWorkspace, hasPermission, userRole, userProfile, isVerified } = useWorkspace();
   const [mounted, setMounted] = useState(false);
   const supabase = createClient();
 
@@ -140,7 +141,7 @@ export function SidebarNav() {
               pathname === "/workspace" 
                 ? "bg-primary/10 text-primary" 
                 : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100"
-            )}>
+              )}>
               <Layers className="w-5 h-5" />
               Admin Panel
             </span>
@@ -159,7 +160,10 @@ export function SidebarNav() {
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-bold truncate text-slate-950 dark:text-slate-100">{userProfile.full_name}</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-xs font-bold truncate text-slate-950 dark:text-slate-100">{userProfile.full_name}</p>
+                  {isVerified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
+                </div>
                 <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">@{userProfile.username}</p>
               </div>
             </div>

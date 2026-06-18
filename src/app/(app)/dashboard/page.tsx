@@ -24,7 +24,8 @@ import {
   CalendarDays,
   CheckSquare,
   Trash2,
-  Paperclip
+  Paperclip,
+  BadgeCheck
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -122,14 +123,28 @@ export default function DashboardPage() {
 
       setTasks(myTasks || []);
 
-      // 3. Activity Feed
+      // 3. Activity Feed (Enriched with verification from workspace_members)
       const { data: recentLogs } = await supabase
         .from('recent_activity_view')
         .select('*')
         .eq('workspace_id', activeWorkspace.id)
         .order('created_at', { ascending: false })
         .limit(5);
-      setActivity(recentLogs || []);
+
+      // Fetch member verification statuses for logs
+      const actorIds = [...new Set((recentLogs || []).map(log => log.actor_id))];
+      const { data: memberData } = await supabase
+        .from('workspace_members')
+        .select('user_id, is_verified')
+        .eq('workspace_id', activeWorkspace.id)
+        .in('user_id', actorIds);
+
+      const enrichedLogs = (recentLogs || []).map(log => ({
+        ...log,
+        actor_is_verified: !!memberData?.find(m => m.user_id === log.actor_id)?.is_verified
+      }));
+
+      setActivity(enrichedLogs);
 
       // 4. Notifications
       const { data: notifs } = await supabase
@@ -430,10 +445,14 @@ export default function DashboardPage() {
                             </div>
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs md:text-sm text-foreground leading-relaxed dark:text-slate-300">
-                              <span className="font-bold text-slate-950 dark:text-slate-100">{actorName}</span> {config.label}
-                              {targetTitle && <span className="font-bold ml-1 text-primary">"{targetTitle}"</span>}
-                            </p>
+                            <div className="text-xs md:text-sm text-foreground leading-relaxed dark:text-slate-300">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="font-bold text-slate-950 dark:text-slate-100">{actorName}</span>
+                                {log.actor_is_verified && <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                <span className="ml-1">{config.label}</span>
+                                {targetTitle && <span className="font-bold text-primary">"{targetTitle}"</span>}
+                              </div>
+                            </div>
                             <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
                               <Clock className="w-3 h-3" />
                               {new Date(log.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}

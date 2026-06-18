@@ -27,7 +27,8 @@ import {
   Ban,
   FilterX,
   Circle,
-  Settings2
+  Settings2,
+  BadgeCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,7 +137,7 @@ function TasksPageContent() {
           .order('name', { ascending: true }),
         supabase
           .from('workspace_members')
-          .select('user_id, profiles(full_name, avatar_url, avatar_preset)')
+          .select('user_id, is_verified, profiles(full_name, avatar_url, avatar_preset)')
           .eq('workspace_id', activeWorkspace.id)
           .eq('status', 'active')
       ]);
@@ -183,8 +184,14 @@ function TasksPageContent() {
         supabase.from('attachments').select('*').eq('task_id', taskId).order('created_at', { ascending: false })
       ]);
 
+      // Join is_verified into comments
+      const enrichedComments = (c || []).map(comment => {
+        const membership = members.find(m => m.user_id === comment.user_id);
+        return { ...comment, is_verified: !!membership?.is_verified };
+      });
+
       setSubtasks(st || []);
-      setComments(c || []);
+      setComments(enrichedComments);
       setActivityLogs(al || []);
       setAttachments(att || []);
     } catch (err: any) {
@@ -521,10 +528,13 @@ function TasksPageContent() {
     noDueDate: false
   });
 
-  const getAssigneeAvatar = (task: any) => {
+  const getAssigneeData = (task: any) => {
     const member = members.find(m => m.user_id === task.assigned_to);
-    if (!member) return null;
-    return member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url;
+    if (!member) return { avatar: null, isVerified: false };
+    return {
+      avatar: member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url,
+      isVerified: !!member.is_verified
+    };
   };
 
   return (
@@ -715,7 +725,7 @@ function TasksPageContent() {
         ) : (
           filteredTasks.map((task) => {
             const taskProgress = task.progress_mode === 'manual' ? (task.manual_progress || 0) : (task.calculated_progress || 0);
-            const avatarSrc = getAssigneeAvatar(task);
+            const { avatar: avatarSrc, isVerified } = getAssigneeData(task);
 
             return (
               <Card 
@@ -777,7 +787,10 @@ function TasksPageContent() {
                                 {task.assigned_to_name?.[0] || '?'}
                               </AvatarFallback>
                             </Avatar>
-                            <span className="text-xs text-foreground font-medium dark:text-slate-300">{task.assigned_to_name || 'Unassigned'}</span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs text-foreground font-medium dark:text-slate-300">{task.assigned_to_name || 'Unassigned'}</span>
+                              {isVerified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
+                            </div>
                           </div>
                         </div>
 
@@ -941,12 +954,15 @@ function TasksPageContent() {
                     </Label>
                     <div className="flex items-center gap-2 h-9 px-3 bg-white dark:bg-slate-950 rounded-md border border-slate-200 dark:border-slate-800 opacity-60">
                        <Avatar className="w-5 h-5 border dark:border-slate-800 shadow-sm">
-                         <AvatarImage src={getAssigneeAvatar(selectedTask) || undefined} />
+                         <AvatarImage src={getAssigneeData(selectedTask).avatar || undefined} />
                          <AvatarFallback className="bg-primary/10 text-[8px] font-bold text-primary">
                            {selectedTask.assigned_to_name?.[0] || '?'}
                          </AvatarFallback>
                        </Avatar>
-                       <span className="text-sm truncate dark:text-slate-300">{selectedTask.assigned_to_name || 'Unassigned'}</span>
+                       <div className="flex items-center gap-1 overflow-hidden">
+                         <span className="text-sm truncate dark:text-slate-300">{selectedTask.assigned_to_name || 'Unassigned'}</span>
+                         {getAssigneeData(selectedTask).isVerified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
+                       </div>
                     </div>
                   </div>
                 </div>
@@ -1046,7 +1062,10 @@ function TasksPageContent() {
                                       {c.profiles?.full_name?.[0]}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <span className="text-xs font-bold dark:text-slate-200">{(c.profiles as any)?.full_name || 'User'}</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-xs font-bold dark:text-slate-200">{(c.profiles as any)?.full_name || 'User'}</span>
+                                    {c.is_verified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
+                                  </div>
                                 </div>
                                 <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
                               </div>
