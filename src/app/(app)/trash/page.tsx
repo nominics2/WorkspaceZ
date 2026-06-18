@@ -142,10 +142,10 @@ export default function TrashPage() {
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case 'task': return "text-blue-500 bg-blue-50";
-      case 'note': return "text-amber-500 bg-amber-50";
-      case 'notification': return "text-emerald-500 bg-emerald-50";
-      default: return "text-slate-500 bg-slate-50";
+      case 'task': return "text-blue-500 bg-blue-50 dark:bg-blue-500/10";
+      case 'note': return "text-amber-500 bg-amber-50 dark:bg-amber-500/10";
+      case 'notification': return "text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10";
+      default: return "text-slate-500 bg-slate-50 dark:bg-slate-800";
     }
   };
 
@@ -153,7 +153,7 @@ export default function TrashPage() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <ShieldAlert className="w-12 h-12 text-rose-500" />
-        <h1 className="text-xl font-bold">Access Denied</h1>
+        <h1 className="text-xl font-bold dark:text-slate-100">Access Denied</h1>
         <p className="text-muted-foreground text-sm text-center max-w-xs">You do not have permission to manage the workspace trash. Contact your administrator.</p>
       </div>
     );
@@ -163,7 +163,7 @@ export default function TrashPage() {
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
+          <h1 className="text-3xl font-bold flex items-center gap-3 text-slate-950 dark:text-slate-100">
             <Trash2 className="w-8 h-8 text-rose-500" />
             Trash
           </h1>
@@ -172,36 +172,36 @@ export default function TrashPage() {
       </div>
 
       <Tabs defaultValue="all" onValueChange={setFilter} className="space-y-6">
-        <TabsList className="bg-white border p-1 rounded-xl w-full md:w-auto flex overflow-x-auto h-auto no-scrollbar">
-          <TabsTrigger value="all" className="flex-1 md:flex-none">All Items</TabsTrigger>
-          <TabsTrigger value="task" className="flex-1 md:flex-none">Tasks</TabsTrigger>
-          <TabsTrigger value="note" className="flex-1 md:flex-none">Notes</TabsTrigger>
-          <TabsTrigger value="notification" className="flex-1 md:flex-none">Notifications</TabsTrigger>
+        <TabsList className="bg-white dark:bg-slate-900 border dark:border-slate-800 p-1 rounded-xl w-full md:w-auto flex overflow-x-auto h-auto no-scrollbar">
+          <TabsTrigger value="all" className="flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">All Items</TabsTrigger>
+          <TabsTrigger value="task" className="flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Tasks</TabsTrigger>
+          <TabsTrigger value="note" className="flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Notes</TabsTrigger>
+          <TabsTrigger value="notification" className="flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Notifications</TabsTrigger>
         </TabsList>
 
         <TabsContent value={filter} className="space-y-4">
           {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>
           ) : filteredItems.length === 0 ? (
-            <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed flex flex-col items-center gap-4">
-              <Trash className="w-12 h-12 text-slate-300" />
+            <div className="text-center py-20 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center gap-4">
+              <Trash className="w-12 h-12 text-slate-300 dark:text-slate-600" />
               <div className="space-y-1">
-                <p className="font-bold text-lg">Trash is empty</p>
+                <p className="font-bold text-lg text-slate-900 dark:text-slate-100">Trash is empty</p>
                 <p className="text-muted-foreground text-sm">Items deleted within the workspace will appear here.</p>
               </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
               {filteredItems.map((item, index) => (
-                <Card key={`${item.item_type}-${item.item_id || index}`} className="border-none shadow-sm hover:shadow-md transition-all overflow-hidden group">
+                <Card key={`${item.item_type}-${item.item_id || index}`} className="border-none shadow-sm hover:shadow-md transition-all overflow-hidden group dark:bg-slate-900">
                   <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
                     <div className={cn("p-3 rounded-xl shrink-0 w-fit", getTypeColor(item.item_type))}>
                       {getTypeIcon(item.item_type)}
                     </div>
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold truncate text-sm md:text-base">{item.title}</h3>
-                        <Badge variant="outline" className="text-[10px] uppercase tracking-wider h-4 py-0 shrink-0">
+                        <h3 className="font-bold truncate text-sm md:text-base text-slate-950 dark:text-slate-100">{item.title}</h3>
+                        <Badge variant="outline" className="text-[10px] uppercase tracking-wider h-4 py-0 shrink-0 dark:border-slate-800 dark:text-slate-400">
                           {item.item_type}
                         </Badge>
                       </div>
@@ -217,7 +217,7 @@ export default function TrashPage() {
                         size="sm" 
                         onClick={() => handleRestore(item)}
                         disabled={!!actionLoading}
-                        className="h-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 gap-2 px-2"
+                        className="h-8 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 gap-2 px-2"
                       >
                         {actionLoading === item.item_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCcw className="w-3.5 h-3.5" />}
                         Restore
@@ -228,23 +228,23 @@ export default function TrashPage() {
                           <Button 
                             variant="ghost" 
                             size="sm" 
-                            className="h-8 text-rose-500 hover:text-rose-600 hover:bg-rose-50 gap-2 px-2"
+                            className="h-8 text-rose-500 dark:text-rose-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 gap-2 px-2"
                             disabled={!!actionLoading}
                           >
                             <Trash className="w-3.5 h-3.5" />
                             Delete
                           </Button>
                         </AlertDialogTrigger>
-                        <AlertDialogContent className="w-[95vw] max-w-md">
+                        <AlertDialogContent className="w-[95vw] max-w-md dark:bg-slate-950 dark:border-slate-800">
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Permanently delete?</AlertDialogTitle>
-                            <AlertDialogDescription>
+                            <AlertDialogTitle className="dark:text-slate-100">Permanently delete?</AlertDialogTitle>
+                            <AlertDialogDescription className="dark:text-slate-400">
                               This action cannot be undone. This will permanently remove the {item.item_type} <strong>{item.title}</strong> from the workspace.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter className="flex-row gap-2">
-                            <AlertDialogCancel className="flex-1 mt-0">Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handlePermanentDelete(item)} className="bg-rose-500 hover:bg-rose-600 flex-1">
+                            <AlertDialogCancel className="flex-1 mt-0 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handlePermanentDelete(item)} className="bg-rose-500 hover:bg-rose-600 dark:bg-rose-600 dark:hover:bg-rose-700 flex-1">
                               Delete Forever
                             </AlertDialogAction>
                           </AlertDialogFooter>

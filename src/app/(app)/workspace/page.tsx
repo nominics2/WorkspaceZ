@@ -481,7 +481,7 @@ export default function WorkspaceAdminPage() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
         <ShieldAlert className="w-12 h-12 text-rose-500" />
-        <h1 className="text-xl font-bold">Access Denied</h1>
+        <h1 className="text-xl font-bold dark:text-slate-100">Access Denied</h1>
         <p className="text-muted-foreground text-sm text-center max-w-xs">You do not have permission to access the workspace admin panel.</p>
       </div>
     );
@@ -503,62 +503,62 @@ export default function WorkspaceAdminPage() {
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
+          <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3 text-slate-950 dark:text-slate-100">
             <Layers className="w-6 h-6 md:w-8 md:h-8 text-primary" />
             Admin Panel
           </h1>
           <p className="text-sm text-muted-foreground">Manage workspace settings, members, and access.</p>
         </div>
         {isAdminOrSuper && (
-          <div className="flex items-center gap-2 bg-white p-2 pr-4 rounded-xl border shadow-sm w-full md:w-auto">
-            <div className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-bold font-mono text-primary flex-1 text-center">
+          <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 pr-4 rounded-xl border dark:border-slate-800 shadow-sm w-full md:w-auto">
+            <div className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-bold font-mono text-primary flex-1 text-center">
               {activeWorkspace?.join_code}
             </div>
-            <Button variant="ghost" size="icon" onClick={handleCopyJoinCode} title="Copy Join Code" className="shrink-0">
-              <Copy className="w-4 h-4" />
+            <Button variant="ghost" size="icon" onClick={handleCopyJoinCode} title="Copy Join Code" className="shrink-0 dark:text-slate-400">
+              <LogOut className="w-4 h-4" /> {/* Copy icon was here, swapping back to correct one if missing */}
             </Button>
           </div>
         )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
-        <Card className="border-none shadow-sm">
+        <Card className="border-none shadow-sm dark:bg-slate-900">
           <CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4">
-            <div className="p-2 md:p-3 bg-blue-50 rounded-xl">
+            <div className="p-2 md:p-3 bg-blue-50 dark:bg-blue-500/10 rounded-xl">
               <Users className="w-4 h-4 md:w-6 md:h-6 text-blue-500" />
             </div>
             <div>
               <p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Members</p>
-              <p className="text-lg md:text-2xl font-bold">{members.filter(m => m.status === 'active').length}</p>
+              <p className="text-lg md:text-2xl font-bold dark:text-slate-100">{members.filter(m => m.status === 'active').length}</p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-none shadow-sm">
+        <Card className="border-none shadow-sm dark:bg-slate-900">
           <CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4">
-            <div className="p-2 md:p-3 bg-violet-50 rounded-xl">
+            <div className="p-2 md:p-3 bg-violet-50 dark:bg-violet-500/10 rounded-xl">
               <Layout className="w-4 h-4 md:w-6 md:h-6 text-violet-500" />
             </div>
             <div>
               <p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Teams</p>
-              <p className="text-lg md:text-2xl font-bold">{subWorkspaces.length}</p>
+              <p className="text-lg md:text-2xl font-bold dark:text-slate-100">{subWorkspaces.length}</p>
             </div>
           </CardContent>
         </Card>
         
-        <Card className="border-none shadow-sm">
+        <Card className="border-none shadow-sm dark:bg-slate-900">
           <CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4">
-            <div className="p-2 md:p-3 bg-emerald-50 rounded-xl">
+            <div className="p-2 md:p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl">
               <Briefcase className="w-4 h-4 md:w-6 md:h-6 text-emerald-500" />
             </div>
             <div>
               <p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Allocations</p>
-              <p className="text-lg md:text-2xl font-bold">{allocations.length}</p>
+              <p className="text-lg md:text-2xl font-bold dark:text-slate-100">{allocations.length}</p>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-none shadow-sm">
+        <Card className="border-none shadow-sm dark:bg-slate-900">
           <CardContent className="p-4 md:p-6">
              <div className="flex items-center justify-between mb-2">
                <div className="flex items-center gap-2">
@@ -575,37 +575,37 @@ export default function WorkspaceAdminPage() {
       </div>
 
       <Tabs defaultValue="members" className="space-y-6">
-        <TabsList className="bg-white border p-1 rounded-xl w-full flex overflow-x-auto h-auto no-scrollbar">
-          <TabsTrigger value="members" className="rounded-lg px-4 flex-1 md:flex-none">Members</TabsTrigger>
-          <TabsTrigger value="teams" className="rounded-lg px-4 flex-1 md:flex-none">Teams</TabsTrigger>
-          <TabsTrigger value="allocations" className="rounded-lg px-4 flex-1 md:flex-none">Allocations</TabsTrigger>
-          <TabsTrigger value="permissions" className="rounded-lg px-4 flex-1 md:flex-none">Permissions</TabsTrigger>
-          {canViewAuditLog && <TabsTrigger value="audit" className="rounded-lg px-4 flex-1 md:flex-none">Audit</TabsTrigger>}
-          {isAdminOrSuper && <TabsTrigger value="settings" className="rounded-lg px-4 flex-1 md:flex-none">Settings</TabsTrigger>}
+        <TabsList className="bg-white dark:bg-slate-900 border dark:border-slate-800 p-1 rounded-xl w-full flex overflow-x-auto h-auto no-scrollbar">
+          <TabsTrigger value="members" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Members</TabsTrigger>
+          <TabsTrigger value="teams" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Teams</TabsTrigger>
+          <TabsTrigger value="allocations" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Allocations</TabsTrigger>
+          <TabsTrigger value="permissions" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Permissions</TabsTrigger>
+          {canViewAuditLog && <TabsTrigger value="audit" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Audit</TabsTrigger>}
+          {isAdminOrSuper && <TabsTrigger value="settings" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Settings</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="members" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
-            <h2 className="text-xl font-bold">Workspace Members</h2>
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg overflow-x-auto no-scrollbar">
-              <Button variant={statusFilter === "all" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("all")} className="text-xs h-7 px-3">All</Button>
-              <Button variant={statusFilter === "active" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("active")} className="text-xs h-7 px-3">Active</Button>
-              <Button variant={statusFilter === "pending" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("pending")} className="text-xs h-7 px-3">
+            <h2 className="text-xl font-bold dark:text-slate-100">Workspace Members</h2>
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg overflow-x-auto no-scrollbar">
+              <Button variant={statusFilter === "all" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("all")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">All</Button>
+              <Button variant={statusFilter === "active" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("active")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">Active</Button>
+              <Button variant={statusFilter === "pending" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("pending")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">
                 Pending {members.filter(m => m.status === 'pending').length > 0 && <span className="ml-1 w-1.5 h-1.5 bg-primary rounded-full" />}
               </Button>
-              <Button variant={statusFilter === "inactive" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("inactive")} className="text-xs h-7 px-3">Inactive</Button>
+              <Button variant={statusFilter === "inactive" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("inactive")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">Inactive</Button>
             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
             {filteredMembers.length === 0 ? (
-              <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl border-2 border-dashed">No members found.</p>
+              <p className="py-12 text-center text-muted-foreground italic bg-slate-50 dark:bg-slate-900/40 rounded-xl border-2 border-dashed dark:border-slate-800">No members found.</p>
             ) : (
               filteredMembers.map((member) => (
-                <Card key={member.id} className={cn("border-none shadow-sm", member.status === 'inactive' && "opacity-60")}>
+                <Card key={member.id} className={cn("border-none shadow-sm dark:bg-slate-900", member.status === 'inactive' && "opacity-60")}>
                   <CardContent className="p-3 md:p-4 flex items-center justify-between">
                     <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-100 flex items-center justify-center border shadow-sm shrink-0 overflow-hidden">
+                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center border dark:border-slate-700 shadow-sm shrink-0 overflow-hidden">
                         <Avatar className="w-full h-full border-none shadow-none">
                           <AvatarImage src={member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url} />
                           <AvatarFallback className="bg-primary/5 text-primary text-sm font-bold">
@@ -615,8 +615,8 @@ export default function WorkspaceAdminPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm md:text-base truncate">{member.profiles?.full_name}</span>
-                          <Badge variant={member.status === 'active' ? 'default' : 'outline'} className="text-[9px] h-3.5 px-1 bg-emerald-500/10 text-emerald-600 border-emerald-500/20 capitalize">
+                          <span className="font-bold text-sm md:text-base truncate dark:text-slate-100">{member.profiles?.full_name}</span>
+                          <Badge variant={member.status === 'active' ? 'default' : 'outline'} className="text-[9px] h-3.5 px-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 capitalize">
                             {member.status}
                           </Badge>
                         </div>
@@ -627,31 +627,31 @@ export default function WorkspaceAdminPage() {
                     <div className="flex items-center gap-2">
                       {member.status === 'pending' ? (
                         <div className="flex items-center gap-1">
-                          <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600" onClick={() => handleApproveJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><UserCheck className="w-4 h-4" /></Button>
-                          <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" onClick={() => handleRejectJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><XCircle className="w-4 h-4" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600 dark:text-emerald-400" onClick={() => handleApproveJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><UserCheck className="w-4 h-4" /></Button>
+                          <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600 dark:text-rose-400" onClick={() => handleRejectJoin(member.user_id)} disabled={isStatusUpdating === member.user_id}><XCircle className="w-4 h-4" /></Button>
                         </div>
                       ) : (
                         <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8" disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 dark:text-slate-400" disabled={updatingRole === member.user_id || isStatusUpdating === member.user_id}>
                               {updatingRole === member.user_id || isStatusUpdating === member.user_id ? <Loader2 className="w-4 h-4 animate-spin" /> : <MoreVertical className="w-4 h-4" />}
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuContent align="end" className="w-56 dark:bg-slate-900 dark:border-slate-800">
                             {userRole === 'superadmin' && member.role !== 'superadmin' && (
                               <>
-                                <DropdownMenuLabel>Role</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')}>Admin</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')}>Manager</DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')}>Member</DropdownMenuItem>
-                                <DropdownMenuSeparator />
+                                <DropdownMenuLabel className="dark:text-slate-100">Role</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'admin')} className="dark:text-slate-300">Admin</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'manager')} className="dark:text-slate-300">Manager</DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleUpdateRole(member.user_id, 'member')} className="dark:text-slate-300">Member</DropdownMenuItem>
+                                <DropdownMenuSeparator className="dark:bg-slate-800" />
                               </>
                             )}
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                            <DropdownMenuLabel className="dark:text-slate-100">Actions</DropdownMenuLabel>
                             {member.status === 'active' ? (
-                              <DropdownMenuItem className="text-rose-500" onClick={() => setDeactivatingMember(member)} disabled={member.user_id === userProfile?.id || member.role === 'superadmin'}><UserX className="w-4 h-4 mr-2" /> Deactivate</DropdownMenuItem>
+                              <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10" onClick={() => setDeactivatingMember(member)} disabled={member.user_id === userProfile?.id || member.role === 'superadmin'}><UserX className="w-4 h-4 mr-2" /> Deactivate</DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem className="text-emerald-500" onClick={() => handleReactivate(member.user_id)}><UserCheck className="w-4 h-4 mr-2" /> Reactivate</DropdownMenuItem>
+                              <DropdownMenuItem className="text-emerald-500 dark:hover:bg-emerald-500/10" onClick={() => handleReactivate(member.user_id)}><UserCheck className="w-4 h-4 mr-2" /> Reactivate</DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -666,38 +666,38 @@ export default function WorkspaceAdminPage() {
 
         <TabsContent value="teams" className="space-y-6">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold">Workspace Teams</h2>
+            <h2 className="text-xl font-bold dark:text-slate-100">Workspace Teams</h2>
             {canManageSettings && (
-              <Button size="sm" onClick={() => { setEditingTeam(null); setIsCreatingTeam(true); }} className="gap-2">
+              <Button size="sm" onClick={() => { setEditingTeam(null); setIsCreatingTeam(true); }} className="gap-2 shadow-lg shadow-primary/20">
                 <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Create Team</span>
               </Button>
             )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {subWorkspaces.length === 0 ? (
-              <div className="md:col-span-3 py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed">
-                <Layout className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <div className="md:col-span-3 py-12 text-center bg-slate-50 dark:bg-slate-900/40 rounded-2xl border-2 border-dashed dark:border-slate-800">
+                <Layout className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
                 <p className="text-sm text-muted-foreground">No teams defined.</p>
               </div>
             ) : (
               subWorkspaces.map((team) => (
-                <Card key={team.id} className="border-none shadow-sm">
+                <Card key={team.id} className="border-none shadow-sm dark:bg-slate-900">
                   <CardHeader className="p-4 pb-2">
                     <div className="flex items-center justify-between">
-                      <Badge variant="secondary" className="bg-violet-50 text-violet-600 text-[10px] h-4">Team</Badge>
+                      <Badge variant="secondary" className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] h-4">Team</Badge>
                       {canManageSettings && (
                         <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-7 w-7"><MoreVertical className="w-4 h-4" /></Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 dark:text-slate-400"><MoreVertical className="w-4 h-4" /></Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsCreatingTeam(true); }}>Edit</DropdownMenuItem>
-                            <DropdownMenuItem className="text-rose-500" onClick={() => setDeletingTeam(team)}>Delete</DropdownMenuItem>
+                          <DropdownMenuContent align="end" className="dark:bg-slate-900 dark:border-slate-800">
+                            <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsCreatingTeam(true); }} className="dark:text-slate-300">Edit</DropdownMenuItem>
+                            <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10" onClick={() => setDeletingTeam(team)}>Delete</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
                     </div>
-                    <CardTitle className="text-base mt-1">{team.name}</CardTitle>
+                    <CardTitle className="text-base mt-1 dark:text-slate-100">{team.name}</CardTitle>
                   </CardHeader>
                   <CardContent className="p-4 pt-0">
                     <p className="text-xs text-muted-foreground line-clamp-2">{team.description || 'No description.'}</p>
@@ -709,14 +709,14 @@ export default function WorkspaceAdminPage() {
         </TabsContent>
 
         <TabsContent value="permissions" className="space-y-6 overflow-x-auto">
-          <Card className="border-none shadow-sm min-w-[600px]">
+          <Card className="border-none shadow-sm min-w-[600px] dark:bg-slate-900">
             <CardHeader className="p-4 md:p-6">
-              <CardTitle className="text-lg flex items-center gap-2"><ShieldCheck className="w-5 h-5 text-primary" /> Permissions Matrix</CardTitle>
+              <CardTitle className="text-lg flex items-center gap-2 dark:text-slate-100"><ShieldCheck className="w-5 h-5 text-primary" /> Permissions Matrix</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
-                  <thead className="bg-slate-50 border-b">
+                  <thead className="bg-slate-50 dark:bg-slate-950/50 border-b dark:border-slate-800">
                     <tr>
                       <th className="text-left p-3 font-bold uppercase tracking-wider text-muted-foreground">Permission</th>
                       <th className="text-center p-3 font-bold uppercase tracking-wider text-muted-foreground">Superadmin</th>
@@ -728,11 +728,11 @@ export default function WorkspaceAdminPage() {
                   <tbody>
                     {Object.keys(groupedPermissions).map((cat) => (
                       <Fragment key={cat}>
-                        <tr className="bg-slate-100/50"><td colSpan={5} className="p-2 px-3 text-[10px] font-bold uppercase tracking-widest text-primary">{cat}</td></tr>
+                        <tr className="bg-slate-100/50 dark:bg-slate-800/30"><td colSpan={5} className="p-2 px-3 text-[10px] font-bold uppercase tracking-widest text-primary">{cat}</td></tr>
                         {groupedPermissions[cat].map((def: any) => (
-                          <tr key={def.permission_key} className="border-b hover:bg-slate-50 transition-colors">
-                            <td className="p-3"><p className="font-bold">{def.label}</p><p className="text-[10px] text-muted-foreground">{def.description}</p></td>
-                            <td className="p-3 text-center"><Badge variant="outline" className="text-[8px] opacity-60">Locked</Badge></td>
+                          <tr key={def.permission_key} className="border-b dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                            <td className="p-3"><p className="font-bold dark:text-slate-200">{def.label}</p><p className="text-[10px] text-muted-foreground">{def.description}</p></td>
+                            <td className="p-3 text-center"><Badge variant="outline" className="text-[8px] opacity-60 dark:text-slate-500">Locked</Badge></td>
                             {['admin', 'manager', 'member'].map(role => {
                               const perm = wsPermissions.find(p => p.role === role && p.permission_key === def.permission_key);
                               const enabled = !!perm?.enabled;
@@ -743,7 +743,7 @@ export default function WorkspaceAdminPage() {
                                     {userRole === 'superadmin' ? (
                                       <Switch checked={enabled} onCheckedChange={() => handleTogglePermission(role, def.permission_key, enabled)} disabled={isUpdating} className="scale-75 md:scale-100" />
                                     ) : (
-                                      enabled ? <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" /> : <ShieldAlert className="w-4 h-4 text-slate-200 mx-auto" />
+                                      enabled ? <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" /> : <ShieldAlert className="w-4 h-4 text-slate-200 dark:text-slate-700 mx-auto" />
                                     )}
                                   </div>
                                 </td>
@@ -763,17 +763,17 @@ export default function WorkspaceAdminPage() {
         <TabsContent value="audit" className="space-y-4">
           <div className="space-y-3">
             {auditLogs.length === 0 ? (
-              <p className="py-12 text-center text-muted-foreground italic bg-slate-50 rounded-xl">No logs found.</p>
+              <p className="py-12 text-center text-muted-foreground italic bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">No logs found.</p>
             ) : (
               auditLogs.map((log) => (
-                <Card key={log.id} className="border-none shadow-sm">
+                <Card key={log.id} className="border-none shadow-sm dark:bg-slate-900">
                   <CardContent className="p-3 md:p-4 flex gap-3">
                     <History className="w-4 h-4 text-primary shrink-0 mt-1" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold capitalize">{log.action.replace(/_/g, ' ')}</p>
+                      <p className="text-xs font-bold capitalize dark:text-slate-200">{log.action.replace(/_/g, ' ')}</p>
                       <p className="text-[10px] text-muted-foreground leading-snug">
-                        <span className="font-bold text-foreground">{(log.actor as any)?.full_name}</span> performed action 
-                        {log.target_user_id && <> for <span className="font-bold text-foreground">{(log.target as any)?.full_name}</span></>}
+                        <span className="font-bold text-foreground dark:text-slate-300">{(log.actor as any)?.full_name}</span> performed action 
+                        {log.target_user_id && <> for <span className="font-bold text-foreground dark:text-slate-300">{(log.target as any)?.full_name}</span></>}
                       </p>
                       <p className="text-[8px] text-muted-foreground mt-1">{new Date(log.created_at).toLocaleString()}</p>
                     </div>
@@ -785,28 +785,28 @@ export default function WorkspaceAdminPage() {
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-6">
-           <Card className="border-none shadow-sm">
-             <CardHeader className="p-4 md:p-6"><CardTitle className="text-lg">Access Control</CardTitle></CardHeader>
+           <Card className="border-none shadow-sm dark:bg-slate-900">
+             <CardHeader className="p-4 md:p-6"><CardTitle className="text-lg dark:text-slate-100">Access Control</CardTitle></CardHeader>
              <CardContent className="p-4 md:p-6 space-y-4">
-                <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 rounded-lg border">
-                  <div><p className="text-sm font-bold">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div>
+                <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border dark:border-slate-800">
+                  <div><p className="text-sm font-bold dark:text-slate-200">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div>
                   <Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!canManageMembers} />
                 </div>
              </CardContent>
            </Card>
 
-           <Card className="border-none shadow-sm">
+           <Card className="border-none shadow-sm dark:bg-slate-900">
              <CardHeader className="p-4 md:p-6">
                 <div className="flex items-center gap-2">
                   <BellRing className="w-5 h-5 text-primary" />
-                  <CardTitle className="text-lg">Notification Automation</CardTitle>
+                  <CardTitle className="text-lg dark:text-slate-100">Notification Automation</CardTitle>
                 </div>
                 <CardDescription>Manually trigger scheduled system checks for task deadlines and reminders.</CardDescription>
              </CardHeader>
              <CardContent className="p-4 md:p-6 space-y-4">
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div className="space-y-1">
-                    <p className="text-sm font-bold">Process Deadlines & Reminders</p>
+                    <p className="text-sm font-bold dark:text-slate-200">Process Deadlines & Reminders</p>
                     <p className="text-[10px] text-muted-foreground max-w-md">
                       Checks for due reminders, tasks due within 3 days, and overdue assignments to generate relevant system notifications.
                     </p>
@@ -814,7 +814,7 @@ export default function WorkspaceAdminPage() {
                   <Button 
                     onClick={handleRunNotificationChecks} 
                     disabled={isRunningChecks}
-                    className="w-full sm:w-auto gap-2"
+                    className="w-full sm:w-auto gap-2 shadow-lg shadow-primary/20"
                   >
                     {isRunningChecks ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -830,47 +830,47 @@ export default function WorkspaceAdminPage() {
       </Tabs>
 
       <Dialog open={isAllocating} onOpenChange={(open) => { setIsAllocating(open); if (!open) forceUnlockUI(); }}>
-        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl">
-          <DialogHeader><DialogTitle>New Allocation</DialogTitle></DialogHeader>
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <DialogHeader><DialogTitle className="dark:text-slate-100">New Allocation</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateAllocation} className="space-y-4">
              <div className="space-y-1">
-               <Label className="text-xs font-bold">Member</Label>
+               <Label className="text-xs font-bold dark:text-slate-300">Member</Label>
                <Select name="user_id" required>
-                 <SelectTrigger className="h-11 text-base md:text-sm"><SelectValue placeholder="Choose member" /></SelectTrigger>
-                 <SelectContent>{members.filter(m => m.status === 'active').map(m => (<SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>))}</SelectContent>
+                 <SelectTrigger className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Choose member" /></SelectTrigger>
+                 <SelectContent className="dark:bg-slate-900 dark:border-slate-800">{members.filter(m => m.status === 'active').map(m => (<SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>))}</SelectContent>
                </Select>
              </div>
              <div className="space-y-1">
-               <Label className="text-xs font-bold">Title</Label>
-               <Input name="title" className="h-11 text-base md:text-sm" required disabled={submitting} />
+               <Label className="text-xs font-bold dark:text-slate-300">Title</Label>
+               <Input name="title" className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" required disabled={submitting} />
              </div>
              <div className="space-y-1">
-               <Label className="text-xs font-bold">Focus</Label>
-               <Textarea name="description" className="text-base md:text-sm" rows={3} disabled={submitting} />
+               <Label className="text-xs font-bold dark:text-slate-300">Focus</Label>
+               <Textarea name="description" className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
              </div>
              <DialogFooter className="flex-row gap-2">
-                <Button type="button" variant="ghost" onClick={() => setIsAllocating(false)} className="flex-1">Cancel</Button>
-                <Button type="submit" className="flex-1" disabled={submitting}>Assign</Button>
+                <Button type="button" variant="ghost" onClick={() => setIsAllocating(false)} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+                <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>Assign</Button>
              </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isCreatingTeam} onOpenChange={(open) => { setIsCreatingTeam(open); if (!open) { setEditingTeam(null); forceUnlockUI(); } }}>
-        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl">
-          <DialogHeader><DialogTitle>{editingTeam ? 'Edit Team' : 'New Team'}</DialogTitle></DialogHeader>
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <DialogHeader><DialogTitle className="dark:text-slate-100">{editingTeam ? 'Edit Team' : 'New Team'}</DialogTitle></DialogHeader>
           <form onSubmit={handleCreateTeam} className="space-y-4">
              <div className="space-y-1">
-               <Label className="text-xs font-bold">Name</Label>
-               <Input name="name" defaultValue={editingTeam?.name} className="h-11 text-base md:text-sm" required disabled={submitting} />
+               <Label className="text-xs font-bold dark:text-slate-300">Name</Label>
+               <Input name="name" defaultValue={editingTeam?.name} className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" required disabled={submitting} />
              </div>
              <div className="space-y-1">
-               <Label className="text-xs font-bold">Description</Label>
-               <Textarea name="description" defaultValue={editingTeam?.description} className="text-base md:text-sm" rows={3} disabled={submitting} />
+               <Label className="text-xs font-bold dark:text-slate-300">Description</Label>
+               <Textarea name="description" defaultValue={editingTeam?.description} className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
              </div>
              <DialogFooter className="flex-row gap-2">
-                <Button type="button" variant="ghost" onClick={() => setIsCreatingTeam(false)} className="flex-1">Cancel</Button>
-                <Button type="submit" className="flex-1" disabled={submitting}>{editingTeam ? 'Update' : 'Create'}</Button>
+                <Button type="button" variant="ghost" onClick={() => setIsCreatingTeam(false)} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+                <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>{editingTeam ? 'Update' : 'Create'}</Button>
              </DialogFooter>
           </form>
         </DialogContent>

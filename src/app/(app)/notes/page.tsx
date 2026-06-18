@@ -73,7 +73,6 @@ function NotesPageContent() {
     if (!activeWorkspace || !userProfile) return;
     setLoading(true);
     try {
-      // SECURITY: Filter notes to only show workspace notes or notes created by the current user
       const [notesRes, teamsRes] = await Promise.all([
         supabase
           .from('notes')
@@ -183,11 +182,11 @@ function NotesPageContent() {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Notes</h1>
+          <h1 className="text-3xl font-bold text-slate-950 dark:text-slate-100">Notes</h1>
           <p className="text-muted-foreground">Keep your thoughts and project details organized</p>
         </div>
         <div className="flex gap-2">
-           <Button variant="outline" onClick={() => { setForm({ title: "", content: "", visibility: "personal", sub_workspace_id: "none" }); setIsModalOpen(true); }} className="flex items-center gap-2">
+           <Button variant="outline" onClick={() => { setForm({ title: "", content: "", visibility: "personal", sub_workspace_id: "none" }); setIsModalOpen(true); }} className="flex items-center gap-2 dark:border-slate-800 dark:text-slate-300">
             <Lock className="w-4 h-4" /> New Personal Note
           </Button>
           <Button onClick={() => { setForm({ title: "", content: "", visibility: "workspace", sub_workspace_id: "none" }); setIsModalOpen(true); }} className="flex items-center gap-2 shadow-lg shadow-primary/20">
@@ -197,11 +196,11 @@ function NotesPageContent() {
       </div>
 
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
+        <div className="flex flex-col md:flex-row items-center gap-4 bg-white dark:bg-slate-900 p-2 rounded-xl shadow-sm border dark:border-slate-800">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input 
-              className="pl-10 border-none shadow-none focus-visible:ring-0" 
+              className="pl-10 border-none shadow-none focus-visible:ring-0 dark:bg-slate-900 dark:text-slate-100" 
               placeholder="Search notes..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -209,11 +208,11 @@ function NotesPageContent() {
           </div>
           <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap px-2">
              <Select value={filters.visibility} onValueChange={v => setFilters(f => ({...f, visibility: v}))}>
-               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 text-xs rounded-lg">
+               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 dark:bg-slate-800 text-xs rounded-lg dark:text-slate-100">
                  <ShieldCheck className="w-3 h-3 mr-2" />
                  <SelectValue placeholder="Visibility" />
                </SelectTrigger>
-               <SelectContent>
+               <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                  <SelectItem value="all">All Visibility</SelectItem>
                  <SelectItem value="personal">Personal Only</SelectItem>
                  <SelectItem value="workspace">Workspace Shared</SelectItem>
@@ -221,11 +220,11 @@ function NotesPageContent() {
              </Select>
 
              <Select value={filters.teamId} onValueChange={v => setFilters(f => ({...f, teamId: v}))}>
-               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 text-xs rounded-lg">
+               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 dark:bg-slate-800 text-xs rounded-lg dark:text-slate-100">
                  <Layout className="w-3 h-3 mr-2" />
                  <SelectValue placeholder="Team" />
                </SelectTrigger>
-               <SelectContent>
+               <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                  <SelectItem value="all">All Teams</SelectItem>
                  <SelectItem value="none">No Team</SelectItem>
                  {subWorkspaces.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
@@ -233,11 +232,11 @@ function NotesPageContent() {
              </Select>
 
              <Select value={filters.isLinked} onValueChange={v => setFilters(f => ({...f, isLinked: v}))}>
-               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 text-xs rounded-lg">
+               <SelectTrigger className="w-[130px] h-8 border-none bg-slate-50 dark:bg-slate-800 text-xs rounded-lg dark:text-slate-100">
                  <LinkIcon className="w-3 h-3 mr-2" />
                  <SelectValue placeholder="Linked" />
                </SelectTrigger>
-               <SelectContent>
+               <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                  <SelectItem value="all">Linked (All)</SelectItem>
                  <SelectItem value="yes">Task Linked</SelectItem>
                  <SelectItem value="no">Not Linked</SelectItem>
@@ -245,7 +244,7 @@ function NotesPageContent() {
              </Select>
 
              {(filters.visibility !== 'all' || filters.teamId !== 'all' || filters.isLinked !== 'all') && (
-               <Button variant="ghost" size="sm" onClick={() => setFilters({visibility: 'all', teamId: 'all', isLinked: 'all'})} className="h-8 px-2 text-rose-500 hover:text-rose-600">
+               <Button variant="ghost" size="sm" onClick={() => setFilters({visibility: 'all', teamId: 'all', isLinked: 'all'})} className="h-8 px-2 text-rose-500 hover:text-rose-600 dark:hover:bg-rose-500/10">
                  <FilterX className="w-4 h-4" />
                </Button>
              )}
@@ -253,10 +252,10 @@ function NotesPageContent() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-           <Badge variant={filters.visibility === 'personal' ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setFilters(f => ({...f, visibility: f.visibility === 'personal' ? 'all' : 'personal'}))}>
+           <Badge variant={filters.visibility === 'personal' ? 'default' : 'secondary'} className="cursor-pointer dark:bg-slate-800 dark:text-slate-300" onClick={() => setFilters(f => ({...f, visibility: f.visibility === 'personal' ? 'all' : 'personal'}))}>
              <User className="w-3 h-3 mr-1" /> My Personal Notes
            </Badge>
-           <Badge variant={filters.visibility === 'workspace' ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setFilters(f => ({...f, visibility: f.visibility === 'workspace' ? 'all' : 'workspace'}))}>
+           <Badge variant={filters.visibility === 'workspace' ? 'default' : 'secondary'} className="cursor-pointer dark:bg-slate-800 dark:text-slate-300" onClick={() => setFilters(f => ({...f, visibility: f.visibility === 'workspace' ? 'all' : 'workspace'}))}>
              <LayoutDashboard className="w-3 h-3 mr-1" /> Workspace Knowledge
            </Badge>
         </div>
@@ -265,23 +264,23 @@ function NotesPageContent() {
       {loading && !saving ? (
         <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
       ) : filteredNotes.length === 0 ? (
-        <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed flex flex-col items-center gap-4">
-          <StickyNote className="w-12 h-12 text-slate-300" />
+        <div className="text-center py-20 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center gap-4">
+          <StickyNote className="w-12 h-12 text-slate-300 dark:text-slate-600" />
           <div>
-            <p className="font-bold text-lg">No notes found</p>
+            <p className="font-bold text-lg dark:text-slate-100">No notes found</p>
             <p className="text-muted-foreground text-sm">Adjust filters or create your first note.</p>
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredNotes.map((note) => (
-            <Card key={note.id} className="border-none shadow-sm hover:shadow-md transition-all group relative h-full flex flex-col">
+            <Card key={note.id} className="border-none shadow-sm hover:shadow-md transition-all group relative h-full flex flex-col dark:bg-slate-900">
               <CardHeader className="flex flex-row items-start justify-between pb-2">
                 <div className="p-2 bg-primary/5 rounded-lg">
                   <StickyNote className="w-5 h-5 text-primary" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant={note.visibility === 'workspace' ? 'default' : 'secondary'} className="text-[10px] uppercase gap-1">
+                  <Badge variant={note.visibility === 'workspace' ? 'default' : 'secondary'} className="text-[10px] uppercase gap-1 dark:bg-slate-800 dark:text-slate-300">
                     {note.visibility === 'workspace' ? <Globe className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
                     {note.visibility}
                   </Badge>
@@ -291,10 +290,10 @@ function NotesPageContent() {
                         <MoreVertical className="w-4 h-4" />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleOpenEdit(note)}>Edit Note</DropdownMenuItem>
+                    <DropdownMenuContent align="end" className="dark:bg-slate-900 dark:border-slate-800">
+                      <DropdownMenuItem onClick={() => handleOpenEdit(note)} className="dark:text-slate-300">Edit Note</DropdownMenuItem>
                       {(note.created_by === userProfile?.id || note.visibility === 'workspace') && (
-                        <DropdownMenuItem className="text-rose-500" onClick={() => handleMoveToTrash(note)}>
+                        <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10" onClick={() => handleMoveToTrash(note)}>
                           <Trash2 className="w-4 h-4 mr-2" /> Move to Trash
                         </DropdownMenuItem>
                       )}
@@ -303,19 +302,19 @@ function NotesPageContent() {
                 </div>
               </CardHeader>
               <CardContent className="cursor-pointer flex-1" onClick={() => handleOpenEdit(note)}>
-                <h3 className="font-bold text-lg mb-2 line-clamp-1">{note.title}</h3>
+                <h3 className="font-bold text-lg mb-2 line-clamp-1 dark:text-slate-100">{note.title}</h3>
                 <p className="text-sm text-muted-foreground line-clamp-4 min-h-[5rem] whitespace-pre-wrap">
                   {note.content}
                 </p>
               </CardContent>
-              <CardFooter className="flex flex-col items-start gap-2 pt-0 border-t mt-auto pt-4">
+              <CardFooter className="flex flex-col items-start gap-2 pt-0 border-t dark:border-slate-800 mt-auto pt-4">
                 <div className="flex items-center justify-between w-full">
                   <span className="text-[10px] font-bold text-muted-foreground">
                     {new Date(note.created_at).toLocaleDateString()}
                   </span>
                   <div className="flex items-center gap-2">
                     {note.sub_workspaces?.name && (
-                      <Badge variant="secondary" className="text-[9px] bg-violet-50 text-violet-600 border-none h-4">
+                      <Badge variant="secondary" className="text-[9px] bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border-none h-4">
                         {note.sub_workspaces.name}
                       </Badge>
                     )}
@@ -336,32 +335,35 @@ function NotesPageContent() {
         setIsModalOpen(open);
         if (!open) { setEditingNote(null); forceUnlockUI(); }
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg dark:bg-slate-950 dark:border-slate-800">
           <DialogHeader>
-            <DialogTitle>{editingNote ? 'Edit Note' : 'Create New Note'}</DialogTitle>
+            <DialogTitle className="dark:text-slate-100">{editingNote ? 'Edit Note' : 'Create New Note'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Title</Label>
-              <Input value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Note title..." required disabled={saving} />
+              <Label className="dark:text-slate-300">Title</Label>
+              <Input value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Note title..." required disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" />
             </div>
             <div className="space-y-2">
-              <Label>Visibility</Label>
+              <Label className="dark:text-slate-300">Visibility</Label>
               <Select value={form.visibility} onValueChange={(v: any) => setForm({...form, visibility: v})}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
+                <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue /></SelectTrigger>
+                <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                   <SelectItem value="personal">Personal (Private)</SelectItem>
                   <SelectItem value="workspace">Workspace (Shared)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Content</Label>
-              <Textarea value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Write something..." rows={8} required disabled={saving} />
+              <Label className="dark:text-slate-300">Content</Label>
+              <Textarea value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Write something..." rows={8} required disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" />
             </div>
             <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)} disabled={saving}>Cancel</Button>
-              <Button type="submit" disabled={saving}>{saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}Save Note</Button>
+              <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)} disabled={saving} className="dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+              <Button type="submit" disabled={saving} className="shadow-lg shadow-primary/20">
+                {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
+                Save Note
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

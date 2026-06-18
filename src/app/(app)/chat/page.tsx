@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -310,28 +309,28 @@ export default function ChatPage() {
     <div className="h-[calc(100vh-8rem)] flex flex-col gap-4 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Workspace Chat</h1>
+          <h1 className="text-3xl font-bold text-slate-950 dark:text-slate-100">Workspace Chat</h1>
           <p className="text-muted-foreground">Collaborate with your team in {activeWorkspace?.name}</p>
         </div>
       </div>
 
-      <Card className="flex-1 flex flex-col border-none shadow-xl overflow-hidden relative">
-        <div className="p-4 border-b bg-white flex items-center justify-between z-10">
+      <Card className="flex-1 flex flex-col border-none shadow-xl overflow-hidden relative dark:bg-slate-900">
+        <div className="p-4 border-b dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
               <span className="text-primary font-bold">#</span>
             </div>
             <div>
-              <p className="font-bold">{channel?.name || 'General'}</p>
+              <p className="font-bold dark:text-slate-100">{channel?.name || 'General'}</p>
               <p className="text-xs text-muted-foreground">{members.length} members in workspace</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" className="dark:text-slate-400">
             <MoreVertical className="w-5 h-5" />
           </Button>
         </div>
 
-        <ScrollArea className="flex-1 bg-slate-50/50">
+        <ScrollArea className="flex-1 bg-slate-50/50 dark:bg-slate-950/40">
           <div className="p-6 space-y-6">
             {loading ? (
               <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
@@ -345,7 +344,7 @@ export default function ChatPage() {
 
                 return (
                   <div key={msg.id} className={cn("flex gap-3 group", isMe ? "flex-row-reverse" : "")}>
-                    <Avatar className="w-10 h-10 border shadow-sm">
+                    <Avatar className="w-10 h-10 border dark:border-slate-800 shadow-sm">
                       <AvatarImage src={avatarSrc} />
                       <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
                         {profile?.full_name?.[0] || 'U'}
@@ -353,23 +352,25 @@ export default function ChatPage() {
                     </Avatar>
                     <div className={cn("max-w-[70%] flex flex-col", isMe ? "items-end" : "items-start")}>
                       <div className={cn("flex items-center gap-2 mb-1 px-1", isMe ? "flex-row-reverse" : "")}>
-                        <span className="text-xs font-bold">{profile?.full_name || 'User'}</span>
+                        <span className="text-xs font-bold dark:text-slate-300">{profile?.full_name || 'User'}</span>
                         <span className="text-[10px] text-muted-foreground">
                           {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
                       <div className="relative group/bubble">
                         <div className={cn(
-                          "p-4 rounded-2xl shadow-sm break-words whitespace-pre-wrap",
-                          isMe ? "bg-primary text-white rounded-tr-none" : "bg-white text-foreground rounded-tl-none border"
+                          "p-4 rounded-2xl shadow-sm break-words whitespace-pre-wrap text-sm",
+                          isMe 
+                            ? "bg-primary text-white rounded-tr-none" 
+                            : "bg-white dark:bg-slate-800 text-foreground dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
                         )}>
                           {msg.message}
                           {msg.created_task_id && (
                             <div className={cn(
                               "mt-2 pt-2 border-t flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider",
-                              isMe ? "border-white/20 text-white/80" : "border-slate-100 text-primary"
+                              isMe ? "border-white/20 text-white/80" : "border-slate-100 dark:border-slate-700 text-primary"
                             )}>
-                              <CheckCircle2 className="w-3 h-3" /> Task Created
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Task Created
                             </div>
                           )}
                         </div>
@@ -381,7 +382,7 @@ export default function ChatPage() {
                              <Button 
                                variant="secondary" 
                                size="icon" 
-                               className="h-8 w-8 rounded-full shadow-md bg-white hover:bg-slate-50 border"
+                               className="h-8 w-8 rounded-full shadow-md bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border dark:border-slate-700"
                                onClick={() => openTaskModal(msg)}
                                title="Create task from message"
                              >
@@ -399,13 +400,13 @@ export default function ChatPage() {
           </div>
         </ScrollArea>
 
-        <div className="p-4 bg-white border-t">
-          <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-xl border border-slate-200">
+        <div className="p-4 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
+          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
             <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary shrink-0">
               <Paperclip className="w-5 h-5" />
             </Button>
             <Input 
-              className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1" 
+              className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-slate-100" 
               placeholder="Type your message..." 
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -433,38 +434,40 @@ export default function ChatPage() {
           if (!open) forceUnlockUI();
         }
       }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800">
           <DialogHeader>
-            <DialogTitle>Create Task from Message</DialogTitle>
+            <DialogTitle className="dark:text-slate-100">Create Task from Message</DialogTitle>
             <DialogDescription>Convert this chat message into a project assignment.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateTask} className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="t-title">Task Title</Label>
+              <Label htmlFor="t-title" className="dark:text-slate-300">Task Title</Label>
               <Input 
                 id="t-title" 
                 value={taskForm.title} 
                 onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
                 required 
                 disabled={converting}
+                className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="t-desc">Description</Label>
+              <Label htmlFor="t-desc" className="dark:text-slate-300">Description</Label>
               <Textarea 
                 id="t-desc" 
                 value={taskForm.description} 
                 onChange={e => setTaskForm({...taskForm, description: e.target.value})} 
                 rows={4}
                 disabled={converting}
+                className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Priority</Label>
+                <Label className="dark:text-slate-300">Priority</Label>
                 <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})} disabled={converting}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue /></SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="high">High</SelectItem>
@@ -473,20 +476,21 @@ export default function ChatPage() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Due Date</Label>
+                <Label className="dark:text-slate-300">Due Date</Label>
                 <Input 
                   type="date" 
                   value={taskForm.dueDate} 
                   onChange={e => setTaskForm({...taskForm, dueDate: e.target.value})} 
                   disabled={converting}
+                  className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Assigned To</Label>
+              <Label className="dark:text-slate-300">Assigned To</Label>
               <Select value={taskForm.assignedTo} onValueChange={v => setTaskForm({...taskForm, assignedTo: v})} disabled={converting}>
-                <SelectTrigger><SelectValue placeholder="Select member" /></SelectTrigger>
-                <SelectContent>
+                <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Select member" /></SelectTrigger>
+                <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                   {members.map(m => (
                     <SelectItem key={m.id} value={m.id}>{m.full_name}</SelectItem>
                   ))}
@@ -494,8 +498,8 @@ export default function ChatPage() {
               </Select>
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => { setIsTaskModalOpen(false); forceUnlockUI(); }} disabled={converting}>Cancel</Button>
-              <Button type="submit" disabled={converting}>
+              <Button type="button" variant="ghost" onClick={() => { setIsTaskModalOpen(false); forceUnlockUI(); }} disabled={converting} className="dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+              <Button type="submit" disabled={converting} className="shadow-lg shadow-primary/20">
                 {converting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Convert to Task
               </Button>

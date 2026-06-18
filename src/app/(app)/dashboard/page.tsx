@@ -114,10 +114,10 @@ export default function DashboardPage() {
       }) || [];
 
       setStats([
-        { label: "Active", count: activeTasks.length, icon: Clock, color: "text-blue-500", bg: "bg-blue-50" },
-        { label: "Due Soon", count: dueSoonTasks.length, icon: CalendarDays, color: "text-amber-500", bg: "bg-amber-50" },
-        { label: "Overdue", count: overdueTasks.length, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50" },
-        { label: "Completed", count: completedTasks.length, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50" },
+        { label: "Active", count: activeTasks.length, icon: Clock, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-500/10" },
+        { label: "Due Soon", count: dueSoonTasks.length, icon: CalendarDays, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-500/10" },
+        { label: "Overdue", count: overdueTasks.length, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50 dark:bg-rose-500/10" },
+        { label: "Completed", count: completedTasks.length, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-500/10" },
       ]);
 
       setTasks(myTasks || []);
@@ -271,17 +271,17 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">Hello, {userProfile?.full_name?.split(' ')[0] || 'User'}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-950 dark:text-slate-100">Hello, {userProfile?.full_name?.split(' ')[0] || 'User'}</h1>
           <p className="text-sm text-muted-foreground">Here's what's happening in {activeWorkspace?.name} today.</p>
         </div>
         <div className="flex items-center gap-2">
            {isAdmin && (
-             <Button variant="outline" size="sm" onClick={handleRunNotificationChecks} disabled={isRunningChecks} className="h-9 gap-2">
+             <Button variant="outline" size="sm" onClick={handleRunNotificationChecks} disabled={isRunningChecks} className="h-9 gap-2 dark:border-slate-800">
                {isRunningChecks ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                <span className="hidden sm:inline">Run Checks</span>
              </Button>
            )}
-           <Button onClick={() => setIsReminderModalOpen(true)} size="sm" className="h-9 gap-2">
+           <Button onClick={() => setIsReminderModalOpen(true)} size="sm" className="h-9 gap-2 shadow-lg shadow-primary/20">
              <Clock className="w-4 h-4" /> Quick Reminder
            </Button>
         </div>
@@ -290,11 +290,11 @@ export default function DashboardPage() {
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         {stats.map((stat) => (
-          <Card key={stat.label} className="border-none shadow-sm">
+          <Card key={stat.label} className="border-none shadow-sm dark:bg-slate-900">
             <CardContent className="p-4 md:p-6 flex items-center justify-between">
               <div>
                 <p className="text-[10px] md:text-xs font-bold text-muted-foreground uppercase tracking-wider">{stat.label}</p>
-                <p className="text-xl md:text-2xl font-bold mt-1">{stat.count}</p>
+                <p className="text-xl md:text-2xl font-bold mt-1 text-slate-950 dark:text-slate-100">{stat.count}</p>
               </div>
               <div className={cn("p-2 md:p-3 rounded-xl", stat.bg)}>
                 <stat.icon className={cn("w-5 h-5 md:w-6 md:h-6", stat.color)} />
@@ -320,12 +320,12 @@ export default function DashboardPage() {
               ].map((action) => {
                 if (action.admin && !isAdmin) return null;
                 const Content = (
-                  <Card className="border-none shadow-sm hover:translate-y-[-2px] transition-all cursor-pointer group">
+                  <Card className="border-none shadow-sm hover:translate-y-[-2px] transition-all cursor-pointer group dark:bg-slate-900">
                     <CardContent className="p-4 flex flex-col items-center justify-center gap-2">
                       <div className={cn("p-3 rounded-xl text-white shadow-lg shadow-black/10", action.color)}>
                         <action.icon className="w-5 h-5" />
                       </div>
-                      <span className="text-xs font-bold">{action.label}</span>
+                      <span className="text-xs font-bold dark:text-slate-100">{action.label}</span>
                     </CardContent>
                   </Card>
                 );
@@ -341,14 +341,14 @@ export default function DashboardPage() {
           {/* Today's Tasks */}
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold flex items-center gap-2">
+              <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
                 <CheckCircle className="w-5 h-5 text-emerald-500" />
                 Assigned to Me: Today
               </h2>
             </div>
             <div className="grid grid-cols-1 gap-3">
               {todaysTasks.length === 0 ? (
-                <div className="p-10 text-center bg-slate-50 rounded-2xl border-2 border-dashed flex flex-col items-center gap-2">
+                <div className="p-10 text-center bg-slate-50 dark:bg-slate-900/40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center gap-2">
                   <p className="text-sm font-bold text-slate-400">All clear for today!</p>
                   <p className="text-xs text-muted-foreground">No tasks due today.</p>
                 </div>
@@ -368,7 +368,7 @@ export default function DashboardPage() {
               </h3>
               <div className="space-y-3">
                 {overdueList.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic p-4 bg-slate-50 rounded-xl">Nothing overdue.</p>
+                  <p className="text-xs text-muted-foreground italic p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">Nothing overdue.</p>
                 ) : (
                   overdueList.map(task => <TaskDashboardCard key={task.id} task={task} compact />)
                 )}
@@ -380,7 +380,7 @@ export default function DashboardPage() {
               </h3>
               <div className="space-y-3">
                 {dueSoonList.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic p-4 bg-slate-50 rounded-xl">No urgent deadlines.</p>
+                  <p className="text-xs text-muted-foreground italic p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">No urgent deadlines.</p>
                 ) : (
                   dueSoonList.map(task => <TaskDashboardCard key={task.id} task={task} compact />)
                 )}
@@ -390,10 +390,10 @@ export default function DashboardPage() {
 
           {/* Activity Feed */}
           <section className="space-y-4">
-            <h2 className="text-lg font-bold">Recent Activity</h2>
-            <Card className="border-none shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Recent Activity</h2>
+            <Card className="border-none shadow-sm dark:bg-slate-900">
               <CardContent className="p-0">
-                <div className="divide-y">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {activity.length === 0 ? (
                     <p className="text-sm text-muted-foreground italic text-center py-10">No recent activity yet.</p>
                   ) : (
@@ -402,7 +402,7 @@ export default function DashboardPage() {
                         label: log.action_description || log.action?.replace(/_/g, ' ') || "performed an action", 
                         icon: TrendingUp, 
                         color: "text-slate-500", 
-                        bg: "bg-slate-100" 
+                        bg: "bg-slate-100 dark:bg-slate-800" 
                       };
                       const ActionIcon = config.icon;
                       
@@ -414,24 +414,24 @@ export default function DashboardPage() {
                       const targetTitle = log.task_title || log.note_title || "";
 
                       return (
-                        <div key={log.id} className="p-4 flex gap-4 group hover:bg-slate-50 transition-colors">
+                        <div key={log.id} className="p-4 flex gap-4 group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                           <div className="relative shrink-0">
-                            <Avatar className="w-10 h-10 border shadow-sm">
+                            <Avatar className="w-10 h-10 border dark:border-slate-800 shadow-sm">
                               <AvatarImage src={avatarSrc} />
                               <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
                                 {actorName[0]}
                               </AvatarFallback>
                             </Avatar>
                             <div className={cn(
-                              "absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-sm",
+                              "absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm",
                               config.bg
                             )}>
                               <ActionIcon className="w-2.5 h-2.5 text-white" />
                             </div>
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs md:text-sm text-foreground leading-relaxed">
-                              <span className="font-bold">{actorName}</span> {config.label}
+                            <p className="text-xs md:text-sm text-foreground leading-relaxed dark:text-slate-300">
+                              <span className="font-bold text-slate-950 dark:text-slate-100">{actorName}</span> {config.label}
                               {targetTitle && <span className="font-bold ml-1 text-primary">"{targetTitle}"</span>}
                             </p>
                             <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
@@ -452,14 +452,14 @@ export default function DashboardPage() {
         {/* Right Column - Reminders, Notifs, Workload */}
         <div className="lg:col-span-4 space-y-8">
           {/* Reminders */}
-          <Card className="border-none shadow-sm bg-violet-50/50">
+          <Card className="border-none shadow-sm bg-violet-50/50 dark:bg-violet-950/10 border-violet-100/50 dark:border-violet-900/20">
             <CardHeader className="p-4 pb-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-violet-600" />
-                  <CardTitle className="text-sm">My Reminders</CardTitle>
+                  <Clock className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                  <CardTitle className="text-sm dark:text-slate-100">My Reminders</CardTitle>
                 </div>
-                <Badge variant="outline" className="text-[10px] h-4 bg-white border-violet-200">{reminders.length}</Badge>
+                <Badge variant="outline" className="text-[10px] h-4 bg-white dark:bg-slate-900 border-violet-200 dark:border-violet-800">{reminders.length}</Badge>
               </div>
             </CardHeader>
             <CardContent className="p-4 pt-2 space-y-3">
@@ -467,14 +467,14 @@ export default function DashboardPage() {
                 <p className="text-[10px] text-muted-foreground italic">No active reminders.</p>
               ) : (
                 reminders.map((r) => (
-                  <div key={r.id} className="bg-white p-3 rounded-xl border shadow-sm flex items-center justify-between group animate-in slide-in-from-right-2">
+                  <div key={r.id} className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between group animate-in slide-in-from-right-2">
                     <div className="space-y-0.5 overflow-hidden">
-                      <p className="text-xs font-bold truncate">{r.title}</p>
+                      <p className="text-xs font-bold truncate dark:text-slate-100">{r.title}</p>
                       <p className="text-[10px] text-muted-foreground">
                         {new Date(r.remind_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-500 hover:bg-emerald-50" onClick={() => handleCompleteReminder(r.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10" onClick={() => handleCompleteReminder(r.id)}>
                       <CheckCircle className="w-4 h-4" />
                     </Button>
                   </div>
@@ -484,21 +484,21 @@ export default function DashboardPage() {
           </Card>
 
           {/* Notifications */}
-          <Card className="border-none shadow-sm">
-            <CardHeader className="p-4 pb-2 border-b">
+          <Card className="border-none shadow-sm dark:bg-slate-900">
+            <CardHeader className="p-4 pb-2 border-b dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-primary" />
-                <CardTitle className="text-sm">Latest Alerts</CardTitle>
+                <CardTitle className="text-sm dark:text-slate-100">Latest Alerts</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {notifications.length === 0 ? (
                   <p className="text-[10px] text-muted-foreground italic p-4 text-center">All caught up!</p>
                 ) : (
                   notifications.map((n) => (
-                    <div key={n.id} className="p-4 text-xs group relative hover:bg-slate-50 transition-colors">
-                      <p className="font-bold truncate pr-6">{n.title}</p>
+                    <div key={n.id} className="p-4 text-xs group relative hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                      <p className="font-bold truncate pr-6 dark:text-slate-200">{n.title}</p>
                       <p className="text-muted-foreground leading-relaxed line-clamp-2 mt-0.5">{n.message}</p>
                       <button 
                         onClick={() => handleMarkNotifRead(n.id)}
@@ -516,18 +516,18 @@ export default function DashboardPage() {
 
           {/* Team Workload */}
           {workload.length > 0 && (
-            <Card className="border-none shadow-sm">
+            <Card className="border-none shadow-sm dark:bg-slate-900">
               <CardHeader className="p-4 pb-2">
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-primary" />
-                  <CardTitle className="text-sm">Team Workload</CardTitle>
+                  <CardTitle className="text-sm dark:text-slate-100">Team Workload</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="p-4 pt-2 space-y-4">
                 {workload.map((w, index) => (
                   <div key={w.user_id || `${w.email}-${index}`} className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold truncate max-w-[120px]">{w.full_name || w.email || "Unknown Member"}</span>
+                      <span className="font-bold truncate max-w-[120px] dark:text-slate-300">{w.full_name || w.email || "Unknown Member"}</span>
                       <div className="flex items-center gap-2">
                         {w.overdue_tasks > 0 && <Badge variant="destructive" className="h-4 text-[8px]">{w.overdue_tasks} overdue</Badge>}
                         <span className="text-muted-foreground">{w.active_tasks} active</span>
@@ -548,36 +548,36 @@ export default function DashboardPage() {
           if (!open) forceUnlockUI();
         }
       }}>
-        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl">
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
           <DialogHeader>
-            <DialogTitle>Quick Reminder</DialogTitle>
+            <DialogTitle className="dark:text-slate-100">Quick Reminder</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateReminder} className="space-y-4 pt-2">
             <div className="space-y-2">
-              <Label className="text-xs font-bold">What should we remind you about?</Label>
+              <Label className="text-xs font-bold dark:text-slate-300">What should we remind you about?</Label>
               <Input 
                 value={newReminder.title} 
                 onChange={e => setNewReminder({...newReminder, title: e.target.value})} 
                 placeholder="e.g. Follow up on proposal"
                 required
                 disabled={saving}
-                className="h-11"
+                className="h-11 dark:bg-slate-900 dark:border-slate-800"
               />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-bold">When?</Label>
+              <Label className="text-xs font-bold dark:text-slate-300">When?</Label>
               <Input 
                 type="datetime-local"
                 value={newReminder.remindAt} 
                 onChange={e => setNewReminder({...newReminder, remindAt: e.target.value})} 
                 required
                 disabled={saving}
-                className="h-11"
+                className="h-11 dark:bg-slate-900 dark:border-slate-800"
               />
             </div>
             <DialogFooter className="flex flex-row gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setIsReminderModalOpen(false)} className="flex-1" disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1" disabled={saving}>
+              <Button type="button" variant="ghost" onClick={() => setIsReminderModalOpen(false)} className="flex-1 dark:hover:bg-slate-800" disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={saving}>
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Set Reminder"}
               </Button>
             </DialogFooter>
@@ -592,7 +592,7 @@ function TaskDashboardCard({ task, compact = false }: { task: any, compact?: boo
   const taskProgress = task.progress_mode === 'manual' ? (task.manual_progress || 0) : (task.calculated_progress || 0);
   
   return (
-    <Card className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden">
+    <Card className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden dark:bg-slate-900">
       <CardContent className={cn("flex items-center gap-4", compact ? "p-3" : "p-4")}>
         <div className={cn(
           "w-1 h-10 md:h-12 rounded-full shrink-0",
@@ -600,14 +600,14 @@ function TaskDashboardCard({ task, compact = false }: { task: any, compact?: boo
         )} />
         <div className="flex-1 min-w-0">
           <Link href={`/tasks?taskId=${task.id}`} className="hover:text-primary transition-colors">
-            <h3 className={cn("font-bold truncate", compact ? "text-xs" : "text-sm md:text-base")}>{task.title}</h3>
+            <h3 className={cn("font-bold truncate dark:text-slate-100", compact ? "text-xs" : "text-sm md:text-base")}>{task.title}</h3>
           </Link>
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-[10px] text-muted-foreground flex items-center gap-1">
               <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
             </p>
             {!compact && task.sub_workspace_name && (
-              <Badge variant="secondary" className="text-[8px] h-3.5 px-1 bg-violet-50 text-violet-600 border-none">{task.sub_workspace_name}</Badge>
+              <Badge variant="secondary" className="text-[8px] h-3.5 px-1 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border-none">{task.sub_workspace_name}</Badge>
             )}
           </div>
         </div>

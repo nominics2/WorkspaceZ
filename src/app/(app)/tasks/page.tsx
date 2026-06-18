@@ -531,7 +531,7 @@ function TasksPageContent() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Tasks</h1>
+          <h1 className="text-3xl font-bold text-slate-950 dark:text-slate-100">Tasks</h1>
           <p className="text-muted-foreground">Manage and track your project assignments</p>
         </div>
         <Button 
@@ -543,11 +543,11 @@ function TasksPageContent() {
       </div>
 
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-2 rounded-xl shadow-sm border">
+        <div className="flex flex-col md:flex-row items-center gap-4 bg-white dark:bg-slate-900 p-2 rounded-xl shadow-sm border dark:border-slate-800">
           <div className="relative flex-1 w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
             <Input 
-              className="pl-10 border-none shadow-none focus-visible:ring-0" 
+              className="pl-10 border-none shadow-none focus-visible:ring-0 dark:bg-slate-900 dark:text-slate-100" 
               placeholder="Search tasks..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -556,7 +556,7 @@ function TasksPageContent() {
           <div className="flex items-center gap-2 w-full md:w-auto px-2">
              <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                 <DropdownMenuTrigger asChild>
-                   <Button variant="outline" size="sm" className="gap-2 border-none bg-slate-50 hover:bg-slate-100">
+                   <Button variant="outline" size="sm" className="gap-2 border-none bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 dark:text-slate-100">
                       <Filter className="w-4 h-4" /> 
                       Filters
                       {(filters.status.length > 0 || filters.priority.length > 0 || filters.overdue || filters.dueSoon || filters.teamId !== 'all') && (
@@ -566,8 +566,8 @@ function TasksPageContent() {
                       )}
                    </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                   <DropdownMenuLabel>Status</DropdownMenuLabel>
+                <DropdownMenuContent align="end" className="w-64 dark:bg-slate-900 dark:border-slate-800">
+                   <DropdownMenuLabel className="dark:text-slate-100">Status</DropdownMenuLabel>
                    {['to_do', 'in_progress', 'completed', 'waiting'].map(s => (
                      <DropdownMenuCheckboxItem 
                        key={s} 
@@ -576,13 +576,13 @@ function TasksPageContent() {
                          ...f, 
                          status: checked ? [...f.status, s] : f.status.filter(x => x !== s)
                        }))}
-                       className="capitalize"
+                       className="capitalize dark:text-slate-300"
                      >
                        {s.replace('_', ' ')}
                      </DropdownMenuCheckboxItem>
                    ))}
-                   <DropdownMenuSeparator />
-                   <DropdownMenuLabel>Priority</DropdownMenuLabel>
+                   <DropdownMenuSeparator className="dark:bg-slate-800" />
+                   <DropdownMenuLabel className="dark:text-slate-100">Priority</DropdownMenuLabel>
                    {['low', 'medium', 'high', 'urgent'].map(p => (
                      <DropdownMenuCheckboxItem 
                        key={p} 
@@ -591,45 +591,48 @@ function TasksPageContent() {
                          ...f, 
                          priority: checked ? [...f.priority, p] : f.priority.filter(x => x !== p)
                        }))}
-                       className="capitalize"
+                       className="capitalize dark:text-slate-300"
                      >
                        {p}
                      </DropdownMenuCheckboxItem>
                    ))}
-                   <DropdownMenuSeparator />
+                   <DropdownMenuSeparator className="dark:bg-slate-800" />
                    <DropdownMenuCheckboxItem 
                      checked={filters.overdue} 
                      onCheckedChange={(c) => setFilters(f => ({...f, overdue: c}))}
+                     className="dark:text-slate-300"
                    >
                      Overdue
                    </DropdownMenuCheckboxItem>
                    <DropdownMenuCheckboxItem 
                      checked={filters.dueSoon} 
                      onCheckedChange={(c) => setFilters(f => ({...f, dueSoon: c}))}
+                     className="dark:text-slate-300"
                    >
                      Due Soon (3 Days)
                    </DropdownMenuCheckboxItem>
                    <DropdownMenuCheckboxItem 
                      checked={filters.noDueDate} 
                      onCheckedChange={(c) => setFilters(f => ({...f, noDueDate: c}))}
+                     className="dark:text-slate-300"
                    >
                      No Due Date
                    </DropdownMenuCheckboxItem>
-                   <DropdownMenuSeparator />
-                   <DropdownMenuItem onClick={resetFilters} className="text-rose-500 gap-2">
+                   <DropdownMenuSeparator className="dark:bg-slate-800" />
+                   <DropdownMenuItem onClick={resetFilters} className="text-rose-500 gap-2 dark:hover:bg-rose-500/10">
                      <FilterX className="w-4 h-4" /> Reset Filters
                    </DropdownMenuItem>
                 </DropdownMenuContent>
              </DropdownMenu>
 
-             <Separator orientation="vertical" className="h-6 mx-2 hidden md:block" />
+             <Separator orientation="vertical" className="h-6 mx-2 hidden md:block dark:bg-slate-800" />
 
              <Select value={filters.teamId} onValueChange={(v) => setFilters(f => ({...f, teamId: v}))}>
-               <SelectTrigger className="w-[140px] border-none shadow-none bg-slate-50 text-xs h-8 rounded-lg">
+               <SelectTrigger className="w-[140px] border-none shadow-none bg-slate-50 dark:bg-slate-800 text-xs h-8 rounded-lg dark:text-slate-100">
                  <Layout className="w-3 h-3 mr-2" />
                  <SelectValue placeholder="Team" />
                </SelectTrigger>
-               <SelectContent>
+               <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                  <SelectItem value="all">All Teams</SelectItem>
                  <SelectItem value="none">No Team</SelectItem>
                  {subWorkspaces.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
@@ -637,11 +640,11 @@ function TasksPageContent() {
              </Select>
 
              <Select value={filters.assignedTo} onValueChange={(v) => setFilters(f => ({...f, assignedTo: v}))}>
-               <SelectTrigger className="w-[140px] border-none shadow-none bg-slate-50 text-xs h-8 rounded-lg">
+               <SelectTrigger className="w-[140px] border-none shadow-none bg-slate-50 dark:bg-slate-800 text-xs h-8 rounded-lg dark:text-slate-100">
                  <User className="w-3 h-3 mr-2" />
                  <SelectValue placeholder="Assignee" />
                </SelectTrigger>
-               <SelectContent>
+               <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                  <SelectItem value="all">All Users</SelectItem>
                  {members.map(m => (
                    <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>
@@ -655,7 +658,7 @@ function TasksPageContent() {
            <Button 
             variant={filters.assignedToMe ? "default" : "secondary"} 
             size="sm" 
-            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
             onClick={() => setFilters(f => ({...f, assignedToMe: !f.assignedToMe}))}
            >
             <UserCheck className="w-3 h-3 mr-1.5" /> Assigned to Me
@@ -663,7 +666,7 @@ function TasksPageContent() {
            <Button 
             variant={filters.overdue ? "destructive" : "secondary"} 
             size="sm" 
-            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider dark:bg-slate-800 dark:text-slate-300"
             onClick={() => setFilters(f => ({...f, overdue: !f.overdue}))}
            >
             <AlertCircle className="w-3 h-3 mr-1.5" /> Overdue
@@ -671,23 +674,15 @@ function TasksPageContent() {
            <Button 
             variant={filters.dueSoon ? "default" : "secondary"} 
             size="sm" 
-            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider bg-amber-500 hover:bg-amber-600 text-white"
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider bg-amber-500 hover:bg-amber-600 text-white dark:bg-amber-600 dark:hover:bg-amber-700"
             onClick={() => setFilters(f => ({...f, dueSoon: !f.dueSoon}))}
            >
             <Clock className="w-3 h-3 mr-1.5" /> Due Soon
            </Button>
            <Button 
-            variant={filters.priority.includes('urgent') ? "destructive" : "secondary"} 
-            size="sm" 
-            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
-            onClick={() => setFilters(f => ({...f, priority: f.priority.includes('urgent') ? f.priority.filter(x => x !== 'urgent') : [...f.priority, 'urgent']}))}
-           >
-            Urgent Only
-           </Button>
-           <Button 
             variant={filters.noDueDate ? "default" : "secondary"} 
             size="sm" 
-            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider"
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider dark:bg-slate-800 dark:text-slate-300"
             onClick={() => setFilters(f => ({...f, noDueDate: !f.noDueDate}))}
            >
             No Due Date
@@ -695,7 +690,7 @@ function TasksPageContent() {
            <Button 
             variant={filters.status.includes('completed') ? "default" : "secondary"} 
             size="sm" 
-            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider bg-emerald-500 hover:bg-emerald-600 text-white"
+            className="rounded-full text-[10px] h-7 px-4 font-bold uppercase tracking-wider bg-emerald-500 hover:bg-emerald-600 text-white dark:bg-emerald-600 dark:hover:bg-emerald-700"
             onClick={() => setFilters(f => ({...f, status: f.status.includes('completed') ? f.status.filter(x => x !== 'completed') : [...f.status, 'completed']}))}
            >
             Completed
@@ -707,15 +702,15 @@ function TasksPageContent() {
         {loading && !saving ? (
           <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
         ) : filteredTasks.length === 0 ? (
-          <div className="text-center py-20 bg-slate-50 rounded-2xl border-2 border-dashed flex flex-col items-center gap-4">
-            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm">
-              <Ban className="w-8 h-8 text-slate-300" />
+          <div className="text-center py-20 bg-slate-50 dark:bg-slate-900/40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center gap-4">
+            <div className="w-16 h-16 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center shadow-sm border dark:border-slate-800">
+              <Ban className="w-8 h-8 text-slate-300 dark:text-slate-600" />
             </div>
             <div className="space-y-1">
-              <p className="font-bold text-lg">No tasks found</p>
+              <p className="font-bold text-lg text-slate-900 dark:text-slate-100">No tasks found</p>
               <p className="text-muted-foreground text-sm max-w-xs">Try adjusting your filters or search terms to find what you're looking for.</p>
             </div>
-            <Button variant="outline" onClick={resetFilters}>Clear All Filters</Button>
+            <Button variant="outline" onClick={resetFilters} className="dark:border-slate-800 dark:text-slate-100">Clear All Filters</Button>
           </div>
         ) : (
           filteredTasks.map((task) => {
@@ -725,7 +720,7 @@ function TasksPageContent() {
             return (
               <Card 
                 key={task.id} 
-                className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden cursor-pointer"
+                className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden cursor-pointer dark:bg-slate-900"
                 onClick={() => handleOpenDetail(task)}
               >
                 <CardContent className="p-0">
@@ -742,9 +737,9 @@ function TasksPageContent() {
                           className="hover:scale-110 transition-transform"
                         >
                           {task.status === 'completed' ? (
-                            <CheckCircle2 className="w-6 h-6 text-emerald-500 fill-emerald-50" />
+                            <CheckCircle2 className="w-6 h-6 text-emerald-500 fill-emerald-50 dark:fill-emerald-500/10" />
                           ) : (
-                            <Circle className="w-6 h-6 text-slate-300" />
+                            <Circle className="w-6 h-6 text-slate-300 dark:text-slate-700" />
                           )}
                         </button>
                       </div>
@@ -752,14 +747,14 @@ function TasksPageContent() {
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className={cn(
-                            "font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize",
+                            "font-bold text-lg group-hover:text-primary transition-colors uppercase first-letter:capitalize dark:text-slate-100",
                             task.status === 'completed' && "line-through text-muted-foreground"
                           )}>
                             {task.title}
                           </h3>
-                          <Badge variant="outline" className="text-[10px] rounded-sm capitalize border-slate-200">{task.priority}</Badge>
+                          <Badge variant="outline" className="text-[10px] rounded-sm capitalize border-slate-200 dark:border-slate-800 dark:text-slate-400">{task.priority}</Badge>
                           {task.sub_workspace_name && (
-                             <Badge variant="secondary" className="text-[10px] bg-violet-50 text-violet-600 border-none">
+                             <Badge variant="secondary" className="text-[10px] bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border-none">
                                <Layout className="w-2.5 h-2.5 mr-1" /> {task.sub_workspace_name}
                              </Badge>
                           )}
@@ -776,13 +771,13 @@ function TasksPageContent() {
                             <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
                           </p>
                           <div className="flex items-center gap-2">
-                            <Avatar className="w-6 h-6 border shadow-sm">
+                            <Avatar className="w-6 h-6 border dark:border-slate-800 shadow-sm">
                               <AvatarImage src={avatarSrc || undefined} />
                               <AvatarFallback className="bg-primary/10 text-[8px] font-bold text-primary">
                                 {task.assigned_to_name?.[0] || '?'}
                               </AvatarFallback>
                             </Avatar>
-                            <span className="text-xs text-foreground font-medium">{task.assigned_to_name || 'Unassigned'}</span>
+                            <span className="text-xs text-foreground font-medium dark:text-slate-300">{task.assigned_to_name || 'Unassigned'}</span>
                           </div>
                         </div>
 
@@ -804,26 +799,26 @@ function TasksPageContent() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) forceUnlockUI(); }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800">
           <DialogHeader>
-            <DialogTitle>Create New Task</DialogTitle>
+            <DialogTitle className="dark:text-slate-100">Create New Task</DialogTitle>
             <DialogDescription>Add a new assignment to {activeWorkspace?.name}</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCreateTask} className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Task Title</Label>
-              <Input id="title" name="title" placeholder="What needs to be done?" required disabled={saving} />
+              <Label htmlFor="title" className="dark:text-slate-300">Task Title</Label>
+              <Input id="title" name="title" placeholder="What needs to be done?" required disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea id="description" name="description" placeholder="Add more details..." disabled={saving} />
+              <Label htmlFor="description" className="dark:text-slate-300">Description</Label>
+              <Textarea id="description" name="description" placeholder="Add more details..." disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="sub_workspace_id">Assign to Team</Label>
+                <Label htmlFor="sub_workspace_id" className="dark:text-slate-300">Assign to Team</Label>
                 <Select name="sub_workspace_id" defaultValue="none">
-                  <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue /></SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                     <SelectItem value="none">Workspace General</SelectItem>
                     {subWorkspaces.map(team => (
                       <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>
@@ -832,10 +827,10 @@ function TasksPageContent() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="assigned_to">Assign to Member</Label>
+                <Label htmlFor="assigned_to" className="dark:text-slate-300">Assign to Member</Label>
                 <Select name="assigned_to" defaultValue={userProfile?.id}>
-                  <SelectTrigger disabled={saving}><SelectValue placeholder="Select member" /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Select member" /></SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                     <SelectItem value="none">Unassigned</SelectItem>
                     {members.map(m => (
                       <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>
@@ -846,10 +841,10 @@ function TasksPageContent() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="priority">Priority</Label>
+                <Label htmlFor="priority" className="dark:text-slate-300">Priority</Label>
                 <Select name="priority" defaultValue="medium">
-                  <SelectTrigger disabled={saving}><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectTrigger disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue /></SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                     <SelectItem value="low">Low</SelectItem>
                     <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="high">High</SelectItem>
@@ -858,13 +853,13 @@ function TasksPageContent() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="due_date">Due Date</Label>
-                <Input id="due_date" name="due_date" type="date" disabled={saving} />
+                <Label htmlFor="due_date" className="dark:text-slate-300">Due Date</Label>
+                <Input id="due_date" name="due_date" type="date" disabled={saving} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" />
               </div>
             </div>
             <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => { setIsCreateOpen(false); forceUnlockUI(); }} disabled={saving}>Cancel</Button>
-              <Button type="submit" disabled={saving}>
+              <Button type="button" variant="ghost" onClick={() => { setIsCreateOpen(false); forceUnlockUI(); }} disabled={saving} className="dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+              <Button type="submit" disabled={saving} className="shadow-lg shadow-primary/20">
                 {saving && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
                 Create Task
               </Button>
@@ -874,16 +869,16 @@ function TasksPageContent() {
       </Dialog>
 
       <Sheet open={isDetailOpen} onOpenChange={(open) => { setIsDetailOpen(open); if (!open) forceUnlockUI(); }}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+        <SheetContent className="w-full sm:max-w-xl overflow-y-auto dark:bg-slate-950 dark:border-slate-800">
           {selectedTask && (
             <div className="space-y-8 pt-6">
               <SheetHeader>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant="outline" className="capitalize">{selectedTask.priority}</Badge>
-                    <Badge variant="secondary" className="capitalize">{selectedTask.status?.replace('_', ' ')}</Badge>
+                    <Badge variant="outline" className="capitalize dark:border-slate-800 dark:text-slate-400">{selectedTask.priority}</Badge>
+                    <Badge variant="secondary" className="capitalize dark:bg-slate-900 dark:text-slate-300">{selectedTask.status?.replace('_', ' ')}</Badge>
                     {selectedTask.sub_workspace_name && (
-                      <Badge variant="secondary" className="bg-violet-50 text-violet-600 border-none">
+                      <Badge variant="secondary" className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border-none">
                         {selectedTask.sub_workspace_name}
                       </Badge>
                     )}
@@ -891,7 +886,7 @@ function TasksPageContent() {
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="text-rose-500 hover:bg-rose-50 hover:text-rose-600"
+                    className="text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 hover:text-rose-600"
                     onClick={handleDeleteTask}
                     disabled={saving}
                   >
@@ -901,17 +896,17 @@ function TasksPageContent() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
                     <SheetTitle className={cn(
-                      "text-2xl font-bold",
+                      "text-2xl font-bold dark:text-slate-100",
                       selectedTask.status === 'completed' && "line-through text-muted-foreground"
                     )}>
                       {selectedTask.title}
                     </SheetTitle>
-                    <SheetDescription>{selectedTask.description || 'No description provided.'}</SheetDescription>
+                    <SheetDescription className="dark:text-slate-400">{selectedTask.description || 'No description provided.'}</SheetDescription>
                   </div>
                   <Button 
                     variant={selectedTask.status === 'completed' ? "outline" : "default"}
                     size="sm"
-                    className="shrink-0 gap-2"
+                    className="shrink-0 gap-2 dark:border-slate-800"
                     onClick={() => handleToggleStatus(selectedTask)}
                   >
                     {selectedTask.status === 'completed' ? (
@@ -927,7 +922,7 @@ function TasksPageContent() {
               </SheetHeader>
 
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <CalendarDays className="w-3 h-3" /> Due Date
@@ -936,7 +931,7 @@ function TasksPageContent() {
                       type="date" 
                       value={selectedTask.due_date ? selectedTask.due_date.split('T')[0] : ''} 
                       onChange={(e) => handleUpdateDueDate(e.target.value)}
-                      className="h-9 text-sm bg-white border-slate-200"
+                      className="h-9 text-sm bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 dark:text-slate-100"
                       disabled={saving}
                     />
                   </div>
@@ -944,32 +939,32 @@ function TasksPageContent() {
                     <Label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                       <User className="w-3 h-3" /> Assignee
                     </Label>
-                    <div className="flex items-center gap-2 h-9 px-3 bg-white rounded-md border border-slate-200 opacity-60">
-                       <Avatar className="w-5 h-5 border shadow-sm">
+                    <div className="flex items-center gap-2 h-9 px-3 bg-white dark:bg-slate-950 rounded-md border border-slate-200 dark:border-slate-800 opacity-60">
+                       <Avatar className="w-5 h-5 border dark:border-slate-800 shadow-sm">
                          <AvatarImage src={getAssigneeAvatar(selectedTask) || undefined} />
                          <AvatarFallback className="bg-primary/10 text-[8px] font-bold text-primary">
                            {selectedTask.assigned_to_name?.[0] || '?'}
                          </AvatarFallback>
                        </Avatar>
-                       <span className="text-sm truncate">{selectedTask.assigned_to_name || 'Unassigned'}</span>
+                       <span className="text-sm truncate dark:text-slate-300">{selectedTask.assigned_to_name || 'Unassigned'}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
                    <div className="flex items-center justify-between mb-2">
                      <div className="flex items-center gap-2">
                         <Settings2 className="w-4 h-4 text-primary" />
-                        <Label className="text-sm font-bold">Progress Tracking</Label>
+                        <Label className="text-sm font-bold dark:text-slate-100">Progress Tracking</Label>
                      </div>
                      <Select 
                       value={selectedTask.progress_mode} 
                       onValueChange={(v: any) => handleSwitchProgressMode(v)}
                      >
-                       <SelectTrigger className="w-[140px] h-8 text-[10px] bg-white border-slate-200">
+                       <SelectTrigger className="w-[140px] h-8 text-[10px] bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 dark:text-slate-100">
                          <SelectValue />
                        </SelectTrigger>
-                       <SelectContent>
+                       <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
                          <SelectItem value="auto">Auto (Subtasks)</SelectItem>
                          <SelectItem value="manual">Manual Slider</SelectItem>
                        </SelectContent>
@@ -999,21 +994,21 @@ function TasksPageContent() {
                 </div>
 
                 <div className="space-y-4">
-                  <h4 className="font-bold flex items-center gap-2">
+                  <h4 className="font-bold flex items-center gap-2 dark:text-slate-100">
                     <CheckCircle2 className="w-4 h-4 text-primary" /> Subtasks
                   </h4>
                   <div className="space-y-2">
                     {subtasks.map((st) => (
-                      <div key={st.id} className="flex items-center justify-between group p-2 hover:bg-slate-50 rounded-lg transition-colors">
+                      <div key={st.id} className="flex items-center justify-between group p-2 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg transition-colors">
                         <div className="flex items-center gap-3">
                           <input 
                             type="checkbox" 
                             checked={st.is_completed} 
                             onChange={() => handleToggleSubtask(st)}
-                            className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary"
+                            className="w-4 h-4 rounded border-slate-300 dark:border-slate-800 text-primary focus:ring-primary dark:bg-slate-950"
                             disabled={saving}
                           />
-                          <span className={cn("text-sm", st.is_completed && "line-through text-muted-foreground")}>{st.title}</span>
+                          <span className={cn("text-sm dark:text-slate-300", st.is_completed && "line-through text-muted-foreground")}>{st.title}</span>
                         </div>
                       </div>
                     ))}
@@ -1023,7 +1018,7 @@ function TasksPageContent() {
                         value={newSubtaskTitle}
                         onChange={(e) => setNewSubtaskTitle(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddSubtask()}
-                        className="h-9 text-sm"
+                        className="h-9 text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
                         disabled={saving}
                       />
                     </div>
@@ -1031,7 +1026,7 @@ function TasksPageContent() {
                 </div>
 
                 <div className="space-y-4">
-                  <h4 className="font-bold flex items-center gap-2">
+                  <h4 className="font-bold flex items-center gap-2 dark:text-slate-100">
                     <MessageSquare className="w-4 h-4 text-primary" /> Comments
                   </h4>
                   <div className="space-y-4">
@@ -1042,30 +1037,33 @@ function TasksPageContent() {
                         comments.map((c) => {
                           const cAvatar = c.profiles?.avatar_preset ? `/avatars/${c.profiles.avatar_preset}.png` : c.profiles?.avatar_url;
                           return (
-                            <div key={c.id} className="bg-slate-50 p-3 rounded-lg space-y-2">
+                            <div key={c.id} className="bg-slate-50 dark:bg-slate-900 p-3 rounded-lg space-y-2">
                               <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2">
-                                  <Avatar className="w-5 h-5 border shadow-sm">
+                                  <Avatar className="w-5 h-5 border dark:border-slate-800 shadow-sm">
                                     <AvatarImage src={cAvatar} />
-                                    <AvatarFallback className="text-[8px]">{c.profiles?.full_name?.[0]}</AvatarFallback>
+                                    <AvatarFallback className="text-[8px]">
+                                      {c.profiles?.full_name?.[0]}
+                                    </AvatarFallback>
                                   </Avatar>
-                                  <span className="text-xs font-bold">{(c.profiles as any)?.full_name || 'User'}</span>
+                                  <span className="text-xs font-bold dark:text-slate-200">{(c.profiles as any)?.full_name || 'User'}</span>
                                 </div>
                                 <span className="text-[10px] text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
                               </div>
-                              <p className="text-sm pl-7">{c.comment}</p>
+                              <p className="text-sm pl-7 dark:text-slate-300">{c.comment}</p>
                             </div>
                           );
                         })
                       )}
                     </div>
-                    <div className="flex gap-2 pt-2 border-t mt-4">
+                    <div className="flex gap-2 pt-2 border-t dark:border-slate-800 mt-4">
                       <Input 
                         placeholder="Add a comment..." 
                         value={newComment}
                         onChange={(e) => setNewComment(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleAddComment()}
                         disabled={saving}
+                        className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
                       />
                       <Button onClick={handleAddComment} disabled={saving}>Post</Button>
                     </div>

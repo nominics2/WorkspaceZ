@@ -216,7 +216,7 @@ export function NotificationBell() {
             </Button>
           )}
         </DropdownMenuLabel>
-        <div className="max-h-[70vh] overflow-y-auto bg-slate-50/30 dark:bg-slate-950/30">
+        <div className="max-h-[70vh] overflow-y-auto bg-slate-50/30 dark:bg-slate-950/10">
           {loading && notifications.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -259,7 +259,7 @@ export function NotificationBell() {
                     </p>
                     <div className="flex items-center gap-2 mt-2">
                       {notification.type && (
-                        <Badge variant="outline" className="text-[8px] h-4 py-0 px-1 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 dark:border-slate-700">
+                        <Badge variant="outline" className="text-[8px] h-4 py-0 px-1 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
                           {notification.type}
                         </Badge>
                       )}
