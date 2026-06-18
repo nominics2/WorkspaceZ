@@ -136,11 +136,32 @@ export default function WorkspaceAdminPage() {
         .single();
       setWorkspaceInfo(wsData);
 
-      const { data: membersList } = await supabase
+      // Step A: Fetch workspace_members (no filtering by verified)
+      const { data: wsMembers, error: wsMembersError } = await supabase
         .from('workspace_members')
-        .select('*, profiles(full_name, username, avatar_url, avatar_preset, email)')
+        .select('*')
         .eq('workspace_id', activeWorkspace.id);
-      setMembers(membersList || []);
+
+      if (wsMembersError) throw wsMembersError;
+
+      // Step B: Fetch profiles for these users
+      const userIds = (wsMembers || []).map(m => m.user_id);
+      let mergedMembers = [];
+
+      if (userIds.length > 0) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, full_name, username, avatar_url, avatar_preset, email')
+          .in('id', userIds);
+        
+        if (profilesError) throw profilesError;
+
+        mergedMembers = (wsMembers || []).map(member => ({
+          ...member,
+          profiles: profiles?.find(p => p.id === member.user_id) || null
+        }));
+      }
+      setMembers(mergedMembers);
 
       const { data: storageInfo } = await supabase
         .from('workspace_storage_usage')
@@ -185,11 +206,12 @@ export default function WorkspaceAdminPage() {
 
     } catch (err: any) {
       console.error("Fetch error:", err);
+      toast({ variant: "destructive", title: "Data Fetch Error", description: err.message });
     } finally {
       setLoading(false);
       forceUnlockUI();
     }
-  }, [activeWorkspace, userProfile, userRole, hasPermission, supabase, forceUnlockUI]);
+  }, [activeWorkspace, userProfile, userRole, hasPermission, supabase, forceUnlockUI, toast]);
 
   useEffect(() => {
     fetchData();
@@ -635,19 +657,19 @@ export default function WorkspaceAdminPage() {
                         <Avatar className="w-full h-full border-none shadow-none">
                           <AvatarImage src={member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url} />
                           <AvatarFallback className="bg-primary/5 text-primary text-sm font-bold">
-                            {member.profiles?.full_name?.[0]}
+                            {member.profiles?.full_name?.[0] || 'U'}
                           </AvatarFallback>
                         </Avatar>
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm md:text-base truncate dark:text-slate-100">{member.profiles?.full_name}</span>
+                          <span className="font-bold text-sm md:text-base truncate dark:text-slate-100">{member.profiles?.full_name || member.profiles?.username || member.profiles?.email || 'Unknown User'}</span>
                           {member.is_verified && <BadgeCheck className="w-4 h-4 text-primary shrink-0" />}
                           <Badge variant={member.status === 'active' ? 'default' : 'outline'} className="text-[9px] h-3.5 px-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 capitalize">
                             {member.status}
                           </Badge>
                         </div>
-                        <p className="text-[10px] md:text-xs text-muted-foreground truncate">{member.profiles?.username} • {member.role}</p>
+                        <p className="text-[10px] md:text-xs text-muted-foreground truncate">{member.profiles?.username || member.profiles?.email} • {member.role}</p>
                       </div>
                     </div>
                     
