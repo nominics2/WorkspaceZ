@@ -225,7 +225,7 @@ export default function SettingsPage() {
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 pb-12">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950 dark:text-slate-100">Settings</h1>
           <p className="text-muted-foreground">Manage your account, workspace, and preferences.</p>
         </div>
       </div>
@@ -236,7 +236,7 @@ export default function SettingsPage() {
             onClick={() => setActiveTab('profile')}
             className={cn(
               "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
-              activeTab === 'profile' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground"
+              activeTab === 'profile' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400"
             )}
           >
             <User className="w-5 h-5" /> Account Profile
@@ -245,7 +245,7 @@ export default function SettingsPage() {
             onClick={() => setActiveTab('appearance')}
             className={cn(
               "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
-              activeTab === 'appearance' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground"
+              activeTab === 'appearance' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400"
             )}
           >
             <Palette className="w-5 h-5" /> Appearance
@@ -254,19 +254,19 @@ export default function SettingsPage() {
             onClick={() => setActiveTab('notifications')}
             className={cn(
               "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
-              activeTab === 'notifications' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground"
+              activeTab === 'notifications' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400"
             )}
           >
             <Bell className="w-5 h-5" /> Notifications
           </button>
           
-          <Separator className="my-4" />
+          <Separator className="my-4 dark:border-slate-800" />
           
           <div className="px-3">
              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Resources</p>
              <div className="space-y-4">
                <div className="space-y-1.5">
-                  <div className="flex justify-between text-[10px] font-bold uppercase">
+                  <div className="flex justify-between text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">
                     <span>Storage</span>
                     <span>{Math.round(usagePercentage)}%</span>
                   </div>
@@ -290,9 +290,9 @@ export default function SettingsPage() {
         <div className="md:col-span-3 space-y-6">
           {activeTab === 'profile' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-              <Card className="border-none shadow-sm overflow-hidden">
-                <CardHeader className="bg-white dark:bg-slate-900 border-b">
-                  <CardTitle>Public Profile</CardTitle>
+              <Card className="border-none shadow-sm overflow-hidden bg-white dark:bg-slate-900 dark:border dark:border-slate-800">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b dark:border-slate-800">
+                  <CardTitle className="text-slate-950 dark:text-slate-100">Public Profile</CardTitle>
                   <CardDescription>Update your personal information visible to your team.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-6">
@@ -309,7 +309,7 @@ export default function SettingsPage() {
                       </div>
                       
                       <div className="space-y-1 text-center sm:text-left flex-1">
-                        <h3 className="text-xl font-bold">{userProfile?.full_name}</h3>
+                        <h3 className="text-xl font-bold text-slate-950 dark:text-slate-100">{userProfile?.full_name}</h3>
                         <p className="text-muted-foreground text-sm">{userProfile?.email}</p>
                         <div className="pt-2">
                           <Badge variant="secondary" className="bg-primary/10 text-primary border-none px-3 h-6">
@@ -320,18 +320,20 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-4">
-                      <Label className="text-sm font-bold">Profile Icon</Label>
+                      <Label className="text-sm font-bold text-slate-950 dark:text-slate-100">Profile Icon</Label>
                       <div className="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-11 gap-3">
                         <button
                           type="button"
                           onClick={() => setProfileForm(f => ({ ...f, avatar_preset: null }))}
                           className={cn(
                             "aspect-square rounded-xl border-2 flex items-center justify-center transition-all hover:scale-105 shadow-sm",
-                            profileForm.avatar_preset === null ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900"
+                            profileForm.avatar_preset === null 
+                              ? "border-primary bg-primary/5 ring-2 ring-primary/20" 
+                              : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950"
                           )}
                           title="Use Initials"
                         >
-                          <UserCircle className={cn("w-6 h-6", profileForm.avatar_preset === null ? "text-primary" : "text-slate-400")} />
+                          <UserCircle className={cn("w-6 h-6", profileForm.avatar_preset === null ? "text-primary" : "text-slate-400 dark:text-slate-500")} />
                         </button>
                         {AVATAR_PRESETS.map((preset) => (
                           <button
@@ -350,35 +352,37 @@ export default function SettingsPage() {
                       <p className="text-[10px] text-muted-foreground">Select a character icon or use your initials.</p>
                     </div>
 
-                    <Separator />
+                    <Separator className="dark:border-slate-800" />
 
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="full_name">Full Name</Label>
+                        <Label htmlFor="full_name" className="text-slate-950 dark:text-slate-100">Full Name</Label>
                         <Input 
                           id="full_name" 
                           value={profileForm.full_name ?? ""} 
                           onChange={(e) => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
                           placeholder="Your real name"
                           disabled={savingProfile}
+                          className="dark:bg-slate-900 dark:border-slate-800"
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="username">Username</Label>
+                        <Label htmlFor="username" className="text-slate-950 dark:text-slate-100">Username</Label>
                         <Input 
                           id="username" 
                           value={profileForm.username ?? ""} 
                           onChange={(e) => setProfileForm(f => ({ ...f, username: e.target.value }))}
                           placeholder="unique_handle"
                           disabled={savingProfile}
+                          className="dark:bg-slate-900 dark:border-slate-800"
                         />
                         <p className="text-[10px] text-muted-foreground">3-20 characters, lowercase, numbers, or underscores.</p>
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Email Address</Label>
-                      <Input value={userProfile?.email ?? ""} disabled className="bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed" />
+                      <Label className="text-slate-950 dark:text-slate-100">Email Address</Label>
+                      <Input value={userProfile?.email ?? ""} disabled className="bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed dark:border-slate-700" />
                       <p className="text-[10px] text-muted-foreground italic">Email change is managed by workspace administrators.</p>
                     </div>
 
@@ -392,11 +396,11 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              <Card className="border-none shadow-sm overflow-hidden">
-                <CardHeader className="bg-white dark:bg-slate-900 border-b">
+              <Card className="border-none shadow-sm overflow-hidden bg-white dark:bg-slate-900 dark:border dark:border-slate-800">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b dark:border-slate-800">
                   <div className="flex items-center gap-2">
                     <HardDrive className="w-5 h-5 text-primary" />
-                    <CardTitle>Workspace Usage</CardTitle>
+                    <CardTitle className="text-slate-950 dark:text-slate-100">Workspace Usage</CardTitle>
                   </div>
                   <CardDescription>Resources consumed by your active workspace.</CardDescription>
                 </CardHeader>
@@ -407,7 +411,7 @@ export default function SettingsPage() {
                     <div className="space-y-4">
                       <div className="flex justify-between items-end">
                         <div className="space-y-1">
-                          <p className="text-2xl font-bold">{usedMB} MB</p>
+                          <p className="text-2xl font-bold text-slate-950 dark:text-slate-100">{usedMB} MB</p>
                           <p className="text-xs text-muted-foreground">of {totalGB} GB limit used</p>
                         </div>
                         <span className="text-sm font-bold text-primary">{usagePercentage.toFixed(1)}%</span>
@@ -415,7 +419,7 @@ export default function SettingsPage() {
                       <Progress value={usagePercentage} className="h-3" />
                       <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 flex items-start gap-3">
                         <Shield className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                        <p className="text-xs text-muted-foreground leading-relaxed">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                           Standard workspace accounts are limited to 1GB. To increase this limit, please contact your workspace owner.
                         </p>
                       </div>
@@ -428,9 +432,9 @@ export default function SettingsPage() {
 
           {activeTab === 'appearance' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-              <Card className="border-none shadow-sm overflow-hidden">
-                <CardHeader className="bg-white dark:bg-slate-900 border-b">
-                  <CardTitle>Theme Preference</CardTitle>
+              <Card className="border-none shadow-sm overflow-hidden bg-white dark:bg-slate-900 dark:border dark:border-slate-800">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b dark:border-slate-800">
+                  <CardTitle className="text-slate-950 dark:text-slate-100">Theme Preference</CardTitle>
                   <CardDescription>Choose how WorkspaceZ looks on your device.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-6">
@@ -439,22 +443,24 @@ export default function SettingsPage() {
                       onClick={() => setThemePreference('light')}
                       className={cn(
                         "relative flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800",
-                        themePreference === 'light' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-slate-100 dark:border-slate-800"
+                        themePreference === 'light' 
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30 ring-4 ring-blue-500/10" 
+                          : "border-slate-100 dark:border-slate-800"
                       )}
                     >
                       <div className={cn(
                         "p-4 rounded-xl bg-white shadow-sm border",
-                        themePreference === 'light' ? "text-primary border-primary/20" : "text-slate-400 border-slate-200"
+                        themePreference === 'light' ? "text-blue-500 border-blue-500/20" : "text-slate-400 border-slate-200"
                       )}>
                         <Sun className="w-8 h-8" />
                       </div>
                       <div className="text-center">
-                        <p className="font-bold text-sm">Light</p>
+                        <p className={cn("font-bold text-sm", themePreference === 'light' ? "text-blue-600" : "text-slate-900 dark:text-slate-100")}>Light</p>
                         <p className="text-[10px] text-muted-foreground">Always bright and clear</p>
                       </div>
                       {themePreference === 'light' && (
                         <div className="absolute top-3 right-3">
-                          <CheckCircle2 className="w-5 h-5 text-primary" />
+                          <CheckCircle2 className="w-5 h-5 text-blue-500" />
                         </div>
                       )}
                     </button>
@@ -463,22 +469,24 @@ export default function SettingsPage() {
                       onClick={() => setThemePreference('dark')}
                       className={cn(
                         "relative flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800",
-                        themePreference === 'dark' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-slate-100 dark:border-slate-800"
+                        themePreference === 'dark' 
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30 ring-4 ring-blue-500/10" 
+                          : "border-slate-100 dark:border-slate-800"
                       )}
                     >
                       <div className={cn(
                         "p-4 rounded-xl bg-slate-900 shadow-sm border",
-                        themePreference === 'dark' ? "text-primary border-primary/20" : "text-slate-400 border-slate-700"
+                        themePreference === 'dark' ? "text-blue-400 border-blue-500/20" : "text-slate-400 border-slate-700"
                       )}>
                         <Moon className="w-8 h-8" />
                       </div>
                       <div className="text-center">
-                        <p className="font-bold text-sm">Dark</p>
+                        <p className={cn("font-bold text-sm", themePreference === 'dark' ? "text-blue-400" : "text-slate-900 dark:text-slate-100")}>Dark</p>
                         <p className="text-[10px] text-muted-foreground">Easy on the eyes</p>
                       </div>
                       {themePreference === 'dark' && (
                         <div className="absolute top-3 right-3">
-                          <CheckCircle2 className="w-5 h-5 text-primary" />
+                          <CheckCircle2 className="w-5 h-5 text-blue-500" />
                         </div>
                       )}
                     </button>
@@ -487,22 +495,24 @@ export default function SettingsPage() {
                       onClick={() => setThemePreference('system')}
                       className={cn(
                         "relative flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800",
-                        themePreference === 'system' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-slate-100 dark:border-slate-800"
+                        themePreference === 'system' 
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30 ring-4 ring-blue-500/10" 
+                          : "border-slate-100 dark:border-slate-800"
                       )}
                     >
                       <div className={cn(
                         "p-4 rounded-xl bg-slate-100 dark:bg-slate-800 shadow-sm border",
-                        themePreference === 'system' ? "text-primary border-primary/20" : "text-slate-400 border-slate-200 dark:border-slate-700"
+                        themePreference === 'system' ? "text-blue-500 border-blue-500/20" : "text-slate-400 border-slate-200 dark:border-slate-700"
                       )}>
                         <Monitor className="w-8 h-8" />
                       </div>
                       <div className="text-center">
-                        <p className="font-bold text-sm">System</p>
+                        <p className={cn("font-bold text-sm", themePreference === 'system' ? "text-blue-600 dark:text-blue-400" : "text-slate-900 dark:text-slate-100")}>System</p>
                         <p className="text-[10px] text-muted-foreground">Follow your device</p>
                       </div>
                       {themePreference === 'system' && (
                         <div className="absolute top-3 right-3">
-                          <CheckCircle2 className="w-5 h-5 text-primary" />
+                          <CheckCircle2 className="w-5 h-5 text-blue-500" />
                         </div>
                       )}
                     </button>
@@ -516,21 +526,21 @@ export default function SettingsPage() {
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold">Notification History</h2>
+                  <h2 className="text-xl font-bold text-slate-950 dark:text-slate-100">Notification History</h2>
                   <Badge variant="secondary" className="rounded-full">{notifications.length}</Badge>
                 </div>
                 {notifications.some(n => !n.is_read) && (
-                  <Button variant="outline" size="sm" onClick={handleMarkAllRead} className="h-8 text-xs gap-2">
+                  <Button variant="outline" size="sm" onClick={handleMarkAllRead} className="h-8 text-xs gap-2 dark:border-slate-700">
                     <CheckCircle2 className="w-3.5 h-3.5" /> Mark All as Read
                   </Button>
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-2 rounded-xl border shadow-sm">
+              <div className="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
                  <div className="flex items-center gap-2 flex-1">
-                    <Filter className="w-4 h-4 ml-2 text-muted-foreground" />
+                    <Filter className="w-4 h-4 ml-2 text-slate-400 dark:text-slate-500" />
                     <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
-                      <SelectTrigger className="border-none shadow-none focus:ring-0 h-8 text-xs w-full sm:w-[140px]">
+                      <SelectTrigger className="border-none shadow-none focus:ring-0 h-8 text-xs w-full sm:w-[140px] dark:bg-slate-900">
                         <SelectValue placeholder="Status" />
                       </SelectTrigger>
                       <SelectContent>
@@ -542,7 +552,7 @@ export default function SettingsPage() {
                  </div>
                  {availableTypes.length > 0 && (
                    <Select value={typeFilter} onValueChange={setTypeFilter}>
-                     <SelectTrigger className="border-none shadow-none focus:ring-0 h-8 text-xs w-full sm:w-[140px]">
+                     <SelectTrigger className="border-none shadow-none focus:ring-0 h-8 text-xs w-full sm:w-[140px] dark:bg-slate-900">
                        <SelectValue placeholder="Type" />
                      </SelectTrigger>
                      <SelectContent>
@@ -561,10 +571,10 @@ export default function SettingsPage() {
                 <Card className="border-none shadow-sm bg-slate-50 dark:bg-slate-800/20">
                   <CardContent className="flex flex-col items-center justify-center py-20 space-y-4">
                     <div className="w-16 h-16 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center shadow-sm">
-                      <Inbox className="w-8 h-8 text-slate-300" />
+                      <Inbox className="w-8 h-8 text-slate-300 dark:text-slate-700" />
                     </div>
                     <div className="text-center">
-                      <p className="font-bold">No notification history yet</p>
+                      <p className="font-bold text-slate-950 dark:text-slate-100">No notification history yet</p>
                       <p className="text-sm text-muted-foreground">Adjust your filters or wait for new activity.</p>
                     </div>
                   </CardContent>
@@ -574,7 +584,7 @@ export default function SettingsPage() {
                   {filteredNotifications.map((n) => (
                     <Card key={n.id} className={cn(
                       "border-none shadow-sm hover:shadow-md transition-all group overflow-hidden",
-                      !n.is_read ? "bg-primary/[0.02] ring-1 ring-primary/10" : "bg-white dark:bg-slate-900"
+                      !n.is_read ? "bg-primary/[0.02] ring-1 ring-primary/10" : "bg-white dark:bg-slate-900 dark:border dark:border-slate-800"
                     )}>
                       <CardContent className="p-4 flex items-start gap-4">
                         <div className={cn(
@@ -585,17 +595,17 @@ export default function SettingsPage() {
                         </div>
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-2">
-                            <h4 className={cn("text-sm font-bold truncate", !n.is_read ? "text-foreground" : "text-muted-foreground")}>
+                            <h4 className={cn("text-sm font-bold truncate", !n.is_read ? "text-slate-900 dark:text-slate-100" : "text-slate-500 dark:text-slate-400")}>
                               {n.title}
                             </h4>
                             <span className="text-[10px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
                               <Clock className="w-3 h-3" /> {new Date(n.created_at).toLocaleDateString()}
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">{n.message}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{n.message}</p>
                           <div className="flex items-center gap-3 pt-1">
                             {n.type && (
-                              <Badge variant="secondary" className="text-[9px] h-4 py-0 px-1.5 uppercase font-bold tracking-wider">
+                              <Badge variant="secondary" className="text-[9px] h-4 py-0 px-1.5 uppercase font-bold tracking-wider dark:bg-slate-800 dark:text-slate-400">
                                 {n.type}
                               </Badge>
                             )}

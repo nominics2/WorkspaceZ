@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -109,26 +108,7 @@ export function NotificationBell() {
         (payload) => {
           const updatedNotif = payload.new;
           setNotifications(prev => prev.map(n => n.id === updatedNotif.id ? updatedNotif : n));
-          // Recalculate unread count
-          setUnreadCount(prev => {
-             // This is a simple approximation; full refetch is safer for bulk updates
-             return prev; 
-          });
-          fetchNotifications(); // Full refetch to ensure count is accurate after status change
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'notifications',
-        },
-        (payload) => {
-          // Note: DELETE payload doesn't have .new, only .old (usually just ID)
-          const deletedId = payload.old.id;
-          setNotifications(prev => prev.filter(n => n.id !== deletedId));
-          fetchNotifications();
+          fetchNotifications(); // Full refetch to ensure count is accurate
         }
       )
       .subscribe();
@@ -155,11 +135,6 @@ export function NotificationBell() {
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch (err: any) {
       console.error("Error marking notification as read:", err);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: err.message || "Failed to mark notification as read"
-      });
     }
   };
 
@@ -180,11 +155,6 @@ export function NotificationBell() {
       fetchNotifications();
     } catch (err: any) {
       console.error("Error marking all as read:", err);
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: err.message || "Failed to mark all notifications as read"
-      });
     }
   };
 
@@ -217,23 +187,23 @@ export function NotificationBell() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative h-10 w-10 hover:bg-slate-100 rounded-xl">
-          <Bell className="h-5 w-5 text-muted-foreground" />
+        <Button variant="ghost" size="icon" className="relative h-10 w-10 hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl">
+          <Bell className="h-5 w-5 text-slate-500 dark:text-slate-400" />
           {unreadCount > 0 && (
             <Badge 
               variant="destructive" 
-              className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 flex items-center justify-center text-[10px] font-bold border-2 border-white rounded-full animate-in zoom-in"
+              className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 flex items-center justify-center text-[10px] font-bold border-2 border-white dark:border-slate-950 rounded-full animate-in zoom-in"
             >
               {unreadCount > 99 ? "99+" : unreadCount}
             </Badge>
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 md:w-96 p-0 overflow-hidden shadow-2xl border-none rounded-2xl">
-        <DropdownMenuLabel className="p-4 bg-white border-b flex items-center justify-between">
-          <div className="flex flex-col">
+      <DropdownMenuContent align="end" className="w-80 md:w-96 p-0 overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900">
+        <DropdownMenuLabel className="p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 flex items-center justify-between">
+          <div className="flex flex-col text-slate-950 dark:text-slate-100">
             <span className="text-sm font-bold">Notifications</span>
-            <span className="text-[10px] text-muted-foreground font-normal">Stay updated with your work</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">Stay updated with your work</span>
           </div>
           {unreadCount > 0 && (
             <Button 
@@ -246,28 +216,28 @@ export function NotificationBell() {
             </Button>
           )}
         </DropdownMenuLabel>
-        <div className="max-h-[70vh] overflow-y-auto bg-slate-50/30">
+        <div className="max-h-[70vh] overflow-y-auto bg-slate-50/30 dark:bg-slate-950/30">
           {loading && notifications.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : notifications.length === 0 ? (
             <div className="py-12 px-4 text-center">
-              <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Bell className="h-6 w-6 text-slate-300" />
+              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Bell className="h-6 w-6 text-slate-300 dark:text-slate-600" />
               </div>
-              <p className="text-sm font-medium text-slate-500">No notifications yet.</p>
+              <p className="text-sm font-medium text-slate-500 dark:text-slate-400">No notifications yet.</p>
               <p className="text-xs text-muted-foreground mt-1">We'll notify you when something happens.</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {notifications.map((notification) => (
                 <div 
                   key={notification.id}
                   onClick={() => handleNotificationClick(notification)}
                   className={cn(
-                    "relative group p-4 transition-colors hover:bg-slate-50/80 flex gap-3 cursor-pointer",
-                    !notification.is_read && "bg-primary/[0.02]"
+                    "relative group p-4 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/80 flex gap-3 cursor-pointer",
+                    !notification.is_read && "bg-primary/[0.02] dark:bg-primary/[0.05]"
                   )}
                 >
                   <div className="flex-1 min-w-0">
@@ -276,20 +246,20 @@ export function NotificationBell() {
                         {!notification.is_read && (
                           <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
                         )}
-                        <span className="text-xs font-bold truncate">
+                        <span className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">
                           {notification.title || "New Notification"}
                         </span>
                       </div>
-                      <span className="text-[9px] text-muted-foreground whitespace-nowrap">
+                      <span className="text-[9px] text-slate-400 dark:text-slate-500 whitespace-nowrap">
                         {new Date(notification.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                       </span>
                     </div>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
                       {notification.message}
                     </p>
                     <div className="flex items-center gap-2 mt-2">
                       {notification.type && (
-                        <Badge variant="outline" className="text-[8px] h-4 py-0 px-1 font-bold uppercase tracking-widest bg-white">
+                        <Badge variant="outline" className="text-[8px] h-4 py-0 px-1 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 dark:border-slate-700">
                           {notification.type}
                         </Badge>
                       )}
@@ -309,11 +279,11 @@ export function NotificationBell() {
             </div>
           )}
         </div>
-        <DropdownMenuSeparator className="m-0" />
-        <div className="p-2 bg-white text-center">
+        <DropdownMenuSeparator className="m-0 dark:bg-slate-800" />
+        <div className="p-2 bg-white dark:bg-slate-900 text-center">
           <Button 
             variant="ghost" 
-            className="w-full h-8 text-xs font-medium text-muted-foreground hover:text-foreground"
+            className="w-full h-8 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-950 dark:hover:text-slate-100"
             onClick={() => router.push('/settings')}
           >
             View all history

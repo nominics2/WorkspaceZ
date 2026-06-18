@@ -19,24 +19,24 @@ export default function AppLayout({
 }) {
   return (
     <WorkspaceProvider>
-      <div className="flex h-screen overflow-hidden bg-background">
+      <div className="flex h-screen overflow-hidden bg-background text-foreground transition-colors duration-300">
         {/* Desktop Sidebar */}
-        <div className="hidden lg:block border-r bg-white shrink-0">
+        <div className="hidden lg:block border-r bg-white dark:bg-slate-950 dark:border-slate-800 shrink-0">
           <SidebarNav />
         </div>
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-16 border-b bg-white flex items-center justify-between px-4 md:px-8 shrink-0 z-20 sticky top-0 safe-top">
+        <div className="flex-1 flex flex-col min-w-0 bg-slate-50 dark:bg-slate-950">
+          <header className="h-16 border-b bg-white dark:bg-slate-950 dark:border-slate-800 flex items-center justify-between px-4 md:px-8 shrink-0 z-20 sticky top-0 safe-top">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               {/* Mobile Sidebar Trigger */}
               <div className="lg:hidden">
                 <Sheet>
                   <SheetTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-10 w-10">
+                    <Button variant="ghost" size="icon" className="h-10 w-10 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100">
                       <Menu className="w-6 h-6" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent side="left" className="p-0 w-64">
+                  <SheetContent side="left" className="p-0 w-64 border-r dark:border-slate-800">
                     <SheetHeader className="sr-only">
                       <SheetTitle>Navigation Menu</SheetTitle>
                     </SheetHeader>
@@ -50,13 +50,13 @@ export default function AppLayout({
             <div className="flex items-center gap-2 md:gap-4 ml-4 shrink-0">
                <NotificationBell />
                <div className="hidden sm:block text-right">
-                  <p className="text-xs font-bold leading-none mb-1">WorkspaceZ</p>
-                  <p className="text-[10px] text-muted-foreground">Productivity Suite</p>
+                  <p className="text-xs font-bold leading-none mb-1 text-slate-950 dark:text-slate-100">WorkspaceZ</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">Productivity Suite</p>
                </div>
             </div>
           </header>
 
-          <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8">
+          <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8 scroll-smooth">
             <div className="max-w-7xl mx-auto space-y-8 safe-bottom">
               {children}
             </div>
