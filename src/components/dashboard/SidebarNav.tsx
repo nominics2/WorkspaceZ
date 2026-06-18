@@ -200,6 +200,13 @@ export function SidebarNav() {
           <LogOut className="w-4 h-4 mr-3" />
           Logout
         </Button>
+        
+        <div className="mt-4 pt-4 border-t dark:border-slate-800">
+           <p className="text-[9px] text-slate-400 dark:text-slate-600 text-center uppercase tracking-widest font-bold leading-relaxed">
+             Powered by Eos Studios<br/>
+             <span className="text-[7px] opacity-60">Creation of Maldives</span>
+           </p>
+        </div>
       </div>
     </div>
   );

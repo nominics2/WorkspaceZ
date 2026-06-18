@@ -113,7 +113,7 @@ export default function WorkspaceSetupPage() {
 
   if (mode === "pending") {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
         <Card className="w-full max-w-md shadow-xl border-none dark:bg-slate-900">
           <CardHeader className="text-center pt-8">
             <div className="mx-auto w-16 h-16 bg-amber-50 dark:bg-amber-500/10 rounded-full flex items-center justify-center mb-4">
@@ -134,6 +134,12 @@ export default function WorkspaceSetupPage() {
             </Button>
           </CardContent>
         </Card>
+        
+        <div className="mt-8 text-center">
+           <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest">
+             Powered by Eos Studios | Creation of Maldives
+           </p>
+        </div>
       </div>
     );
   }
@@ -186,12 +192,18 @@ export default function WorkspaceSetupPage() {
             </CardContent>
           </Card>
         </div>
+        
+        <div className="mt-4 text-center">
+           <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest">
+             Powered by Eos Studios | Creation of Maldives
+           </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
       <Card className="w-full max-w-md shadow-xl border-none dark:bg-slate-900">
         <CardHeader>
           <div className="flex items-center gap-2 mb-4">
@@ -244,6 +256,12 @@ export default function WorkspaceSetupPage() {
           </CardContent>
         </form>
       </Card>
+      
+      <div className="mt-8 text-center">
+         <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest">
+           Powered by Eos Studios | Creation of Maldives
+         </p>
+      </div>
     </div>
   );
 }

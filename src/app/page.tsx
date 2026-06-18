@@ -105,7 +105,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-50 dark:bg-slate-950">
       <Card className="w-full max-w-md shadow-xl border-none dark:bg-slate-900">
         <CardHeader className="text-center space-y-6 pt-10">
           <div className="mx-auto flex justify-center items-center">
@@ -204,6 +204,12 @@ export default function LoginPage() {
           </CardFooter>
         </form>
       </Card>
+      
+      <div className="mt-8 text-center animate-in fade-in slide-in-from-bottom-2 duration-1000">
+         <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-[0.2em]">
+           Powered by Eos Studios | Creation of Maldives
+         </p>
+      </div>
     </div>
   );
 }
