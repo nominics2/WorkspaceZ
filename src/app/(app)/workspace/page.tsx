@@ -136,7 +136,7 @@ export default function WorkspaceAdminPage() {
         .single();
       setWorkspaceInfo(wsData);
 
-      // Step A: Fetch workspace_members (no filtering by verified)
+      // Step 1: Fetch members and profiles separately for reliability
       const { data: wsMembers, error: wsMembersError } = await supabase
         .from('workspace_members')
         .select('*')
@@ -144,25 +144,25 @@ export default function WorkspaceAdminPage() {
 
       if (wsMembersError) throw wsMembersError;
 
-      // Step B: Fetch profiles for these users
-      const userIds = (wsMembers || []).map(m => m.user_id);
-      let mergedMembers = [];
-
-      if (userIds.length > 0) {
-        const { data: profiles, error: profilesError } = await supabase
+      if (wsMembers && wsMembers.length > 0) {
+        const memberUserIds = wsMembers.map(m => m.user_id);
+        const { data: memberProfiles, error: profilesError } = await supabase
           .from('profiles')
           .select('id, full_name, username, avatar_url, avatar_preset, email')
-          .in('id', userIds);
+          .in('id', memberUserIds);
         
         if (profilesError) throw profilesError;
 
-        mergedMembers = (wsMembers || []).map(member => ({
+        const mergedMembers = wsMembers.map(member => ({
           ...member,
-          profiles: profiles?.find(p => p.id === member.user_id) || null
+          profiles: memberProfiles?.find(p => p.id === member.user_id) || null
         }));
+        setMembers(mergedMembers);
+      } else {
+        setMembers([]);
       }
-      setMembers(mergedMembers);
 
+      // Step 2: Storage Usage
       const { data: storageInfo } = await supabase
         .from('workspace_storage_usage')
         .select('*')
@@ -170,13 +170,37 @@ export default function WorkspaceAdminPage() {
         .maybeSingle();
       setStorage(storageInfo);
 
-      const { data: allocList } = await supabase
+      // Step 3: Work Allocations (Two-step fetch)
+      const { data: allocList, error: allocError } = await supabase
         .from('work_allocations')
-        .select('*, profiles!work_allocations_user_id_fkey(full_name), creator:profiles!work_allocations_assigned_by_fkey(full_name)')
+        .select('*')
         .eq('workspace_id', activeWorkspace.id)
         .order('created_at', { ascending: false });
-      setAllocations(allocList || []);
+      
+      if (allocError) throw allocError;
 
+      if (allocList && allocList.length > 0) {
+        const allocUserIds = [...new Set([
+          ...allocList.map(a => a.user_id),
+          ...allocList.map(a => a.assigned_by)
+        ])];
+        
+        const { data: allocProfiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, avatar_preset')
+          .in('id', allocUserIds);
+          
+        const mergedAllocations = allocList.map(alloc => ({
+          ...alloc,
+          profiles: allocProfiles?.find(p => p.id === alloc.user_id) || null,
+          creator: allocProfiles?.find(p => p.id === alloc.assigned_by) || null
+        }));
+        setAllocations(mergedAllocations);
+      } else {
+        setAllocations([]);
+      }
+
+      // Step 4: Teams (Sub-workspaces)
       const { data: swList } = await supabase
         .from('sub_workspaces')
         .select('*')
@@ -184,18 +208,21 @@ export default function WorkspaceAdminPage() {
         .order('name', { ascending: true });
       setSubWorkspaces(swList || []);
 
+      // Step 5: Permission Definitions
       const { data: defs } = await supabase
         .from('role_permission_definitions')
         .select('*')
         .order('category', { ascending: true });
       setPermissionDefs(defs || []);
 
+      // Step 6: Workspace Role Permissions
       const { data: perms } = await supabase
         .from('workspace_role_permissions')
         .select('*')
         .eq('workspace_id', activeWorkspace.id);
       setWsPermissions(perms || []);
 
+      // Step 7: Audit Logs
       const { data: logs } = await supabase
         .from('admin_audit_logs')
         .select('*, actor:profiles!actor_id(full_name), target:profiles!target_user_id(full_name)')
@@ -756,6 +783,66 @@ export default function WorkspaceAdminPage() {
                   </CardHeader>
                   <CardContent className="p-4 pt-0">
                     <p className="text-xs text-muted-foreground line-clamp-2">{team.description || 'No description.'}</p>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="allocations" className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h2 className="text-xl font-bold dark:text-slate-100">Work Allocations</h2>
+            {canManageAllocations && (
+              <Button size="sm" onClick={() => setIsAllocating(true)} className="gap-2 shadow-lg shadow-primary/20">
+                <Plus className="w-4 h-4" /> New Allocation
+              </Button>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-1 gap-4">
+            {allocations.length === 0 ? (
+              <div className="py-12 text-center bg-slate-50 dark:bg-slate-900/40 rounded-2xl border-2 border-dashed dark:border-slate-800">
+                <Briefcase className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
+                <p className="text-sm text-muted-foreground italic">No work allocations yet.</p>
+              </div>
+            ) : (
+              allocations.map((alloc) => (
+                <Card key={alloc.id} className="border-none shadow-sm dark:bg-slate-900 overflow-hidden">
+                  <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="p-2.5 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl shrink-0">
+                        <Briefcase className="w-5 h-5 text-emerald-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-bold text-sm md:text-base dark:text-slate-100">{alloc.title}</h3>
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed">{alloc.description || 'No detailed focus provided.'}</p>
+                        <div className="flex items-center gap-3 mt-3">
+                           <div className="flex items-center gap-2">
+                             <Avatar className="w-5 h-5 border dark:border-slate-800">
+                               <AvatarImage src={alloc.profiles?.avatar_preset ? `/avatars/${alloc.profiles.avatar_preset}.png` : alloc.profiles?.avatar_url} />
+                               <AvatarFallback className="text-[8px] font-bold bg-primary/5 text-primary">
+                                 {alloc.profiles?.full_name?.[0]}
+                               </AvatarFallback>
+                             </Avatar>
+                             <span className="text-[11px] font-bold dark:text-slate-300">{alloc.profiles?.full_name || 'Unknown Member'}</span>
+                           </div>
+                           <span className="text-[10px] text-slate-300 dark:text-slate-700">|</span>
+                           <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                             <Clock className="w-3 h-3" />
+                             {new Date(alloc.created_at).toLocaleDateString()}
+                           </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0 border-t md:border-t-0 pt-3 md:pt-0 border-slate-100 dark:border-slate-800">
+                       <div className="text-right hidden sm:block">
+                         <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Assigned By</p>
+                         <div className="flex items-center justify-end gap-1.5">
+                            <span className="text-[10px] font-medium dark:text-slate-400">{alloc.creator?.full_name || 'Workspace'}</span>
+                         </div>
+                       </div>
+                    </div>
                   </CardContent>
                 </Card>
               ))
