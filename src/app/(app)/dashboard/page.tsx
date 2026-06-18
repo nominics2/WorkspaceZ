@@ -32,7 +32,11 @@ import {
   XCircle,
   FileText,
   Shield,
-  ArrowRightCircle
+  ArrowRightCircle,
+  MoreHorizontal,
+  UserPlus,
+  Mail,
+  ExternalLink
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -47,12 +51,21 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel
+} from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useRouter } from "next/navigation";
 
 const activityConfig: Record<string, { label: string; icon: any; color: string; bg: string }> = {
   task_created: { label: "created task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-500" },
@@ -78,15 +91,14 @@ export default function DashboardPage() {
   const [workload, setWorkload] = useState<any[]>([]);
   const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
   const [leaveApprovals, setLeaveApprovals] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isRunningChecks, setIsRunningChecks] = useState(false);
   
-  // Reminders Modal
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [newReminder, setNewReminder] = useState({ title: "", remindAt: "" });
 
-  // Leave Planner Modals
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [editingLeave, setEditingLeave] = useState<any>(null);
   const [leaveForm, setLeaveForm] = useState({
@@ -105,6 +117,7 @@ export default function DashboardPage() {
   
   const supabase = createClient();
   const { toast } = useToast();
+  const router = useRouter();
 
   const forceUnlockUI = () => {
     if (typeof document !== 'undefined') {
@@ -120,23 +133,27 @@ export default function DashboardPage() {
     if (!activeWorkspace || !userProfile) return;
     setLoading(true);
     try {
-      // 1. Fetch My Tasks
-      const { data: myTasks } = await supabase
-        .from('my_tasks_view')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .order('due_date', { ascending: true });
-      
-      const activeTasks = myTasks?.filter(t => t.status !== 'completed') || [];
-      const completedTasks = myTasks?.filter(t => t.status === 'completed') || [];
-      const overdueTasks = myTasks?.filter(t => t.is_overdue && t.status !== 'completed') || [];
-      const dueSoonTasks = myTasks?.filter(t => {
+      const [tasksRes, activityRes, notifsRes, remindersRes, workloadRes, leavesRes, membersRes] = await Promise.all([
+        supabase.from('my_tasks_view').select('*').eq('workspace_id', activeWorkspace.id).order('due_date', { ascending: true }),
+        supabase.from('recent_activity_view').select('*').eq('workspace_id', activeWorkspace.id).order('created_at', { ascending: false }).limit(6),
+        supabase.from('notifications').select('*').eq('user_id', userProfile.id).eq('is_read', false).eq('is_deleted', false).order('created_at', { ascending: false }).limit(5),
+        supabase.from('reminders').select('*').eq('remind_to', userProfile.id).eq('is_completed', false).order('remind_at', { ascending: true }).limit(5),
+        supabase.from('member_workload_view').select('*').eq('workspace_id', activeWorkspace.id).order('active_tasks', { ascending: false }),
+        supabase.from('leave_requests_view').select('*').eq('workspace_id', activeWorkspace.id).eq('user_id', userProfile.id).order('start_date', { ascending: false }),
+        supabase.from('workspace_members').select('*, profiles:user_id(full_name, avatar_url, avatar_preset, email)').eq('workspace_id', activeWorkspace.id).eq('status', 'active').limit(12)
+      ]);
+
+      const myTasks = tasksRes.data || [];
+      const activeTasks = myTasks.filter(t => t.status !== 'completed');
+      const completedTasks = myTasks.filter(t => t.status === 'completed');
+      const overdueTasks = myTasks.filter(t => t.is_overdue && t.status !== 'completed');
+      const dueSoonTasks = myTasks.filter(t => {
         if (!t.due_date || t.status === 'completed') return false;
         const due = new Date(t.due_date);
         const soon = new Date();
         soon.setDate(soon.getDate() + 3);
         return due <= soon && due >= new Date();
-      }) || [];
+      });
 
       setStats([
         { label: "Active", count: activeTasks.length, icon: Clock, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-500/10" },
@@ -145,71 +162,14 @@ export default function DashboardPage() {
         { label: "Completed", count: completedTasks.length, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-500/10" },
       ]);
 
-      setTasks(myTasks || []);
+      setTasks(myTasks);
+      setActivity(activityRes.data || []);
+      setNotifications(notifsRes.data || []);
+      setReminders(remindersRes.data || []);
+      setWorkload(workloadRes.data || []);
+      setLeaveRequests(leavesRes.data || []);
+      setMembers(membersRes.data || []);
 
-      // 2. Activity Feed
-      const { data: recentLogs } = await supabase
-        .from('recent_activity_view')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      const actorIds = [...new Set((recentLogs || []).map(log => log.actor_id))];
-      const { data: memberData } = await supabase
-        .from('workspace_members')
-        .select('user_id, is_verified')
-        .eq('workspace_id', activeWorkspace.id)
-        .in('user_id', actorIds);
-
-      const enrichedLogs = (recentLogs || []).map(log => ({
-        ...log,
-        actor_is_verified: !!memberData?.find(m => m.user_id === log.actor_id)?.is_verified
-      }));
-
-      setActivity(enrichedLogs);
-
-      // 3. Notifications
-      const { data: notifs } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', userProfile.id)
-        .eq('is_read', false)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false })
-        .limit(5);
-      setNotifications(notifs || []);
-
-      // 4. Reminders
-      const { data: rems } = await supabase
-        .from('reminders')
-        .select('*')
-        .eq('remind_to', userProfile.id)
-        .eq('is_completed', false)
-        .order('remind_at', { ascending: true })
-        .limit(5);
-      setReminders(rems || []);
-
-      // 5. Workload
-      if (userRole === 'superadmin' || hasPermission('view_admin_panel') || hasPermission('view_all_tasks')) {
-        const { data: work } = await supabase
-          .from('member_workload_view')
-          .select('*')
-          .eq('workspace_id', activeWorkspace.id)
-          .order('active_tasks', { ascending: false });
-        setWorkload(work || []);
-      }
-
-      // 6. Leave Requests
-      const { data: leaves } = await supabase
-        .from('leave_requests_view')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .eq('user_id', userProfile.id)
-        .order('start_date', { ascending: false });
-      setLeaveRequests(leaves || []);
-
-      // 7. Pending Approvals
       if (userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager' || hasPermission('approve_leave_requests')) {
         const { data: approvals } = await supabase
           .from('leave_requests_view')
@@ -220,7 +180,6 @@ export default function DashboardPage() {
           .order('created_at', { ascending: true });
         setLeaveApprovals(approvals || []);
       }
-
     } catch (err) {
       console.error('Error fetching dashboard data:', err);
     } finally {
@@ -296,7 +255,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Leave Requests Handlers
   const openLeaveModal = (leave: any = null) => {
     if (leave) {
       setEditingLeave(leave);
@@ -402,51 +360,6 @@ export default function DashboardPage() {
     });
   }, [tasks]);
 
-  // Frontend calculation for live preview (skipping Fridays)
-  const previewDates = useMemo(() => {
-    if (!leaveForm.startDate || !leaveForm.days) return null;
-    const numDays = parseInt(leaveForm.days);
-    if (isNaN(numDays) || numDays <= 0) return null;
-
-    let current = new Date(leaveForm.startDate);
-    let daysToTake = numDays;
-    let lastLeaveDay = new Date(current);
-
-    // If start date is a Friday, move to Saturday as the first possible leave day
-    // though the request officially starts on the Friday.
-    // The requirement says: "If the selected start date is Friday, do not block it, 
-    // but the first counted leave day should be the next non-Friday date."
-
-    let counter = 0;
-    let checkDate = new Date(current);
-
-    while (daysToTake > 0) {
-      if (checkDate.getDay() !== 5) { // Not Friday
-        daysToTake--;
-        lastLeaveDay = new Date(checkDate);
-      }
-      if (daysToTake > 0) {
-        checkDate.setDate(checkDate.getDate() + 1);
-      }
-      counter++;
-      if (counter > 100) break; // Safety
-    }
-
-    const endDate = lastLeaveDay;
-    const returnDate = new Date(endDate);
-    returnDate.setDate(returnDate.getDate() + 1);
-    
-    // If return date is Friday, skip to Saturday
-    if (returnDate.getDay() === 5) {
-      returnDate.setDate(returnDate.getDate() + 1);
-    }
-
-    return {
-      endDate: endDate.toLocaleDateString(),
-      returnDate: returnDate.toLocaleDateString()
-    };
-  }, [leaveForm.startDate, leaveForm.days]);
-
   if (loading && stats.length === 0) {
     return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   }
@@ -455,104 +368,118 @@ export default function DashboardPage() {
   const isManager = isAdmin || userRole === 'manager' || hasPermission('approve_leave_requests');
 
   return (
-    <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-12">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-8 animate-in fade-in duration-700 pb-16">
+      {/* Header with improved layout */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-slate-950 dark:text-slate-100">Hello, {userProfile?.full_name?.split(' ')[0] || 'User'}</h1>
-          <p className="text-sm text-muted-foreground">Here's what's happening in {activeWorkspace?.name} today.</p>
+          <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Welcome, {userProfile?.full_name?.split(' ')[0] || 'User'}
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-1 font-medium flex items-center gap-2">
+            <CalendarIcon className="w-4 h-4" />
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
            {isAdmin && (
-             <Button variant="outline" size="sm" onClick={handleRunNotificationChecks} disabled={isRunningChecks} className="h-9 gap-2 dark:border-slate-800">
-               {isRunningChecks ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-               <span className="hidden sm:inline">Run Checks</span>
+             <Button variant="outline" size="sm" onClick={handleRunNotificationChecks} disabled={isRunningChecks} className="h-10 gap-2 dark:border-slate-800 bg-white dark:bg-slate-900">
+               {isRunningChecks ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+               <span className="hidden sm:inline">Check Automations</span>
              </Button>
            )}
-           <Button onClick={() => setIsReminderModalOpen(true)} size="sm" className="h-9 gap-2 shadow-lg shadow-primary/20">
-             <Clock className="w-4 h-4" /> Quick Reminder
+           <Button onClick={() => setIsReminderModalOpen(true)} className="h-10 gap-2 shadow-xl shadow-primary/20 bg-primary hover:bg-primary/90 transition-all active:scale-95">
+             <Plus className="w-4 h-4" /> Quick Reminder
            </Button>
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+      {/* Stats Grid - Glassmorphism style */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {stats.map((stat) => (
-          <Card key={stat.label} className="border-none shadow-sm dark:bg-slate-900">
-            <CardContent className="p-4 md:p-6 flex items-center justify-between">
+          <Card key={stat.label} className="border-none shadow-sm dark:bg-slate-900/50 bg-white/50 backdrop-blur-sm">
+            <CardContent className="p-6 flex items-center justify-between">
               <div>
-                <p className="text-[10px] md:text-xs font-bold text-muted-foreground uppercase tracking-wider">{stat.label}</p>
-                <p className="text-xl md:text-2xl font-bold mt-1 text-slate-950 dark:text-slate-100">{stat.count}</p>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">{stat.label}</p>
+                <p className="text-3xl font-extrabold mt-1 text-slate-900 dark:text-white">{stat.count}</p>
               </div>
-              <div className={cn("p-2 md:p-3 rounded-xl", stat.bg)}>
-                <stat.icon className={cn("w-5 h-5 md:w-6 md:h-6", stat.color)} />
+              <div className={cn("p-4 rounded-2xl", stat.bg)}>
+                <stat.icon className={cn("w-6 h-6 md:w-7 md:h-7", stat.color)} />
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
-        {/* Left Column - Tasks & Activity */}
-        <div className="lg:col-span-8 space-y-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left Column (8 units) */}
+        <div className="lg:col-span-8 space-y-10">
           
+          {/* Quick Actions - Modern Card Style */}
+          <section className="space-y-4">
+            <h2 className="text-sm font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-600 px-1">Quick Workspace Actions</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: "New Task", icon: CheckSquare, href: "/tasks", color: "from-blue-500 to-blue-600", shadow: "shadow-blue-500/20" },
+                { label: "Shared Note", icon: StickyNote, href: "/notes", color: "from-amber-500 to-amber-600", shadow: "shadow-amber-500/20" },
+                { label: "Workspace Chat", icon: MessageSquare, href: "/chat", color: "from-emerald-500 to-emerald-600", shadow: "shadow-emerald-500/20" },
+                { label: "Plan Leave", icon: PlaneTakeoff, onClick: () => openLeaveModal(), color: "from-violet-500 to-violet-600", shadow: "shadow-violet-500/20" },
+              ].map((action) => {
+                const content = (
+                  <div className={cn(
+                    "flex flex-col items-center justify-center p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 hover:border-primary/50 transition-all group cursor-pointer shadow-sm active:scale-95",
+                    action.shadow
+                  )}>
+                    <div className={cn("p-4 rounded-2xl text-white bg-gradient-to-br shadow-lg mb-3 transform group-hover:scale-110 group-hover:-rotate-3 transition-transform", action.color)}>
+                      <action.icon className="w-6 h-6" />
+                    </div>
+                    <span className="text-sm font-bold dark:text-slate-200">{action.label}</span>
+                  </div>
+                );
+                return action.href ? (
+                  <Link key={action.label} href={action.href}>{content}</Link>
+                ) : (
+                  <div key={action.label} onClick={action.onClick}>{content}</div>
+                );
+              })}
+            </div>
+          </section>
+
           {/* Leave Approvals (Manager only) */}
           {isManager && leaveApprovals.length > 0 && (
             <section className="space-y-4">
               <div className="flex items-center justify-between">
-                 <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                   <Shield className="w-5 h-5 text-primary" />
-                   Pending Leave Approvals
+                 <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
+                   <div className="p-2 bg-rose-50 dark:bg-rose-500/10 rounded-lg">
+                     <Shield className="w-5 h-5 text-rose-500" />
+                   </div>
+                   Pending Approvals
                  </h2>
-                 <Badge variant="default" className="bg-primary">{leaveApprovals.length}</Badge>
+                 <Badge className="bg-rose-500 text-white rounded-full px-3">{leaveApprovals.length}</Badge>
               </div>
-              <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-3">
                  {leaveApprovals.map(leave => (
-                   <Card key={leave.id} className="border-none shadow-sm dark:bg-slate-900 group">
-                     <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                       <Avatar className="w-10 h-10 border dark:border-slate-800">
+                   <Card key={leave.id} className="border-none shadow-md dark:bg-slate-900 group hover:shadow-lg transition-all">
+                     <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center gap-5">
+                       <Avatar className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm">
                          <AvatarImage src={leave.avatar_preset ? `/avatars/${leave.avatar_preset}.png` : leave.avatar_url} />
-                         <AvatarFallback className="text-[10px] font-bold bg-primary/5 text-primary">
+                         <AvatarFallback className="font-bold bg-primary/10 text-primary uppercase text-lg">
                            {leave.full_name?.[0]}
                          </AvatarFallback>
                        </Avatar>
                        <div className="flex-1 min-w-0">
-                         <div className="flex items-center gap-2 mb-0.5">
-                           <span className="font-bold text-sm dark:text-slate-100">{leave.full_name}</span>
-                           <Badge variant="outline" className="text-[9px] uppercase dark:border-slate-800">{leave.leave_type.replace('_', ' ')}</Badge>
+                         <div className="flex items-center gap-2 mb-1">
+                           <span className="font-bold text-base dark:text-white">{leave.full_name}</span>
+                           <Badge variant="secondary" className="text-[10px] uppercase font-bold py-0.5 tracking-wider dark:bg-slate-800">{leave.leave_type.replace('_', ' ')}</Badge>
                          </div>
-                         <div className="text-[10px] text-muted-foreground flex items-center flex-wrap gap-x-3 gap-y-1">
-                           <span className="flex items-center gap-1"><CalendarIcon className="w-3 h-3" /> {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()}</span>
-                           <span className="flex items-center gap-1 font-bold text-primary">Return: {new Date(leave.return_date).toLocaleDateString()}</span>
-                           <span className="font-bold text-slate-900 dark:text-slate-100">{leave.number_of_days} days</span>
+                         <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center flex-wrap gap-x-4 gap-y-1">
+                           <span className="flex items-center gap-1.5"><CalendarIcon className="w-3.5 h-3.5" /> {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()}</span>
+                           <span className="font-bold text-primary">Return: {new Date(leave.return_date).toLocaleDateString()}</span>
+                           <span className="font-bold text-slate-700 dark:text-slate-300">{leave.number_of_days} Business Days</span>
                          </div>
-                         {leave.reason && <p className="text-[10px] italic mt-1 line-clamp-1">"{leave.reason}"</p>}
                        </div>
-                       <div className="flex items-center gap-2">
-                         <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          className="h-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
-                          onClick={() => {
-                            setReviewingLeave(leave);
-                            setReviewForm({ status: 'rejected', reason: "" });
-                            setIsReviewModalOpen(true);
-                          }}
-                         >
-                           Reject
-                         </Button>
-                         <Button 
-                          size="sm" 
-                          className="h-8 bg-emerald-500 hover:bg-emerald-600 text-white"
-                          onClick={() => {
-                            setReviewingLeave(leave);
-                            setReviewForm({ status: 'approved', reason: "" });
-                            setIsReviewModalOpen(true);
-                          }}
-                         >
-                           Approve
-                         </Button>
+                       <div className="flex items-center gap-2 shrink-0">
+                         <Button size="sm" variant="ghost" className="text-slate-500 hover:text-rose-500 h-9" onClick={() => { setReviewingLeave(leave); setReviewForm({ status: 'rejected', reason: "" }); setIsReviewModalOpen(true); }}>Reject</Button>
+                         <Button size="sm" className="bg-emerald-500 hover:bg-emerald-600 text-white h-9 shadow-lg shadow-emerald-500/20" onClick={() => { setReviewingLeave(leave); setReviewForm({ status: 'approved', reason: "" }); setIsReviewModalOpen(true); }}>Approve</Button>
                        </div>
                      </CardContent>
                    </Card>
@@ -561,48 +488,31 @@ export default function DashboardPage() {
             </section>
           )}
 
-          {/* Quick Actions */}
-          <section className="space-y-4">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Quick Actions</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: "Task", icon: CheckSquare, href: "/tasks", color: "bg-blue-500" },
-                { label: "Note", icon: StickyNote, href: "/notes", color: "bg-amber-500" },
-                { label: "Chat", icon: MessageSquare, href: "/chat", color: "bg-emerald-500" },
-                { label: "Plan Leave", icon: PlaneTakeoff, onClick: () => openLeaveModal(), color: "bg-violet-500" },
-              ].map((action) => {
-                const Content = (
-                  <Card className="border-none shadow-sm hover:translate-y-[-2px] transition-all cursor-pointer group dark:bg-slate-900">
-                    <CardContent className="p-4 flex flex-col items-center justify-center gap-2">
-                      <div className={cn("p-3 rounded-xl text-white shadow-lg shadow-black/10", action.color)}>
-                        <action.icon className="w-5 h-5" />
-                      </div>
-                      <span className="text-xs font-bold dark:text-slate-100">{action.label}</span>
-                    </CardContent>
-                  </Card>
-                );
-                return action.href ? (
-                  <Link key={action.label} href={action.href}>{Content}</Link>
-                ) : (
-                  <div key={action.label} onClick={action.onClick}>{Content}</div>
-                );
-              })}
-            </div>
-          </section>
-
           {/* Today's Tasks */}
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                <CheckCircle className="w-5 h-5 text-emerald-500" />
+              <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 rounded-lg">
+                  <CheckCircle className="w-5 h-5 text-emerald-500" />
+                </div>
                 Assigned to Me: Today
               </h2>
+              <Link href="/tasks">
+                 <Button variant="ghost" size="sm" className="text-primary font-bold gap-1 group">
+                   View Board <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                 </Button>
+              </Link>
             </div>
-            <div className="grid grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 gap-4">
               {todaysTasks.length === 0 ? (
-                <div className="p-10 text-center bg-slate-50 dark:bg-slate-900/40 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center gap-2">
-                  <p className="text-sm font-bold text-slate-400">All clear for today!</p>
-                  <p className="text-xs text-muted-foreground">No tasks due today.</p>
+                <div className="p-12 text-center bg-slate-50 dark:bg-slate-900/40 rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center gap-4 opacity-70">
+                  <div className="w-16 h-16 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center shadow-sm">
+                     <CheckCircle2 className="w-8 h-8 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-slate-600 dark:text-slate-300">Workspace is all clear!</p>
+                    <p className="text-sm text-slate-400 mt-1">You have no tasks due today.</p>
+                  </div>
                 </div>
               ) : (
                 todaysTasks.map(task => (
@@ -612,140 +522,108 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Leave Planner List */}
+          {/* Team Members Grid - NEW */}
           <section className="space-y-4">
-             <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
-                  <PlaneTakeoff className="w-5 h-5 text-violet-500" />
-                  My Leave Planner
-                </h2>
-                <Button variant="ghost" size="sm" onClick={() => openLeaveModal()} className="text-xs gap-1 text-primary">
-                  <Plus className="w-3.5 h-3.5" /> Plan Leave
-                </Button>
-             </div>
-             <Card className="border-none shadow-sm dark:bg-slate-900 overflow-hidden">
-                <CardContent className="p-0">
-                  {leaveRequests.length === 0 ? (
-                    <p className="text-sm text-muted-foreground italic text-center py-10">No leave requests planned.</p>
-                  ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                       {leaveRequests.map(leave => (
-                         <div key={leave.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
-                            <div className="flex items-start gap-4 flex-1">
-                               <div className={cn(
-                                 "p-2.5 rounded-xl shrink-0",
-                                 leave.leave_type === 'sick_leave' ? "bg-rose-50 text-rose-500 dark:bg-rose-500/10" :
-                                 leave.leave_type === 'annual_leave' ? "bg-emerald-50 text-emerald-500 dark:bg-emerald-500/10" :
-                                 "bg-blue-50 text-blue-500 dark:bg-blue-500/10"
-                               )}>
-                                 <PlaneTakeoff className="w-5 h-5" />
-                               </div>
-                               <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-2">
-                                     <span className="font-bold text-sm capitalize dark:text-slate-100">{leave.leave_type.replace('_', ' ')}</span>
-                                     <Badge className={cn(
-                                       "text-[9px] uppercase tracking-wider h-4 px-1.5",
-                                       leave.status === 'pending' ? "bg-amber-500" :
-                                       leave.status === 'approved' ? "bg-emerald-500" :
-                                       leave.status === 'rejected' ? "bg-rose-500" :
-                                       "bg-slate-400"
-                                     )}>
-                                       {leave.status}
-                                     </Badge>
-                                  </div>
-                                  <div className="flex flex-col gap-0.5 mt-1">
-                                    <p className="text-xs text-muted-foreground">
-                                      {new Date(leave.start_date).toLocaleDateString()} — {new Date(leave.end_date).toLocaleDateString()}
-                                    </p>
-                                    <div className="flex items-center gap-3 text-[10px] font-bold text-primary uppercase">
-                                      <span className="flex items-center gap-1">
-                                        <ArrowRightCircle className="w-3 h-3" />
-                                        Return: {new Date(leave.return_date).toLocaleDateString()}
-                                      </span>
-                                      <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400">
-                                        {leave.number_of_days} Business Days
-                                      </span>
-                                    </div>
-                                  </div>
-                                  {leave.manager_reason && (
-                                    <p className="text-[10px] text-muted-foreground mt-1 bg-slate-50 dark:bg-slate-950 p-2 rounded-lg border dark:border-slate-800">
-                                      <span className="font-bold">Feedback:</span> {leave.manager_reason}
-                                    </p>
-                                  )}
-                               </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                               {leave.status === 'pending' && (
-                                 <>
-                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-primary" onClick={() => openLeaveModal(leave)}>
-                                     <RefreshCw className="w-4 h-4" />
-                                   </Button>
-                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-rose-500" onClick={() => handleCancelLeave(leave.id)}>
-                                     <XCircle className="w-4 h-4" />
-                                   </Button>
-                                 </>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
+                <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg">
+                  <Users className="w-5 h-5 text-indigo-500" />
+                </div>
+                Active Team
+              </h2>
+              <Link href="/workspace">
+                 <Button variant="ghost" size="sm" className="text-primary font-bold">Manage Members</Button>
+              </Link>
+            </div>
+            <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
+               <CardContent className="p-6">
+                 <div className="flex flex-wrap gap-6 items-center justify-center sm:justify-start">
+                   {members.map((m) => {
+                     const p = m.profiles;
+                     const avatar = p?.avatar_preset ? `/avatars/${p.avatar_preset}.png` : p?.avatar_url;
+                     return (
+                       <DropdownMenu key={m.user_id}>
+                         <DropdownMenuTrigger asChild>
+                           <div className="flex flex-col items-center gap-2 group cursor-pointer">
+                             <div className="relative">
+                               <Avatar className="w-14 h-14 border-2 border-white dark:border-slate-800 shadow-md group-hover:scale-110 transition-transform">
+                                 <AvatarImage src={avatar} />
+                                 <AvatarFallback className="font-bold bg-slate-100 text-slate-600">{p?.full_name?.[0]}</AvatarFallback>
+                               </Avatar>
+                               {m.is_verified && (
+                                 <div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-900 rounded-full p-0.5 shadow-sm">
+                                   <BadgeCheck className="w-4 h-4 text-primary fill-primary/10" />
+                                 </div>
                                )}
-                            </div>
-                         </div>
-                       ))}
-                    </div>
-                  )}
-                </CardContent>
-             </Card>
+                             </div>
+                             <span className="text-[11px] font-bold text-slate-500 truncate max-w-[70px]">{p?.full_name?.split(' ')[0]}</span>
+                           </div>
+                         </DropdownMenuTrigger>
+                         <DropdownMenuContent align="center" className="w-56 rounded-xl shadow-2xl dark:bg-slate-900 dark:border-slate-800">
+                           <DropdownMenuLabel className="flex flex-col">
+                             <span className="font-bold">{p?.full_name}</span>
+                             <span className="text-[10px] text-slate-500 font-normal uppercase tracking-wider">{m.role}</span>
+                           </DropdownMenuLabel>
+                           <DropdownMenuSeparator />
+                           <DropdownMenuItem onClick={() => router.push(`/tasks?assignedTo=${m.user_id}`)} className="gap-2 py-2.5">
+                             <UserPlus className="w-4 h-4 text-blue-500" /> Assign Task
+                           </DropdownMenuItem>
+                           <DropdownMenuItem onClick={() => router.push(`/chat?userId=${m.user_id}`)} className="gap-2 py-2.5">
+                             <Mail className="w-4 h-4 text-emerald-500" /> Private Chat
+                           </DropdownMenuItem>
+                           <DropdownMenuItem onClick={() => router.push(`/workspace?userId=${m.user_id}`)} className="gap-2 py-2.5">
+                             <ExternalLink className="w-4 h-4 text-slate-500" /> View Profile
+                           </DropdownMenuItem>
+                         </DropdownMenuContent>
+                       </DropdownMenu>
+                     );
+                   })}
+                 </div>
+               </CardContent>
+            </Card>
           </section>
 
-          {/* Activity Feed */}
+          {/* Recent Activity */}
           <section className="space-y-4">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">Recent Activity</h2>
-            <Card className="border-none shadow-sm dark:bg-slate-900">
+            <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
+              <div className="p-2 bg-amber-50 dark:bg-amber-500/10 rounded-lg">
+                <Zap className="w-5 h-5 text-amber-500" />
+              </div>
+              Real-time Feed
+            </h2>
+            <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
               <CardContent className="p-0">
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                <div className="divide-y divide-slate-50 dark:divide-slate-800">
                   {activity.length === 0 ? (
-                    <p className="text-sm text-muted-foreground italic text-center py-10">No recent activity yet.</p>
+                    <p className="text-sm text-slate-500 italic text-center py-16">No recent activity detected.</p>
                   ) : (
                     activity.map((log) => {
-                      const config = activityConfig[log.action] || { 
-                        label: log.action_description || log.action?.replace(/_/g, ' ') || "performed an action", 
-                        icon: TrendingUp, 
-                        color: "text-slate-500", 
-                        bg: "bg-slate-100 dark:bg-slate-800" 
-                      };
+                      const config = activityConfig[log.action] || { label: "performed an action", icon: TrendingUp, color: "text-slate-500", bg: "bg-slate-100" };
                       const ActionIcon = config.icon;
-                      
-                      const actorName = log.actor_full_name || log.actor_username || log.actor_email || "Someone";
+                      const actorName = log.actor_full_name || "Someone";
                       const avatarSrc = log.actor_avatar_preset ? `/avatars/${log.actor_avatar_preset}.png` : log.actor_avatar_url;
                       
-                      const targetTitle = log.task_title || log.note_title || "";
-
                       return (
-                        <div key={log.id} className="p-4 flex gap-4 group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                          <div className="relative shrink-0">
+                        <div key={log.id} className="p-5 flex gap-4 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                          <div className="relative shrink-0 pt-1">
                             <Avatar className="w-10 h-10 border dark:border-slate-800 shadow-sm">
                               <AvatarImage src={avatarSrc} />
-                              <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
-                                {actorName[0]}
-                              </AvatarFallback>
+                              <AvatarFallback className="font-bold text-xs">{actorName[0]}</AvatarFallback>
                             </Avatar>
-                            <div className={cn(
-                              "absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm",
-                              config.bg
-                            )}>
+                            <div className={cn("absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm", config.bg)}>
                               <ActionIcon className="w-2.5 h-2.5 text-white" />
                             </div>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs md:text-sm text-foreground leading-relaxed dark:text-slate-300">
-                              <div className="flex items-center gap-1 flex-wrap">
-                                <span className="font-bold text-slate-950 dark:text-slate-100">{actorName}</span>
-                                {log.actor_is_verified && <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
-                                <span className="ml-1">{config.label}</span>
-                                {targetTitle && <span className="font-bold text-primary">"{targetTitle}"</span>}
-                              </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-slate-700 dark:text-slate-300">
+                               <span className="font-bold text-slate-950 dark:text-white">{actorName}</span>
+                               <span className="mx-1.5 opacity-80">{config.label}</span>
+                               {log.task_title && <span className="font-bold text-primary underline decoration-primary/30 underline-offset-2">"{log.task_title}"</span>}
                             </div>
-                            <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {new Date(log.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}
-                            </p>
+                            <div className="mt-2 flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                               <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(log.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</span>
+                               {log.sub_workspace_name && <span className="flex items-center gap-1 text-violet-500"><Layout className="w-3 h-3" /> {log.sub_workspace_name}</span>}
+                            </div>
                           </div>
                         </div>
                       );
@@ -757,64 +635,72 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        {/* Right Column - Reminders, Notifs, Workload */}
-        <div className="lg:col-span-4 space-y-8">
-          {/* Reminders */}
-          <Card className="border-none shadow-sm bg-violet-50/50 dark:bg-violet-950/10 border-violet-100/50 dark:border-violet-900/20">
-            <CardHeader className="p-4 pb-2">
+        {/* Right Column (4 units) */}
+        <div className="lg:col-span-4 space-y-10">
+          
+          {/* Reminders Card */}
+          <Card className="border-none shadow-lg bg-violet-600 dark:bg-violet-700 text-white rounded-[2rem] overflow-hidden overflow-hidden relative group">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700" />
+            <CardHeader className="p-6 pb-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                  <CardTitle className="text-sm dark:text-slate-100">My Reminders</CardTitle>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-xl backdrop-blur-md">
+                    <Clock className="w-5 h-5 text-white" />
+                  </div>
+                  <CardTitle className="text-lg">My Reminders</CardTitle>
                 </div>
-                <Badge variant="outline" className="text-[10px] h-4 bg-white dark:bg-slate-900 border-violet-200 dark:border-violet-800">{reminders.length}</Badge>
+                <Badge className="bg-white/20 text-white border-none">{reminders.length}</Badge>
               </div>
             </CardHeader>
-            <CardContent className="p-4 pt-2 space-y-3">
+            <CardContent className="p-6 pt-2 space-y-3">
               {reminders.length === 0 ? (
-                <p className="text-[10px] text-muted-foreground italic">No active reminders.</p>
+                <div className="py-4 text-center">
+                  <p className="text-sm opacity-60 italic">No scheduled reminders.</p>
+                </div>
               ) : (
                 reminders.map((r) => (
-                  <div key={r.id} className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between group animate-in slide-in-from-right-2">
-                    <div className="space-y-0.5 overflow-hidden">
-                      <p className="text-xs font-bold truncate dark:text-slate-100">{r.title}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {new Date(r.remind_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  <div key={r.id} className="bg-white/10 hover:bg-white/20 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex items-center justify-between group/item transition-colors">
+                    <div className="min-w-0 mr-3">
+                      <p className="text-sm font-bold truncate leading-tight">{r.title}</p>
+                      <p className="text-[10px] opacity-70 mt-1 uppercase font-bold tracking-widest">
+                        {new Date(r.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(r.remind_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                       </p>
                     </div>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10" onClick={() => handleCompleteReminder(r.id)}>
-                      <CheckCircle className="w-4 h-4" />
-                    </Button>
+                    <button onClick={() => handleCompleteReminder(r.id)} className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg transform scale-0 group-hover/item:scale-100 transition-transform hover:scale-110 active:scale-95">
+                      <Check className="w-4 h-4 text-white" />
+                    </button>
                   </div>
                 ))
               )}
+              <Button variant="ghost" onClick={() => setIsReminderModalOpen(true)} className="w-full text-white hover:bg-white/10 h-10 font-bold border border-white/20 rounded-xl mt-2">
+                Add Reminder
+              </Button>
             </CardContent>
           </Card>
 
-          {/* Notifications */}
-          <Card className="border-none shadow-sm dark:bg-slate-900">
-            <CardHeader className="p-4 pb-2 border-b dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-primary" />
-                <CardTitle className="text-sm dark:text-slate-100">Latest Alerts</CardTitle>
+          {/* Notifications Card */}
+          <Card className="border-none shadow-md dark:bg-slate-900 rounded-[2rem] overflow-hidden">
+            <CardHeader className="p-6 pb-2 border-b dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <Bell className="w-5 h-5 text-primary" />
+                <CardTitle className="text-lg">Latest Alerts</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              <div className="divide-y dark:divide-slate-800">
                 {notifications.length === 0 ? (
-                  <p className="text-[10px] text-muted-foreground italic p-4 text-center">All caught up!</p>
+                  <p className="text-sm text-slate-400 italic py-10 text-center">Your inbox is clear.</p>
                 ) : (
                   notifications.map((n) => (
-                    <div key={n.id} className="p-4 text-xs group relative hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                      <p className="font-bold truncate pr-6 dark:text-slate-200">{n.title}</p>
-                      <p className="text-muted-foreground leading-relaxed line-clamp-2 mt-0.5">{n.message}</p>
-                      <button 
-                        onClick={() => handleMarkNotifRead(n.id)}
-                        className="absolute right-4 top-4 text-primary p-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                        title="Mark as read"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                      </button>
+                    <div key={n.id} className="p-5 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group relative">
+                      <p className="font-bold text-sm text-slate-900 dark:text-white truncate pr-6">{n.title}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed line-clamp-2">{n.message}</p>
+                      <div className="mt-2 flex items-center justify-between">
+                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{new Date(n.created_at).toLocaleDateString()}</span>
+                         <button onClick={() => handleMarkNotifRead(n.id)} className="text-primary hover:text-primary/70 transition-colors">
+                           <CheckCircle2 className="w-4 h-4" />
+                         </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -822,26 +708,26 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Team Workload */}
+          {/* Workload Section */}
           {workload.length > 0 && (
-            <Card className="border-none shadow-sm dark:bg-slate-900">
-              <CardHeader className="p-4 pb-2">
-                <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-primary" />
-                  <CardTitle className="text-sm dark:text-slate-100">Team Workload</CardTitle>
+            <Card className="border-none shadow-md dark:bg-slate-900 rounded-[2rem] overflow-hidden">
+              <CardHeader className="p-6 pb-2">
+                <div className="flex items-center gap-3">
+                  <TrendingUp className="w-5 h-5 text-primary" />
+                  <CardTitle className="text-lg">Member Load</CardTitle>
                 </div>
               </CardHeader>
-              <CardContent className="p-4 pt-2 space-y-4">
-                {workload.map((w, index) => (
-                  <div key={w.user_id || `${w.email}-${index}`} className="space-y-2">
+              <CardContent className="p-6 pt-2 space-y-5">
+                {workload.map((w, idx) => (
+                  <div key={idx} className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold truncate max-w-[120px] dark:text-slate-300">{w.full_name || w.email || "Unknown Member"}</span>
                       <div className="flex items-center gap-2">
-                        {w.overdue_tasks > 0 && <Badge variant="destructive" className="h-4 text-[8px]">{w.overdue_tasks} overdue</Badge>}
-                        <span className="text-muted-foreground">{w.active_tasks} active</span>
+                        <span className="font-bold dark:text-white truncate max-w-[100px]">{w.full_name?.split(' ')[0]}</span>
+                        <Badge variant="outline" className="text-[8px] h-3.5 px-1 py-0 border-slate-200 dark:border-slate-800">{w.active_tasks} Active</Badge>
                       </div>
+                      {w.overdue_tasks > 0 && <Badge className="bg-rose-500 h-4 text-[8px] py-0">{w.overdue_tasks} late</Badge>}
                     </div>
-                    <Progress value={(w.completed_tasks / (w.active_tasks + w.completed_tasks || 1)) * 100} className="h-1" />
+                    <Progress value={(w.completed_tasks / (w.active_tasks + w.completed_tasks || 1)) * 100} className="h-1.5" />
                   </div>
                 ))}
               </CardContent>
@@ -851,195 +737,95 @@ export default function DashboardPage() {
       </div>
 
       {/* Reminder Modal */}
-      <Dialog open={isReminderModalOpen} onOpenChange={(open) => { 
-        if (!saving) {
-          setIsReminderModalOpen(open);
-          if (!open) forceUnlockUI();
-        }
-      }}>
-        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+      <Dialog open={isReminderModalOpen} onOpenChange={(open) => { if (!saving) { setIsReminderModalOpen(open); if (!open) forceUnlockUI(); } }}>
+        <DialogContent className="sm:max-w-md p-8 rounded-[2rem] dark:bg-slate-950 border-none shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="dark:text-slate-100">Quick Reminder</DialogTitle>
+            <DialogTitle className="text-2xl font-bold tracking-tight">Create Quick Reminder</DialogTitle>
+            <DialogDescription>Set a ping for yourself or your team members later.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleCreateReminder} className="space-y-4 pt-2">
+          <form onSubmit={handleCreateReminder} className="space-y-6 pt-4">
             <div className="space-y-2">
-              <Label className="text-xs font-bold dark:text-slate-300">What should we remind you about?</Label>
-              <Input 
-                value={newReminder.title} 
-                onChange={e => setNewReminder({...newReminder, title: e.target.value})} 
-                placeholder="e.g. Follow up on proposal"
-                required
-                disabled={saving}
-                className="h-11 dark:bg-slate-900 dark:border-slate-800"
-              />
+              <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Reminder Title</Label>
+              <Input value={newReminder.title} onChange={e => setNewReminder({...newReminder, title: e.target.value})} placeholder="e.g. Call client back about project" required disabled={saving} className="h-12 rounded-xl dark:bg-slate-900 dark:border-slate-800 px-4" />
             </div>
             <div className="space-y-2">
-              <Label className="text-xs font-bold dark:text-slate-300">When?</Label>
-              <Input 
-                type="datetime-local"
-                value={newReminder.remindAt} 
-                onChange={e => setNewReminder({...newReminder, remindAt: e.target.value})} 
-                required
-                disabled={saving}
-                className="h-11 dark:bg-slate-900 dark:border-slate-800"
-              />
+              <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Due Date & Time</Label>
+              <Input type="datetime-local" value={newReminder.remindAt} onChange={e => setNewReminder({...newReminder, remindAt: e.target.value})} required disabled={saving} className="h-12 rounded-xl dark:bg-slate-900 dark:border-slate-800 px-4" />
             </div>
-            <DialogFooter className="flex flex-row gap-2 pt-2">
-              <Button type="button" variant="ghost" onClick={() => setIsReminderModalOpen(false)} className="flex-1 dark:hover:bg-slate-800" disabled={saving}>Cancel</Button>
-              <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={saving}>
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Set Reminder"}
+            <DialogFooter className="flex-row gap-3">
+              <Button type="button" variant="ghost" onClick={() => setIsReminderModalOpen(false)} className="flex-1 rounded-xl h-12" disabled={saving}>Cancel</Button>
+              <Button type="submit" className="flex-1 rounded-xl h-12 shadow-lg shadow-primary/20" disabled={saving}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Schedule"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Leave Request Modal */}
-      <Dialog open={isLeaveModalOpen} onOpenChange={(open) => { 
-        if (!saving) {
-          setIsLeaveModalOpen(open);
-          if (!open) forceUnlockUI();
-        }
-      }}>
-        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+      {/* Leave Request & Review Modals maintained from previous versions but using updated styling */}
+      <Dialog open={isLeaveModalOpen} onOpenChange={(open) => { if (!saving) { setIsLeaveModalOpen(open); if (!open) forceUnlockUI(); } }}>
+        <DialogContent className="sm:max-w-md p-8 rounded-[2rem] dark:bg-slate-950 border-none shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="dark:text-slate-100">{editingLeave ? 'Edit Leave Request' : 'Plan Leave'}</DialogTitle>
-            <DialogDescription>Submit your absence for manager approval. <span className="text-primary font-bold">Fridays are excluded.</span></DialogDescription>
+            <DialogTitle className="text-2xl font-bold tracking-tight">{editingLeave ? 'Update Leave' : 'Plan Absence'}</DialogTitle>
+            <DialogDescription>Submit your time-off request for manager approval.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSaveLeave} className="space-y-4 pt-4">
+          <form onSubmit={handleSaveLeave} className="space-y-5 pt-4">
              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                   <Label className="text-xs font-bold dark:text-slate-300">Start Date</Label>
-                   <Input 
-                    type="date" 
-                    value={leaveForm.startDate} 
-                    onChange={e => setLeaveForm({...leaveForm, startDate: e.target.value})}
-                    required
-                    disabled={saving}
-                    className="dark:bg-slate-900 dark:border-slate-800"
-                   />
+                <div className="space-y-1.5">
+                   <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Starts On</Label>
+                   <Input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate: e.target.value})} required className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800" />
                 </div>
-                <div className="space-y-2">
-                   <Label className="text-xs font-bold dark:text-slate-300">Duration (Days)</Label>
-                   <Input 
-                    type="number" 
-                    min="1" 
-                    max="30"
-                    value={leaveForm.days} 
-                    onChange={e => setLeaveForm({...leaveForm, days: e.target.value})}
-                    required
-                    disabled={saving}
-                    className="dark:bg-slate-900 dark:border-slate-800"
-                   />
+                <div className="space-y-1.5">
+                   <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Duration (Days)</Label>
+                   <Input type="number" min="1" max="30" value={leaveForm.days} onChange={e => setLeaveForm({...leaveForm, days: e.target.value})} required className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800" />
                 </div>
              </div>
-
-             {/* Live Preview */}
-             {previewDates && (
-               <div className="p-3 bg-violet-50 dark:bg-violet-500/10 rounded-lg border border-violet-100 dark:border-violet-900/30 text-[10px] space-y-1">
-                 <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground uppercase font-bold tracking-widest">End Date:</span>
-                    <span className="font-bold text-violet-700 dark:text-violet-300">{previewDates.endDate}</span>
-                 </div>
-                 <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground uppercase font-bold tracking-widest">Return Date:</span>
-                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{previewDates.returnDate}</span>
-                 </div>
-                 <p className="text-[9px] text-muted-foreground italic mt-1 pt-1 border-t border-violet-100 dark:border-violet-900/20">
-                   * Calculations skip Fridays as per organization policy.
-                 </p>
-               </div>
-             )}
-
-             <div className="space-y-2">
-                <Label className="text-xs font-bold dark:text-slate-300">Leave Type</Label>
-                <Select value={leaveForm.type} onValueChange={v => setLeaveForm({...leaveForm, type: v})} disabled={saving}>
-                   <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800"><SelectValue /></SelectTrigger>
-                   <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
-                      <SelectItem value="annual_leave">Annual Leave</SelectItem>
-                      <SelectItem value="sick_leave">Sick Leave</SelectItem>
-                      <SelectItem value="frl">FRL</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+             <div className="space-y-1.5">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Type of Leave</Label>
+                <Select value={leaveForm.type} onValueChange={v => setLeaveForm({...leaveForm, type: v})}>
+                   <SelectTrigger className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800"><SelectValue /></SelectTrigger>
+                   <SelectContent className="dark:bg-slate-900 rounded-xl">
+                      <SelectItem value="annual_leave">Annual Holiday</SelectItem>
+                      <SelectItem value="sick_leave">Medical Leave</SelectItem>
+                      <SelectItem value="frl">FRL Request</SelectItem>
+                      <SelectItem value="other">Compassionate/Other</SelectItem>
                    </SelectContent>
                 </Select>
              </div>
-             <div className="space-y-2">
-                <Label className="text-xs font-bold dark:text-slate-300">Reason / Note (Optional)</Label>
-                <Textarea 
-                 value={leaveForm.reason} 
-                 onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})}
-                 placeholder="Provide more context for your request..."
-                 rows={3}
-                 disabled={saving}
-                 className="dark:bg-slate-900 dark:border-slate-800"
-                />
+             <div className="space-y-1.5">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Optional Reason</Label>
+                <Textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} placeholder="Briefly explain..." rows={3} className="rounded-xl dark:bg-slate-900 dark:border-slate-800" />
              </div>
-             <DialogFooter className="pt-2 flex-row gap-2">
-                <Button type="button" variant="ghost" onClick={() => setIsLeaveModalOpen(false)} className="flex-1 dark:hover:bg-slate-800" disabled={saving}>Cancel</Button>
-                <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={saving}>
-                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : editingLeave ? 'Update' : 'Submit'}
+             <DialogFooter className="pt-2 gap-3 flex-row">
+                <Button type="button" variant="ghost" onClick={() => setIsLeaveModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancel</Button>
+                <Button type="submit" className="flex-1 h-12 rounded-xl shadow-lg" disabled={saving}>
+                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : editingLeave ? 'Update' : 'Request Leave'}
                 </Button>
              </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Leave Review Modal (Manager) */}
-      <Dialog open={isReviewModalOpen} onOpenChange={(open) => { 
-        if (!saving) {
-          setIsReviewModalOpen(open);
-          if (!open) { setReviewingLeave(null); forceUnlockUI(); }
-        }
-      }}>
-        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+      <Dialog open={isReviewModalOpen} onOpenChange={(open) => { if (!saving) { setIsReviewModalOpen(open); if (!open) { setReviewingLeave(null); forceUnlockUI(); } } }}>
+        <DialogContent className="sm:max-w-md p-8 rounded-[2rem] dark:bg-slate-950 border-none shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="dark:text-slate-100">Review Leave Request</DialogTitle>
-            <DialogDescription>
-              {reviewForm.status === 'approved' ? 'Approve' : 'Reject'} request from {reviewingLeave?.full_name}.
-            </DialogDescription>
+            <DialogTitle className="text-2xl font-bold tracking-tight">Review Leave Request</DialogTitle>
+            <DialogDescription>Decision for {reviewingLeave?.full_name}'s {reviewingLeave?.leave_type?.replace('_', ' ')}.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleReviewLeave} className="space-y-4 pt-4">
-             <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border dark:border-slate-800 text-xs space-y-2">
-                <div className="flex justify-between">
-                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Type</span>
-                   <span className="font-bold capitalize dark:text-slate-200">{reviewingLeave?.leave_type.replace('_', ' ')}</span>
-                </div>
-                <div className="flex justify-between">
-                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Dates</span>
-                   <span className="font-bold dark:text-slate-200">
-                     {reviewingLeave && new Date(reviewingLeave.start_date).toLocaleDateString()} — {reviewingLeave && new Date(reviewingLeave.end_date).toLocaleDateString()}
-                   </span>
-                </div>
-                <div className="flex justify-between">
-                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Return</span>
-                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                     {reviewingLeave && new Date(reviewingLeave.return_date).toLocaleDateString()}
-                   </span>
-                </div>
-                <div className="flex justify-between">
-                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Duration</span>
-                   <span className="font-bold text-primary">{reviewingLeave?.number_of_days} Business Days</span>
-                </div>
+          <form onSubmit={handleReviewLeave} className="space-y-5 pt-4">
+             <div className="p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border dark:border-slate-800 text-sm space-y-2">
+                <div className="flex justify-between font-medium"><span>Duration:</span> <span className="font-bold text-primary">{reviewingLeave?.number_of_days} Days</span></div>
+                <div className="flex justify-between font-medium"><span>Dates:</span> <span className="font-bold">{new Date(reviewingLeave?.start_date).toLocaleDateString()} - {new Date(reviewingLeave?.end_date).toLocaleDateString()}</span></div>
+                {reviewingLeave?.reason && <div className="mt-3 text-xs italic text-slate-500 border-t pt-2 opacity-80">"{reviewingLeave.reason}"</div>}
              </div>
-             <div className="space-y-2">
-                <Label className="text-xs font-bold dark:text-slate-300">Manager Reason / Feedback</Label>
-                <Textarea 
-                 value={reviewForm.reason} 
-                 onChange={e => setReviewForm({...reviewForm, reason: e.target.value})}
-                 placeholder="Explain your decision..."
-                 rows={4}
-                 required
-                 disabled={saving}
-                 className="dark:bg-slate-900 dark:border-slate-800"
-                />
+             <div className="space-y-1.5">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Manager Reason / Feedback</Label>
+                <Textarea value={reviewForm.reason} onChange={e => setReviewForm({...reviewForm, reason: e.target.value})} placeholder="Why is this being approved/rejected?" rows={4} required className="rounded-xl dark:bg-slate-900 dark:border-slate-800" />
              </div>
-             <DialogFooter className="pt-2 flex-row gap-2">
-                <Button type="button" variant="ghost" onClick={() => setIsReviewModalOpen(false)} className="flex-1 dark:hover:bg-slate-800" disabled={saving}>Cancel</Button>
-                <Button type="submit" className={cn(
-                  "flex-1 shadow-lg shadow-black/10",
-                  reviewForm.status === 'approved' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'
-                )} disabled={saving}>
-                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : reviewForm.status === 'approved' ? 'Approve' : 'Reject'}
+             <DialogFooter className="pt-2 gap-3 flex-row">
+                <Button type="button" variant="ghost" onClick={() => setIsReviewModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancel</Button>
+                <Button type="submit" className={cn("flex-1 h-12 rounded-xl shadow-lg", reviewForm.status === 'approved' ? 'bg-emerald-500' : 'bg-rose-500')} disabled={saving}>
+                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : reviewForm.status === 'approved' ? 'Confirm Approval' : 'Submit Rejection'}
                 </Button>
              </DialogFooter>
           </form>
@@ -1049,35 +835,36 @@ export default function DashboardPage() {
   );
 }
 
-function TaskDashboardCard({ task, compact = false }: { task: any, compact?: boolean }) {
+function TaskDashboardCard({ task }: { task: any }) {
   const taskProgress = task.progress_mode === 'manual' ? (task.manual_progress || 0) : (task.calculated_progress || 0);
   
   return (
-    <Card className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden dark:bg-slate-900">
-      <CardContent className={cn("flex items-center gap-4", compact ? "p-3" : "p-4")}>
+    <Card className="border-none shadow-sm hover:shadow-md transition-all group overflow-hidden bg-white dark:bg-slate-900 rounded-2xl">
+      <CardContent className="p-5 flex items-center gap-5">
         <div className={cn(
-          "w-1 h-10 md:h-12 rounded-full shrink-0",
+          "w-1.5 h-12 rounded-full shrink-0",
           task.priority === 'urgent' ? 'bg-rose-500' : task.priority === 'high' ? 'bg-amber-500' : 'bg-primary'
         )} />
         <div className="flex-1 min-w-0">
-          <Link href={`/tasks?taskId=${task.id}`} className="hover:text-primary transition-colors">
-            <h3 className={cn("font-bold truncate dark:text-slate-100", compact ? "text-xs" : "text-sm md:text-base")}>{task.title}</h3>
+          <Link href={`/tasks?taskId=${task.id}`} className="hover:text-primary transition-colors flex items-center gap-2 group/title">
+            <h3 className="font-extrabold truncate text-slate-800 dark:text-white group-hover/title:translate-x-1 transition-transform">{task.title}</h3>
+            {task.is_overdue && <Badge variant="destructive" className="h-4 text-[8px] uppercase px-1.5">Late</Badge>}
           </Link>
-          <div className="flex items-center gap-2 mt-0.5">
-            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-              <CalendarIcon className="w-3 h-3" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}
-            </p>
-            {!compact && task.sub_workspace_name && (
-              <Badge variant="secondary" className="text-[8px] h-3.5 px-1 bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 border-none">{task.sub_workspace_name}</Badge>
-            )}
+          <div className="flex items-center gap-3 mt-1 text-[11px] font-bold text-slate-400">
+            <span className="flex items-center gap-1.5 capitalize"><Clock className="w-3.5 h-3.5" /> {task.status.replace('_', ' ')}</span>
+            <span className="w-1 h-1 rounded-full bg-slate-300" />
+            <span className="flex items-center gap-1.5"><CalendarIcon className="w-3.5 h-3.5" /> {task.due_date ? new Date(task.due_date).toLocaleDateString() : 'No date'}</span>
           </div>
         </div>
-        {!compact && (
-          <div className="text-right shrink-0">
-            <p className="text-[10px] font-bold text-primary mb-1">{Math.round(taskProgress)}%</p>
-            <Progress value={taskProgress} className="w-16 h-1" />
-          </div>
-        )}
+        <div className="text-right shrink-0 hidden sm:block">
+           <div className="flex items-center justify-end gap-2 mb-1.5">
+              <span className="text-[10px] font-extrabold text-primary">{Math.round(taskProgress)}%</span>
+              <Progress value={taskProgress} className="w-16 h-1.5 bg-slate-100 dark:bg-slate-800" />
+           </div>
+        </div>
+        <Button variant="ghost" size="icon" className="text-slate-300 group-hover:text-primary transition-colors">
+           <MoreHorizontal className="w-5 h-5" />
+        </Button>
       </CardContent>
     </Card>
   );

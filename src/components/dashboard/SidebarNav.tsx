@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect } from "react";
@@ -14,7 +15,11 @@ import {
   Layers,
   ChevronDown,
   Trash2,
-  BadgeCheck
+  BadgeCheck,
+  ChevronRight,
+  User,
+  PanelLeft,
+  ChevronLeft
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -41,6 +47,7 @@ export function SidebarNav() {
   const router = useRouter();
   const { activeWorkspace, workspaces, switchWorkspace, hasPermission, userRole, userProfile, isVerified } = useWorkspace();
   const [mounted, setMounted] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -59,149 +66,199 @@ export function SidebarNav() {
   const avatarSrc = userProfile?.avatar_preset ? `/avatars/${userProfile.avatar_preset}.png` : userProfile?.avatar_url;
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-950 w-64 max-w-full">
-      {/* Branding Section - Only Logomark */}
-      <div className="px-6 pt-8 pb-4">
-        <div className="shrink-0">
-           <img src="/brand/logomark.png" alt="WorkspaceZ" className="w-10 h-10 object-contain dark:hidden" />
-           <img src="/brand/logomark-dark.png" alt="WorkspaceZ" className="w-10 h-10 object-contain hidden dark:block" />
+    <TooltipProvider delayDuration={0}>
+      <div className={cn(
+        "flex flex-col h-full bg-white dark:bg-slate-950 transition-all duration-300 border-r dark:border-slate-800 shadow-sm relative group",
+        isCollapsed ? "w-20" : "w-64"
+      )}>
+        {/* Collapse Toggle - Only visible on hover for clean look */}
+        <button 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="absolute -right-3 top-10 w-6 h-6 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-400 hover:text-primary z-50 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
+        </button>
+
+        {/* Branding Section */}
+        <div className={cn("px-6 pt-8 pb-6 flex items-center", isCollapsed ? "justify-center" : "justify-start")}>
+          <div className="shrink-0">
+             <img src="/brand/logomark.png" alt="WorkspaceZ" className="w-9 h-9 object-contain dark:hidden" />
+             <img src="/brand/logomark-dark.png" alt="WorkspaceZ" className="w-9 h-9 object-contain hidden dark:block" />
+          </div>
+          {!isCollapsed && (
+            <span className="ml-3 font-extrabold text-lg tracking-tight text-slate-900 dark:text-white uppercase">
+              Workspace<span className="text-primary">Z</span>
+            </span>
+          )}
         </div>
-      </div>
 
-      <div className="p-4 px-6 pt-2">
-        {!mounted ? (
-          <div className="w-full h-12 rounded-lg bg-slate-100 dark:bg-slate-900 animate-pulse" />
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button 
-                type="button"
-                className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors border border-slate-100 dark:border-slate-800 shadow-sm"
-              >
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <div className="w-7 h-7 bg-primary/10 dark:bg-primary/20 rounded flex items-center justify-center shrink-0 border border-primary/20">
-                    <span className="text-primary font-bold text-sm">
-                      {activeWorkspace?.name?.[0] || 'W'}
-                    </span>
+        {/* Workspace Switcher */}
+        <div className={cn("px-4 pb-4", isCollapsed ? "flex justify-center" : "")}>
+          {!mounted ? (
+            <div className="w-full h-12 rounded-xl bg-slate-100 dark:bg-slate-900 animate-pulse" />
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button 
+                  type="button"
+                  className={cn(
+                    "flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-900 transition-all border border-slate-100 dark:border-slate-800 shadow-sm active:scale-95 group/ws",
+                    isCollapsed ? "justify-center w-12" : "w-full justify-between"
+                  )}
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
+                      <span className="text-white font-bold text-xs">
+                        {activeWorkspace?.name?.[0] || 'W'}
+                      </span>
+                    </div>
+                    {!isCollapsed && (
+                      <div className="text-left overflow-hidden">
+                         <h1 className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">
+                           {activeWorkspace?.name || 'Loading...'}
+                         </h1>
+                         <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest opacity-60">
+                           {activeWorkspace?.join_code || ''}
+                         </p>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-left overflow-hidden">
-                     <h1 className="text-xs font-bold truncate text-slate-950 dark:text-slate-100">
-                       {activeWorkspace?.name || 'Loading...'}
-                     </h1>
-                     <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate uppercase tracking-tighter">
-                       {activeWorkspace?.join_code || ''}
-                     </p>
-                  </div>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56 dark:bg-slate-900 dark:border-slate-800" align="start">
-              {workspaces.map((ws) => (
-                <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)} className="dark:text-slate-300">
-                  {ws.name}
+                  {!isCollapsed && <ChevronDown className="w-3 h-3 text-slate-400 group-hover/ws:text-primary transition-colors" />}
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56 dark:bg-slate-900 dark:border-slate-800 rounded-xl" align={isCollapsed ? "center" : "start"} side="right">
+                <div className="p-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b dark:border-slate-800 mb-1">Your Workspaces</div>
+                {workspaces.map((ws) => (
+                  <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)} className="rounded-lg gap-2 py-2">
+                    <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center text-[10px] font-bold">{ws.name[0]}</div>
+                    <span className="font-medium">{ws.name}</span>
+                    {ws.id === activeWorkspace?.id && <BadgeCheck className="w-3.5 h-3.5 text-primary ml-auto" />}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem onClick={() => router.push('/workspace-setup')} className="text-primary font-bold gap-2 py-2 mt-1 border-t dark:border-slate-800">
+                  <Plus className="w-4 h-4" /> Create New
                 </DropdownMenuItem>
-              ))}
-              <DropdownMenuItem onClick={() => router.push('/workspace-setup')} className="text-primary font-bold">
-                Create/Join New
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
 
-      <nav className="flex-1 px-4 space-y-1 pt-4">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link key={item.href} href={item.href}>
+        {/* Navigation */}
+        <nav className="flex-1 px-3 space-y-1.5 pt-4">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href;
+            const content = (
               <span className={cn(
-                "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm transition-all relative overflow-hidden",
                 isActive 
-                  ? "bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-bold" 
+                  ? "bg-primary text-white font-bold shadow-lg shadow-primary/20" 
                   : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100"
               )}>
-                <item.icon className="w-5 h-5" />
-                {item.label}
+                <item.icon className={cn("w-5 h-5", isActive ? "scale-110" : "")} />
+                {!isCollapsed && <span>{item.label}</span>}
+                {isActive && !isCollapsed && <div className="absolute right-3 w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+              </span>
+            );
+
+            return isCollapsed ? (
+              <Tooltip key={item.href}>
+                <TooltipTrigger asChild>
+                  <Link href={item.href}>{content}</Link>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="font-bold">{item.label}</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Link key={item.href} href={item.href}>{content}</Link>
+            );
+          })}
+          
+          <div className="my-6 mx-2 border-t dark:border-slate-800 opacity-50" />
+
+          {canViewTrash && (
+            <Link href="/trash">
+              <span className={cn(
+                "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all",
+                pathname === "/trash" 
+                  ? "bg-rose-500 text-white font-bold shadow-lg shadow-rose-500/20" 
+                  : "text-slate-600 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400"
+              )}>
+                <Trash2 className="w-5 h-5" />
+                {!isCollapsed && <span>Trash Bin</span>}
               </span>
             </Link>
-          );
-        })}
-        
-        {canViewTrash && (
-          <Link href="/trash">
-            <span className={cn(
-              "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
-              pathname === "/trash" 
-                ? "bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold" 
-                : "text-slate-600 dark:text-slate-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 hover:text-rose-600 dark:hover:text-rose-400"
-            )}>
-              <Trash2 className="w-5 h-5" />
-              Trash
-            </span>
-          </Link>
-        )}
+          )}
 
-        {canViewAdminPanel && (
-          <Link href="/workspace">
-            <span className={cn(
-              "flex items-center gap-3 px-3 py-3 md:py-2.5 rounded-md text-sm font-medium transition-colors",
-              pathname === "/workspace" 
-                ? "bg-primary/10 text-primary font-bold" 
-                : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100"
+          {canViewAdminPanel && (
+            <Link href="/workspace">
+              <span className={cn(
+                "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all",
+                pathname === "/workspace" 
+                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold shadow-lg" 
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900"
+                )}>
+                <Layers className="w-5 h-5" />
+                {!isCollapsed && <span>Admin Panel</span>}
+              </span>
+            </Link>
+          )}
+        </nav>
+
+        {/* User Profile & Actions */}
+        <div className="p-4 border-t dark:border-slate-800 space-y-3 mb-safe bg-slate-50/30 dark:bg-slate-900/10">
+          {userProfile && (
+            <Link href="/settings">
+              <div className={cn(
+                "flex items-center gap-3 p-2 rounded-xl hover:bg-white dark:hover:bg-slate-900 transition-all border border-transparent hover:border-slate-100 dark:hover:border-slate-800 group/profile",
+                isCollapsed ? "justify-center" : "px-3"
               )}>
-              <Layers className="w-5 h-5" />
-              Admin Panel
-            </span>
-          </Link>
-        )}
-      </nav>
-
-      <div className="p-4 border-t dark:border-slate-800 space-y-2 mb-safe">
-        {userProfile && (
-          <Link href="/settings">
-            <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors mb-2">
-              <Avatar className="w-8 h-8 border dark:border-slate-800 shadow-sm shrink-0">
-                <AvatarImage src={avatarSrc} />
-                <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
-                  {userProfile.full_name?.[0]}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1">
-                  <p className="text-xs font-bold truncate text-slate-950 dark:text-slate-100">{userProfile.full_name}</p>
-                  {isVerified && <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
+                <div className="relative">
+                  <Avatar className="w-9 h-9 border-2 border-white dark:border-slate-800 shadow-md transition-transform group-hover/profile:scale-105">
+                    <AvatarImage src={avatarSrc} />
+                    <AvatarFallback className="bg-primary/10 text-primary font-extrabold text-xs">
+                      {userProfile.full_name?.[0]}
+                    </AvatarFallback>
+                  </Avatar>
+                  {isVerified && <div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-950 rounded-full p-0.5"><BadgeCheck className="w-3.5 h-3.5 text-primary fill-primary/10" /></div>}
                 </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">@{userProfile.username}</p>
+                {!isCollapsed && (
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-extrabold truncate text-slate-900 dark:text-white uppercase tracking-tight">{userProfile.full_name}</p>
+                    <p className="text-[10px] text-slate-500 font-medium truncate italic">@{userProfile.username}</p>
+                  </div>
+                )}
               </div>
+            </Link>
+          )}
+
+          <div className="flex flex-col gap-1">
+            <Link href="/settings">
+              <span className={cn(
+                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-primary hover:bg-white dark:hover:bg-slate-900 transition-all",
+                pathname === "/settings" && "text-primary bg-white dark:bg-slate-900"
+              )}>
+                <Settings className="w-4 h-4" />
+                {!isCollapsed && <span>Preferences</span>}
+              </span>
+            </Link>
+            <button 
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all text-left w-full"
+              onClick={handleLogout}
+            >
+              <LogOut className="w-4 h-4" />
+              {!isCollapsed && <span>Sign Out</span>}
+            </button>
+          </div>
+          
+          {!isCollapsed && (
+            <div className="mt-4 pt-4 border-t dark:border-slate-800 flex flex-col items-center">
+               <p className="text-[9px] text-slate-400 font-extrabold tracking-[0.2em] uppercase leading-relaxed text-center">
+                 Powered by Eos Studios
+               </p>
+               <span className="text-[7px] text-slate-400 opacity-50 uppercase font-medium mt-0.5">Creation of Maldives</span>
             </div>
-          </Link>
-        )}
-        <Link href="/settings">
-          <span className={cn(
-            "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100",
-            pathname === "/settings" && "bg-primary/10 text-primary font-bold"
-          )}>
-            <Settings className="w-4 h-4" />
-            Settings
-          </span>
-        </Link>
-        <Button 
-          variant="ghost" 
-          className="w-full justify-start text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 h-10 px-3"
-          onClick={handleLogout}
-        >
-          <LogOut className="w-4 h-4 mr-3" />
-          Logout
-        </Button>
-        
-        <div className="mt-4 pt-4 border-t dark:border-slate-800">
-           <p className="text-[9px] text-slate-400 dark:text-slate-600 text-center uppercase tracking-widest font-bold leading-relaxed">
-             Powered by Eos Studios<br/>
-             <span className="text-[7px] opacity-60">Creation of Maldives</span>
-           </p>
+          )}
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
