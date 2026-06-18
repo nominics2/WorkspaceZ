@@ -194,7 +194,7 @@ function TasksPageContent() {
         const uids = mData.map(m => m.user_id);
         const { data: pData, error: pErr } = await supabase
           .from('profiles')
-          .select('id, full_name, avatar_url, avatar_preset')
+          .select('id, full_name, username, avatar_url, avatar_preset')
           .in('id', uids);
         
         if (pErr) throw pErr;
@@ -484,14 +484,7 @@ function TasksPageContent() {
       const assignees = taskAssignees[t.id] || [];
       const isAssigned = assignees.some(a => a.user_id === userProfile?.id);
       const isCreator = t.created_by === userProfile?.id;
-      // Note: Team membership check would require knowing which teams user is in. 
-      // Assuming my_tasks_view handles this at the DB level, but adding safety here.
       
-      if (!isSuperOrAdmin && !isAssigned && !isCreator) {
-        // If it's a team task and not assigned to user, we trust DB view for now.
-        // If we wanted manual filter: if (!userTeams.includes(t.sub_workspace_id)) return false;
-      }
-
       const matchesSearch = t.title.toLowerCase().includes(searchTerm.toLowerCase()) || t.description?.toLowerCase().includes(searchTerm.toLowerCase());
       if (!matchesSearch) return false;
 
@@ -643,7 +636,6 @@ function TasksPageContent() {
           </div>
           
           <div className="flex items-center gap-2 w-full md:w-auto px-2">
-             {/* View Switcher */}
              <DropdownMenu onOpenChange={() => forceUnlockUI()}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2 border-none bg-slate-50 dark:bg-slate-800 dark:text-slate-300">
@@ -665,7 +657,6 @@ function TasksPageContent() {
                 </DropdownMenuContent>
              </DropdownMenu>
 
-             {/* Sort Dropdown */}
              <DropdownMenu onOpenChange={() => forceUnlockUI()}>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm" className="gap-2 border-none bg-slate-50 dark:bg-slate-800 dark:text-slate-300">
@@ -1129,16 +1120,20 @@ function AssigneePicker({ members, selectedIds, onToggle, disabled, variant = "d
           <UserPlus className="w-3.5 h-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-0 dark:bg-slate-950 dark:border-slate-800" align="start">
+      <PopoverContent className="w-64 p-0 dark:bg-slate-950 dark:border-slate-800 z-[100] pointer-events-auto" align="start">
         <ScrollArea className="h-64">
           <div className="p-2 space-y-1">
             {members.map((m: any) => (
               <div 
                 key={m.user_id}
-                className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg cursor-pointer transition-colors"
-                onClick={() => onToggle(m.user_id)}
+                className="flex items-center gap-3 p-2 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-lg cursor-pointer transition-colors pointer-events-auto"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggle(m.user_id);
+                }}
               >
-                <Checkbox checked={selectedIds.includes(m.user_id)} className="shrink-0" />
+                <Checkbox checked={selectedIds.includes(m.user_id)} className="shrink-0 pointer-events-none" />
                 <Avatar className="w-6 h-6 border dark:border-slate-800">
                   <AvatarImage src={m.profiles?.avatar_preset ? `/avatars/${m.profiles.avatar_preset}.png` : m.profiles?.avatar_url} />
                   <AvatarFallback className="text-[8px]">{m.profiles?.full_name?.[0]}</AvatarFallback>
