@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -25,7 +26,11 @@ import {
   CheckSquare,
   Trash2,
   Paperclip,
-  BadgeCheck
+  BadgeCheck,
+  PlaneTakeoff,
+  History,
+  XCircle,
+  FileText
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -38,11 +43,14 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const activityConfig: Record<string, { label: string; icon: any; color: string; bg: string }> = {
   task_created: { label: "created task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-500" },
@@ -66,11 +74,32 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [reminders, setReminders] = useState<any[]>([]);
   const [workload, setWorkload] = useState<any[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<any[]>([]);
+  const [leaveApprovals, setLeaveApprovals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isRunningChecks, setIsRunningChecks] = useState(false);
+  
+  // Reminders Modal
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [newReminder, setNewReminder] = useState({ title: "", remindAt: "" });
+
+  // Leave Planner Modals
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [editingLeave, setEditingLeave] = useState<any>(null);
+  const [leaveForm, setLeaveForm] = useState({
+    startDate: "",
+    days: "1",
+    type: "annual_leave",
+    reason: ""
+  });
+
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewingLeave, setReviewingLeave] = useState<any>(null);
+  const [reviewForm, setReviewForm] = useState({
+    status: "" as "approved" | "rejected",
+    reason: ""
+  });
   
   const supabase = createClient();
   const { toast } = useToast();
@@ -89,14 +118,7 @@ export default function DashboardPage() {
     if (!activeWorkspace || !userProfile) return;
     setLoading(true);
     try {
-      // 1. Fetch Summary View
-      const { data: summary } = await supabase
-        .from('dashboard_task_summary_view')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .maybeSingle();
-
-      // 2. Fetch My Tasks
+      // 1. Fetch My Tasks
       const { data: myTasks } = await supabase
         .from('my_tasks_view')
         .select('*')
@@ -123,7 +145,7 @@ export default function DashboardPage() {
 
       setTasks(myTasks || []);
 
-      // 3. Activity Feed (Enriched with verification from workspace_members)
+      // 2. Activity Feed
       const { data: recentLogs } = await supabase
         .from('recent_activity_view')
         .select('*')
@@ -131,7 +153,6 @@ export default function DashboardPage() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      // Fetch member verification statuses for logs
       const actorIds = [...new Set((recentLogs || []).map(log => log.actor_id))];
       const { data: memberData } = await supabase
         .from('workspace_members')
@@ -146,7 +167,7 @@ export default function DashboardPage() {
 
       setActivity(enrichedLogs);
 
-      // 4. Notifications
+      // 3. Notifications
       const { data: notifs } = await supabase
         .from('notifications')
         .select('*')
@@ -157,7 +178,7 @@ export default function DashboardPage() {
         .limit(5);
       setNotifications(notifs || []);
 
-      // 5. Reminders
+      // 4. Reminders
       const { data: rems } = await supabase
         .from('reminders')
         .select('*')
@@ -167,7 +188,7 @@ export default function DashboardPage() {
         .limit(5);
       setReminders(rems || []);
 
-      // 6. Workload
+      // 5. Workload
       if (userRole === 'superadmin' || hasPermission('view_admin_panel') || hasPermission('view_all_tasks')) {
         const { data: work } = await supabase
           .from('member_workload_view')
@@ -175,6 +196,27 @@ export default function DashboardPage() {
           .eq('workspace_id', activeWorkspace.id)
           .order('active_tasks', { ascending: false });
         setWorkload(work || []);
+      }
+
+      // 6. Leave Requests
+      const { data: leaves } = await supabase
+        .from('leave_requests_view')
+        .select('*')
+        .eq('workspace_id', activeWorkspace.id)
+        .eq('user_id', userProfile.id)
+        .order('start_date', { ascending: false });
+      setLeaveRequests(leaves || []);
+
+      // 7. Pending Approvals
+      if (userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager' || hasPermission('approve_leave_requests')) {
+        const { data: approvals } = await supabase
+          .from('leave_requests_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .eq('status', 'pending')
+          .neq('user_id', userProfile.id)
+          .order('created_at', { ascending: true });
+        setLeaveApprovals(approvals || []);
       }
 
     } catch (err) {
@@ -252,6 +294,101 @@ export default function DashboardPage() {
     }
   };
 
+  // Leave Requests Handlers
+  const openLeaveModal = (leave: any = null) => {
+    if (leave) {
+      setEditingLeave(leave);
+      setLeaveForm({
+        startDate: leave.start_date.split('T')[0],
+        days: leave.number_of_days.toString(),
+        type: leave.leave_type,
+        reason: leave.reason || ""
+      });
+    } else {
+      setEditingLeave(null);
+      setLeaveForm({
+        startDate: new Date().toISOString().split('T')[0],
+        days: "1",
+        type: "annual_leave",
+        reason: ""
+      });
+    }
+    setIsLeaveModalOpen(true);
+  };
+
+  const handleSaveLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeWorkspace || !userProfile) return;
+    setSaving(true);
+    try {
+      if (editingLeave) {
+        const { error } = await supabase.rpc('update_leave_request', {
+          p_leave_request_id: editingLeave.id,
+          p_start_date: leaveForm.startDate,
+          p_number_of_days: parseInt(leaveForm.days),
+          p_leave_type: leaveForm.type,
+          p_reason: leaveForm.reason
+        });
+        if (error) throw error;
+        toast({ title: "Leave request updated" });
+      } else {
+        const { error } = await supabase.rpc('create_leave_request', {
+          p_workspace_id: activeWorkspace.id,
+          p_start_date: leaveForm.startDate,
+          p_number_of_days: parseInt(leaveForm.days),
+          p_leave_type: leaveForm.type,
+          p_reason: leaveForm.reason
+        });
+        if (error) throw error;
+        toast({ title: "Leave request submitted", description: "Your manager will review it shortly." });
+      }
+      setIsLeaveModalOpen(false);
+      forceUnlockUI();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+      forceUnlockUI();
+    }
+  };
+
+  const handleCancelLeave = async (id: string) => {
+    if (!confirm("Are you sure you want to cancel this leave request?")) return;
+    try {
+      const { error } = await supabase.rpc('cancel_leave_request', { p_leave_request_id: id });
+      if (error) throw error;
+      toast({ title: "Leave request cancelled" });
+      fetchDashboardData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleReviewLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewingLeave) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc('review_leave_request', {
+        p_leave_request_id: reviewingLeave.id,
+        p_status: reviewForm.status,
+        p_manager_reason: reviewForm.reason
+      });
+      if (error) throw error;
+      toast({ title: `Leave request ${reviewForm.status}` });
+      setIsReviewModalOpen(false);
+      setReviewingLeave(null);
+      forceUnlockUI();
+      fetchDashboardData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+      forceUnlockUI();
+    }
+  };
+
   const todaysTasks = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -280,6 +417,7 @@ export default function DashboardPage() {
   }
 
   const isAdmin = userRole === 'superadmin' || userRole === 'admin';
+  const isManager = isAdmin || userRole === 'manager' || hasPermission('approve_leave_requests');
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-12">
@@ -323,6 +461,70 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8">
         {/* Left Column - Tasks & Activity */}
         <div className="lg:col-span-8 space-y-8">
+          
+          {/* Leave Approvals (Manager only) */}
+          {isManager && leaveApprovals.length > 0 && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                 <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                   <Shield className="w-5 h-5 text-primary" />
+                   Pending Leave Approvals
+                 </h2>
+                 <Badge variant="default" className="bg-primary">{leaveApprovals.length}</Badge>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                 {leaveApprovals.map(leave => (
+                   <Card key={leave.id} className="border-none shadow-sm dark:bg-slate-900 group">
+                     <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                       <Avatar className="w-10 h-10 border dark:border-slate-800">
+                         <AvatarImage src={leave.avatar_preset ? `/avatars/${leave.avatar_preset}.png` : leave.avatar_url} />
+                         <AvatarFallback className="text-[10px] font-bold bg-primary/5 text-primary">
+                           {leave.full_name?.[0]}
+                         </AvatarFallback>
+                       </Avatar>
+                       <div className="flex-1 min-w-0">
+                         <div className="flex items-center gap-2 mb-0.5">
+                           <span className="font-bold text-sm dark:text-slate-100">{leave.full_name}</span>
+                           <Badge variant="outline" className="text-[9px] uppercase dark:border-slate-800">{leave.leave_type.replace('_', ' ')}</Badge>
+                         </div>
+                         <div className="text-[10px] text-muted-foreground flex items-center gap-3">
+                           <span className="flex items-center gap-1"><CalendarIcon className="w-3 h-3" /> {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()}</span>
+                           <span className="font-bold text-primary">{leave.number_of_days} days</span>
+                         </div>
+                         {leave.reason && <p className="text-[10px] italic mt-1 line-clamp-1">"{leave.reason}"</p>}
+                       </div>
+                       <div className="flex items-center gap-2">
+                         <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                          onClick={() => {
+                            setReviewingLeave(leave);
+                            setReviewForm({ status: 'rejected', reason: "" });
+                            setIsReviewModalOpen(true);
+                          }}
+                         >
+                           Reject
+                         </Button>
+                         <Button 
+                          size="sm" 
+                          className="h-8 bg-emerald-500 hover:bg-emerald-600 text-white"
+                          onClick={() => {
+                            setReviewingLeave(leave);
+                            setReviewForm({ status: 'approved', reason: "" });
+                            setIsReviewModalOpen(true);
+                          }}
+                         >
+                           Approve
+                         </Button>
+                       </div>
+                     </CardContent>
+                   </Card>
+                 ))}
+              </div>
+            </section>
+          )}
+
           {/* Quick Actions */}
           <section className="space-y-4">
             <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">Quick Actions</h2>
@@ -331,9 +533,8 @@ export default function DashboardPage() {
                 { label: "Task", icon: CheckSquare, href: "/tasks", color: "bg-blue-500" },
                 { label: "Note", icon: StickyNote, href: "/notes", color: "bg-amber-500" },
                 { label: "Chat", icon: MessageSquare, href: "/chat", color: "bg-emerald-500" },
-                { label: "Checkup", icon: Zap, onClick: handleRunNotificationChecks, color: "bg-violet-500", admin: true },
+                { label: "Plan Leave", icon: PlaneTakeoff, onClick: () => openLeaveModal(), color: "bg-violet-500" },
               ].map((action) => {
-                if (action.admin && !isAdmin) return null;
                 const Content = (
                   <Card className="border-none shadow-sm hover:translate-y-[-2px] transition-all cursor-pointer group dark:bg-slate-900">
                     <CardContent className="p-4 flex flex-col items-center justify-center gap-2">
@@ -375,33 +576,76 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Overdue & Soon */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <section className="space-y-4">
-              <h3 className="text-sm font-bold uppercase text-rose-500 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" /> Overdue
-              </h3>
-              <div className="space-y-3">
-                {overdueList.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">Nothing overdue.</p>
-                ) : (
-                  overdueList.map(task => <TaskDashboardCard key={task.id} task={task} compact />)
-                )}
-              </div>
-            </section>
-            <section className="space-y-4">
-              <h3 className="text-sm font-bold uppercase text-amber-500 flex items-center gap-2">
-                <Clock className="w-4 h-4" /> Due Soon
-              </h3>
-              <div className="space-y-3">
-                {dueSoonList.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic p-4 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">No urgent deadlines.</p>
-                ) : (
-                  dueSoonList.map(task => <TaskDashboardCard key={task.id} task={task} compact />)
-                )}
-              </div>
-            </section>
-          </div>
+          {/* Leave Planner List */}
+          <section className="space-y-4">
+             <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+                  <PlaneTakeoff className="w-5 h-5 text-violet-500" />
+                  My Leave Planner
+                </h2>
+                <Button variant="ghost" size="sm" onClick={() => openLeaveModal()} className="text-xs gap-1 text-primary">
+                  <Plus className="w-3.5 h-3.5" /> Plan Leave
+                </Button>
+             </div>
+             <Card className="border-none shadow-sm dark:bg-slate-900 overflow-hidden">
+                <CardContent className="p-0">
+                  {leaveRequests.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic text-center py-10">No leave requests planned.</p>
+                  ) : (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                       {leaveRequests.map(leave => (
+                         <div key={leave.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
+                            <div className="flex items-start gap-4">
+                               <div className={cn(
+                                 "p-2.5 rounded-xl shrink-0",
+                                 leave.leave_type === 'sick_leave' ? "bg-rose-50 text-rose-500 dark:bg-rose-500/10" :
+                                 leave.leave_type === 'annual_leave' ? "bg-emerald-50 text-emerald-500 dark:bg-emerald-500/10" :
+                                 "bg-blue-50 text-blue-500 dark:bg-blue-500/10"
+                               )}>
+                                 <PlaneTakeoff className="w-5 h-5" />
+                               </div>
+                               <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                     <span className="font-bold text-sm capitalize dark:text-slate-100">{leave.leave_type.replace('_', ' ')}</span>
+                                     <Badge className={cn(
+                                       "text-[9px] uppercase tracking-wider h-4 px-1.5",
+                                       leave.status === 'pending' ? "bg-amber-500" :
+                                       leave.status === 'approved' ? "bg-emerald-500" :
+                                       leave.status === 'rejected' ? "bg-rose-500" :
+                                       "bg-slate-400"
+                                     )}>
+                                       {leave.status}
+                                     </Badge>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()} • {leave.number_of_days} days
+                                  </p>
+                                  {leave.manager_reason && (
+                                    <p className="text-[10px] text-muted-foreground mt-1 bg-slate-50 dark:bg-slate-950 p-2 rounded-lg border dark:border-slate-800">
+                                      <span className="font-bold">Feedback:</span> {leave.manager_reason}
+                                    </p>
+                                  )}
+                               </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                               {leave.status === 'pending' && (
+                                 <>
+                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-primary" onClick={() => openLeaveModal(leave)}>
+                                     <RefreshCw className="w-4 h-4" />
+                                   </Button>
+                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-rose-500" onClick={() => handleCancelLeave(leave.id)}>
+                                     <XCircle className="w-4 h-4" />
+                                   </Button>
+                                 </>
+                               )}
+                            </div>
+                         </div>
+                       ))}
+                    </div>
+                  )}
+                </CardContent>
+             </Card>
+          </section>
 
           {/* Activity Feed */}
           <section className="space-y-4">
@@ -421,11 +665,9 @@ export default function DashboardPage() {
                       };
                       const ActionIcon = config.icon;
                       
-                      // Identity mapping
                       const actorName = log.actor_full_name || log.actor_username || log.actor_email || "Someone";
                       const avatarSrc = log.actor_avatar_preset ? `/avatars/${log.actor_avatar_preset}.png` : log.actor_avatar_url;
                       
-                      // Target mapping
                       const targetTitle = log.task_title || log.note_title || "";
 
                       return (
@@ -561,6 +803,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Reminder Modal */}
       <Dialog open={isReminderModalOpen} onOpenChange={(open) => { 
         if (!saving) {
           setIsReminderModalOpen(open);
@@ -600,6 +843,132 @@ export default function DashboardPage() {
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Set Reminder"}
               </Button>
             </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Leave Request Modal */}
+      <Dialog open={isLeaveModalOpen} onOpenChange={(open) => { 
+        if (!saving) {
+          setIsLeaveModalOpen(open);
+          if (!open) forceUnlockUI();
+        }
+      }}>
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="dark:text-slate-100">{editingLeave ? 'Edit Leave Request' : 'Plan Leave'}</DialogTitle>
+            <DialogDescription>Submit your absence for manager approval.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveLeave} className="space-y-4 pt-4">
+             <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                   <Label className="text-xs font-bold dark:text-slate-300">Start Date</Label>
+                   <Input 
+                    type="date" 
+                    value={leaveForm.startDate} 
+                    onChange={e => setLeaveForm({...leaveForm, startDate: e.target.value})}
+                    required
+                    disabled={saving}
+                    className="dark:bg-slate-900 dark:border-slate-800"
+                   />
+                </div>
+                <div className="space-y-2">
+                   <Label className="text-xs font-bold dark:text-slate-300">Duration (Days)</Label>
+                   <Input 
+                    type="number" 
+                    min="1" 
+                    max="30"
+                    value={leaveForm.days} 
+                    onChange={e => setLeaveForm({...leaveForm, days: e.target.value})}
+                    required
+                    disabled={saving}
+                    className="dark:bg-slate-900 dark:border-slate-800"
+                   />
+                </div>
+             </div>
+             <div className="space-y-2">
+                <Label className="text-xs font-bold dark:text-slate-300">Leave Type</Label>
+                <Select value={leaveForm.type} onValueChange={v => setLeaveForm({...leaveForm, type: v})} disabled={saving}>
+                   <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800"><SelectValue /></SelectTrigger>
+                   <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
+                      <SelectItem value="annual_leave">Annual Leave</SelectItem>
+                      <SelectItem value="sick_leave">Sick Leave</SelectItem>
+                      <SelectItem value="frl">FRL</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                   </SelectContent>
+                </Select>
+             </div>
+             <div className="space-y-2">
+                <Label className="text-xs font-bold dark:text-slate-300">Reason / Note (Optional)</Label>
+                <Textarea 
+                 value={leaveForm.reason} 
+                 onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})}
+                 placeholder="Provide more context for your request..."
+                 rows={3}
+                 disabled={saving}
+                 className="dark:bg-slate-900 dark:border-slate-800"
+                />
+             </div>
+             <DialogFooter className="pt-2 flex-row gap-2">
+                <Button type="button" variant="ghost" onClick={() => setIsLeaveModalOpen(false)} className="flex-1 dark:hover:bg-slate-800" disabled={saving}>Cancel</Button>
+                <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={saving}>
+                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : editingLeave ? 'Update' : 'Submit'}
+                </Button>
+             </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Leave Review Modal (Manager) */}
+      <Dialog open={isReviewModalOpen} onOpenChange={(open) => { 
+        if (!saving) {
+          setIsReviewModalOpen(open);
+          if (!open) { setReviewingLeave(null); forceUnlockUI(); }
+        }
+      }}>
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <DialogHeader>
+            <DialogTitle className="dark:text-slate-100">Review Leave Request</DialogTitle>
+            <DialogDescription>
+              {reviewForm.status === 'approved' ? 'Approve' : 'Reject'} request from {reviewingLeave?.full_name}.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleReviewLeave} className="space-y-4 pt-4">
+             <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border dark:border-slate-800 text-xs space-y-2">
+                <div className="flex justify-between">
+                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Type</span>
+                   <span className="font-bold capitalize dark:text-slate-200">{reviewingLeave?.leave_type.replace('_', ' ')}</span>
+                </div>
+                <div className="flex justify-between">
+                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Dates</span>
+                   <span className="font-bold dark:text-slate-200">{reviewingLeave && new Date(reviewingLeave.start_date).toLocaleDateString()} - {reviewingLeave && new Date(reviewingLeave.end_date).toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between">
+                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Duration</span>
+                   <span className="font-bold text-primary">{reviewingLeave?.number_of_days} Days</span>
+                </div>
+             </div>
+             <div className="space-y-2">
+                <Label className="text-xs font-bold dark:text-slate-300">Manager Reason / Feedback</Label>
+                <Textarea 
+                 value={reviewForm.reason} 
+                 onChange={e => setReviewForm({...reviewForm, reason: e.target.value})}
+                 placeholder="Explain your decision..."
+                 rows={4}
+                 required
+                 disabled={saving}
+                 className="dark:bg-slate-900 dark:border-slate-800"
+                />
+             </div>
+             <DialogFooter className="pt-2 flex-row gap-2">
+                <Button type="button" variant="ghost" onClick={() => setIsReviewModalOpen(false)} className="flex-1 dark:hover:bg-slate-800" disabled={saving}>Cancel</Button>
+                <Button type="submit" className={cn(
+                  "flex-1 shadow-lg shadow-black/10",
+                  reviewForm.status === 'approved' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600'
+                )} disabled={saving}>
+                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : reviewForm.status === 'approved' ? 'Approve' : 'Reject'}
+                </Button>
+             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

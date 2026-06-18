@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -179,7 +180,7 @@ export function NotificationBell() {
       router.push(`/notes?noteId=${notification.related_note_id}`);
     } else if (notification.related_message_id) {
       router.push(`/chat`);
-    } else if (notification.related_reminder_id) {
+    } else if (notification.related_reminder_id || notification.related_leave_request_id) {
       router.push(`/dashboard`);
     }
   };
