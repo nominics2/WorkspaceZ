@@ -30,7 +30,9 @@ import {
   PlaneTakeoff,
   History,
   XCircle,
-  FileText
+  FileText,
+  Shield,
+  ArrowRightCircle
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -400,17 +402,50 @@ export default function DashboardPage() {
     });
   }, [tasks]);
 
-  const overdueList = useMemo(() => tasks.filter(t => t.is_overdue && t.status !== 'completed'), [tasks]);
-  const dueSoonList = useMemo(() => {
-    const soon = new Date();
-    soon.setDate(soon.getDate() + 3);
-    const today = new Date();
-    return tasks.filter(t => {
-      if (!t.due_date || t.status === 'completed') return false;
-      const due = new Date(t.due_date);
-      return due <= soon && due > today;
-    });
-  }, [tasks]);
+  // Frontend calculation for live preview (skipping Fridays)
+  const previewDates = useMemo(() => {
+    if (!leaveForm.startDate || !leaveForm.days) return null;
+    const numDays = parseInt(leaveForm.days);
+    if (isNaN(numDays) || numDays <= 0) return null;
+
+    let current = new Date(leaveForm.startDate);
+    let daysToTake = numDays;
+    let lastLeaveDay = new Date(current);
+
+    // If start date is a Friday, move to Saturday as the first possible leave day
+    // though the request officially starts on the Friday.
+    // The requirement says: "If the selected start date is Friday, do not block it, 
+    // but the first counted leave day should be the next non-Friday date."
+
+    let counter = 0;
+    let checkDate = new Date(current);
+
+    while (daysToTake > 0) {
+      if (checkDate.getDay() !== 5) { // Not Friday
+        daysToTake--;
+        lastLeaveDay = new Date(checkDate);
+      }
+      if (daysToTake > 0) {
+        checkDate.setDate(checkDate.getDate() + 1);
+      }
+      counter++;
+      if (counter > 100) break; // Safety
+    }
+
+    const endDate = lastLeaveDay;
+    const returnDate = new Date(endDate);
+    returnDate.setDate(returnDate.getDate() + 1);
+    
+    // If return date is Friday, skip to Saturday
+    if (returnDate.getDay() === 5) {
+      returnDate.setDate(returnDate.getDate() + 1);
+    }
+
+    return {
+      endDate: endDate.toLocaleDateString(),
+      returnDate: returnDate.toLocaleDateString()
+    };
+  }, [leaveForm.startDate, leaveForm.days]);
 
   if (loading && stats.length === 0) {
     return <div className="flex h-[80vh] items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -487,9 +522,10 @@ export default function DashboardPage() {
                            <span className="font-bold text-sm dark:text-slate-100">{leave.full_name}</span>
                            <Badge variant="outline" className="text-[9px] uppercase dark:border-slate-800">{leave.leave_type.replace('_', ' ')}</Badge>
                          </div>
-                         <div className="text-[10px] text-muted-foreground flex items-center gap-3">
+                         <div className="text-[10px] text-muted-foreground flex items-center flex-wrap gap-x-3 gap-y-1">
                            <span className="flex items-center gap-1"><CalendarIcon className="w-3 h-3" /> {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()}</span>
-                           <span className="font-bold text-primary">{leave.number_of_days} days</span>
+                           <span className="flex items-center gap-1 font-bold text-primary">Return: {new Date(leave.return_date).toLocaleDateString()}</span>
+                           <span className="font-bold text-slate-900 dark:text-slate-100">{leave.number_of_days} days</span>
                          </div>
                          {leave.reason && <p className="text-[10px] italic mt-1 line-clamp-1">"{leave.reason}"</p>}
                        </div>
@@ -595,7 +631,7 @@ export default function DashboardPage() {
                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                        {leaveRequests.map(leave => (
                          <div key={leave.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
-                            <div className="flex items-start gap-4">
+                            <div className="flex items-start gap-4 flex-1">
                                <div className={cn(
                                  "p-2.5 rounded-xl shrink-0",
                                  leave.leave_type === 'sick_leave' ? "bg-rose-50 text-rose-500 dark:bg-rose-500/10" :
@@ -604,7 +640,7 @@ export default function DashboardPage() {
                                )}>
                                  <PlaneTakeoff className="w-5 h-5" />
                                </div>
-                               <div className="min-w-0">
+                               <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2">
                                      <span className="font-bold text-sm capitalize dark:text-slate-100">{leave.leave_type.replace('_', ' ')}</span>
                                      <Badge className={cn(
@@ -617,9 +653,20 @@ export default function DashboardPage() {
                                        {leave.status}
                                      </Badge>
                                   </div>
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    {new Date(leave.start_date).toLocaleDateString()} - {new Date(leave.end_date).toLocaleDateString()} • {leave.number_of_days} days
-                                  </p>
+                                  <div className="flex flex-col gap-0.5 mt-1">
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(leave.start_date).toLocaleDateString()} — {new Date(leave.end_date).toLocaleDateString()}
+                                    </p>
+                                    <div className="flex items-center gap-3 text-[10px] font-bold text-primary uppercase">
+                                      <span className="flex items-center gap-1">
+                                        <ArrowRightCircle className="w-3 h-3" />
+                                        Return: {new Date(leave.return_date).toLocaleDateString()}
+                                      </span>
+                                      <span className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400">
+                                        {leave.number_of_days} Business Days
+                                      </span>
+                                    </div>
+                                  </div>
                                   {leave.manager_reason && (
                                     <p className="text-[10px] text-muted-foreground mt-1 bg-slate-50 dark:bg-slate-950 p-2 rounded-lg border dark:border-slate-800">
                                       <span className="font-bold">Feedback:</span> {leave.manager_reason}
@@ -857,7 +904,7 @@ export default function DashboardPage() {
         <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
           <DialogHeader>
             <DialogTitle className="dark:text-slate-100">{editingLeave ? 'Edit Leave Request' : 'Plan Leave'}</DialogTitle>
-            <DialogDescription>Submit your absence for manager approval.</DialogDescription>
+            <DialogDescription>Submit your absence for manager approval. <span className="text-primary font-bold">Fridays are excluded.</span></DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSaveLeave} className="space-y-4 pt-4">
              <div className="grid grid-cols-2 gap-4">
@@ -886,6 +933,24 @@ export default function DashboardPage() {
                    />
                 </div>
              </div>
+
+             {/* Live Preview */}
+             {previewDates && (
+               <div className="p-3 bg-violet-50 dark:bg-violet-500/10 rounded-lg border border-violet-100 dark:border-violet-900/30 text-[10px] space-y-1">
+                 <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground uppercase font-bold tracking-widest">End Date:</span>
+                    <span className="font-bold text-violet-700 dark:text-violet-300">{previewDates.endDate}</span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground uppercase font-bold tracking-widest">Return Date:</span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{previewDates.returnDate}</span>
+                 </div>
+                 <p className="text-[9px] text-muted-foreground italic mt-1 pt-1 border-t border-violet-100 dark:border-violet-900/20">
+                   * Calculations skip Fridays as per organization policy.
+                 </p>
+               </div>
+             )}
+
              <div className="space-y-2">
                 <Label className="text-xs font-bold dark:text-slate-300">Leave Type</Label>
                 <Select value={leaveForm.type} onValueChange={v => setLeaveForm({...leaveForm, type: v})} disabled={saving}>
@@ -941,11 +1006,19 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex justify-between">
                    <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Dates</span>
-                   <span className="font-bold dark:text-slate-200">{reviewingLeave && new Date(reviewingLeave.start_date).toLocaleDateString()} - {reviewingLeave && new Date(reviewingLeave.end_date).toLocaleDateString()}</span>
+                   <span className="font-bold dark:text-slate-200">
+                     {reviewingLeave && new Date(reviewingLeave.start_date).toLocaleDateString()} — {reviewingLeave && new Date(reviewingLeave.end_date).toLocaleDateString()}
+                   </span>
+                </div>
+                <div className="flex justify-between">
+                   <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Return</span>
+                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                     {reviewingLeave && new Date(reviewingLeave.return_date).toLocaleDateString()}
+                   </span>
                 </div>
                 <div className="flex justify-between">
                    <span className="text-muted-foreground uppercase font-bold tracking-widest text-[9px]">Duration</span>
-                   <span className="font-bold text-primary">{reviewingLeave?.number_of_days} Days</span>
+                   <span className="font-bold text-primary">{reviewingLeave?.number_of_days} Business Days</span>
                 </div>
              </div>
              <div className="space-y-2">
