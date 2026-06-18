@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback, Fragment, useMemo } from "react";
@@ -1050,331 +1049,333 @@ export default function WorkspaceAdminPage() {
                             })}
                           </tr>
                         ))}
-                      </tbody>
-                    </table>
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="audit" className="space-y-4">
+          <div className="space-y-3">
+            {auditLogs.length === 0 ? (
+              <p className="py-12 text-center text-muted-foreground italic bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">No logs found.</p>
+            ) : (
+              auditLogs.map((log) => (
+                <Card key={log.id} className="border-none shadow-sm dark:bg-slate-900">
+                  <CardContent className="p-3 md:p-4 flex gap-3">
+                    <History className="w-4 h-4 text-primary shrink-0 mt-1" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold capitalize dark:text-slate-200">{log.action.replace(/_/g, ' ')}</p>
+                      <p className="text-[10px] text-muted-foreground leading-snug">
+                        <span className="font-bold text-foreground dark:text-slate-300">{(log.actor as any)?.full_name}</span> performed action 
+                        {log.target_user_id && <> for <span className="font-bold text-foreground dark:text-slate-300">{(log.target as any)?.full_name}</span></>}
+                      </p>
+                      <p className="text-[8px] text-muted-foreground mt-1">{new Date(log.created_at).toLocaleString()}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="settings" className="space-y-6">
+          <Card className="border-none shadow-sm dark:bg-slate-900">
+            <CardHeader className="p-4 md:p-6">
+              <CardTitle className="text-lg dark:text-slate-100">General Details</CardTitle>
+              <CardDescription>Update the primary identification of this workspace.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6 space-y-4">
+              <form onSubmit={handleUpdateWorkspaceName} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="wsName" className="dark:text-slate-300">Workspace Name</Label>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Input 
+                      id="wsName"
+                      value={wsNameInput}
+                      onChange={(e) => setWsNameInput(e.target.value)}
+                      placeholder="Workspace Name"
+                      className="flex-1 dark:bg-slate-950 dark:border-slate-800"
+                      required
+                      disabled={!canManageSettings || submitting}
+                    />
+                    <Button 
+                      type="submit" 
+                      disabled={!canManageSettings || submitting || !wsNameInput.trim() || wsNameInput === workspaceInfo?.name}
+                      className="gap-2 shadow-lg shadow-primary/20"
+                    >
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Update Name
+                    </Button>
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="audit" className="space-y-4">
-              <div className="space-y-3">
-                {auditLogs.length === 0 ? (
-                  <p className="py-12 text-center text-muted-foreground italic bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">No logs found.</p>
-                ) : (
-                  auditLogs.map((log) => (
-                    <Card key={log.id} className="border-none shadow-sm dark:bg-slate-900">
-                      <CardContent className="p-3 md:p-4 flex gap-3">
-                        <History className="w-4 h-4 text-primary shrink-0 mt-1" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold capitalize dark:text-slate-200">{log.action.replace(/_/g, ' ')}</p>
-                          <p className="text-[10px] text-muted-foreground leading-snug">
-                            <span className="font-bold text-foreground dark:text-slate-300">{(log.actor as any)?.full_name}</span> performed action 
-                            {log.target_user_id && <> for <span className="font-bold text-foreground dark:text-slate-300">{(log.target as any)?.full_name}</span></>}
-                          </p>
-                          <p className="text-[8px] text-muted-foreground mt-1">{new Date(log.created_at).toLocaleString()}</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="settings" className="space-y-6">
-              <Card className="border-none shadow-sm dark:bg-slate-900">
-                <CardHeader className="p-4 md:p-6">
-                  <CardTitle className="text-lg dark:text-slate-100">General Details</CardTitle>
-                  <CardDescription>Update the primary identification of this workspace.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 md:p-6 space-y-4">
-                  <form onSubmit={handleUpdateWorkspaceName} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="wsName" className="dark:text-slate-300">Workspace Name</Label>
-                      <div className="flex flex-col sm:flex-row gap-3">
-                        <Input 
-                          id="wsName"
-                          value={wsNameInput}
-                          onChange={(e) => setWsNameInput(e.target.value)}
-                          placeholder="Workspace Name"
-                          className="flex-1 dark:bg-slate-950 dark:border-slate-800"
-                          required
-                          disabled={!canManageSettings || submitting}
-                        />
-                        <Button 
-                          type="submit" 
-                          disabled={!canManageSettings || submitting || !wsNameInput.trim() || wsNameInput === workspaceInfo?.name}
-                          className="gap-2 shadow-lg shadow-primary/20"
-                        >
-                          {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                          Update Name
-                        </Button>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground italic">Renaming the workspace will update the display name for all members.</p>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
-
-              <Card className="border-none shadow-sm dark:bg-slate-900">
-                <CardHeader className="p-4 md:p-6"><CardTitle className="text-lg dark:text-slate-100">Access Control</CardTitle></CardHeader>
-                <CardContent className="p-4 md:p-6 space-y-4">
-                    <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border dark:border-slate-800">
-                      <div><p className="text-sm font-bold dark:text-slate-200">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div>
-                      <Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!canManageMembers} />
-                    </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-none shadow-sm dark:bg-slate-900">
-                <CardHeader className="p-4 md:p-6">
-                    <div className="flex items-center gap-2">
-                      <BellRing className="w-5 h-5 text-primary" />
-                      <CardTitle className="text-lg dark:text-slate-100">Notification Automation</CardTitle>
-                    </div>
-                    <CardDescription>Manually trigger scheduled system checks for task deadlines and reminders.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-4 md:p-6 space-y-4">
-                    <div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                      <div className="space-y-1">
-                        <p className="text-sm font-bold dark:text-slate-200">Process Deadlines & Reminders</p>
-                        <p className="text-[10px] text-muted-foreground max-w-md">
-                          Checks for due reminders, tasks due within 3 days, and overdue assignments to generate relevant system notifications.
-                        </p>
-                      </div>
-                      <Button 
-                        onClick={handleRunNotificationChecks} 
-                        disabled={isRunningChecks}
-                        className="w-full sm:w-auto gap-2 shadow-lg shadow-primary/20"
-                      >
-                        {isRunningChecks ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="w-4 h-4" />
-                        )}
-                        Run Checks
-                      </Button>
-                    </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-
-          {/* New Allocation Dialog */}
-          <Dialog open={isAllocating} onOpenChange={(open) => { setIsAllocating(open); if (!open) forceUnlockUI(); }}>
-            <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
-              <DialogHeader><DialogTitle className="dark:text-slate-100">New Allocation</DialogTitle></DialogHeader>
-              <form onSubmit={handleCreateAllocation} className="space-y-4">
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold dark:text-slate-300">Member</Label>
-                  <Select name="user_id" required onOpenChange={(open) => !open && forceUnlockUI()}>
-                    <SelectTrigger className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Choose member" /></SelectTrigger>
-                    <SelectContent className="dark:bg-slate-900 dark:border-slate-800">{members.filter(m => m.status === 'active').map(m => (<SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>))}</SelectContent>
-                  </Select>
+                  <p className="text-[10px] text-muted-foreground italic">Renaming the workspace will update the display name for all members.</p>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold dark:text-slate-300">Title</Label>
-                  <Input name="title" className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" required disabled={submitting} />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold dark:text-slate-300">Focus</Label>
-                  <Textarea name="description" className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
-                </div>
-                <DialogFooter className="flex-row gap-2">
-                    <Button type="button" variant="ghost" onClick={() => { setIsAllocating(false); forceUnlockUI(); }} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
-                    <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>Assign</Button>
-                </DialogFooter>
               </form>
-            </DialogContent>
-          </Dialog>
+            </CardContent>
+          </Card>
 
-          {/* Create/Edit Team Dialog */}
-          <Dialog open={isCreatingTeam} onOpenChange={(open) => { setIsCreatingTeam(open); if (!open) { setEditingTeam(null); forceUnlockUI(); } }}>
-            <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
-              <DialogHeader><DialogTitle className="dark:text-slate-100">{editingTeam ? 'Edit Team' : 'New Team'}</DialogTitle></DialogHeader>
-              <form onSubmit={handleCreateTeam} className="space-y-4">
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold dark:text-slate-300">Name</Label>
-                  <Input name="name" defaultValue={editingTeam?.name} className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" required disabled={submitting} />
+          <Card className="border-none shadow-sm dark:bg-slate-900">
+            <CardHeader className="p-4 md:p-6"><CardTitle className="text-lg dark:text-slate-100">Access Control</CardTitle></CardHeader>
+            <CardContent className="p-4 md:p-6 space-y-4">
+                <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border dark:border-slate-800">
+                  <div><p className="text-sm font-bold dark:text-slate-200">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div>
+                  <Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!canManageMembers} />
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-bold dark:text-slate-300">Description</Label>
-                  <Textarea name="description" defaultValue={editingTeam?.description} className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-sm dark:bg-slate-900">
+            <CardHeader className="p-4 md:p-6">
+                <div className="flex items-center gap-2">
+                  <BellRing className="w-5 h-5 text-primary" />
+                  <CardTitle className="text-lg dark:text-slate-100">Notification Automation</CardTitle>
                 </div>
-                <DialogFooter className="flex-row gap-2">
-                    <Button type="button" variant="ghost" onClick={() => { setIsCreatingTeam(false); forceUnlockUI(); }} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
-                    <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>{editingTeam ? 'Update' : 'Create'}</Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+                <CardDescription>Manually trigger scheduled system checks for task deadlines and reminders.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6 space-y-4">
+                <div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-bold dark:text-slate-200">Process Deadlines & Reminders</p>
+                    <p className="text-[10px] text-muted-foreground max-w-md">
+                      Checks for due reminders, tasks due within 3 days, and overdue assignments to generate relevant system notifications.
+                    </p>
+                  </div>
+                  <Button 
+                    onClick={handleRunNotificationChecks} 
+                    disabled={isRunningChecks}
+                    className="w-full sm:w-auto gap-2 shadow-lg shadow-primary/20"
+                  >
+                    {isRunningChecks ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    Run Checks
+                  </Button>
+                </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
-          {/* Deactivate Member AlertDialog */}
-          <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => { if (!open) { setDeactivatingMember(null); forceUnlockUI(); } }}>
-            <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
-              <AlertDialogHeader>
-                <AlertDialogTitle className="dark:text-slate-100">Deactivate Member?</AlertDialogTitle>
-                <AlertDialogDescription className="dark:text-slate-400">
-                  Are you sure you want to deactivate <strong>{deactivatingMember?.profiles?.full_name}</strong>? They will no longer be able to access this workspace.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel disabled={deactivatingLoading} onClick={() => { setDeactivatingMember(null); forceUnlockUI(); }} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
-                <AlertDialogAction disabled={deactivatingLoading} onClick={() => handleDeactivate(deactivatingMember?.user_id)} className="bg-rose-500 hover:bg-rose-600">
-                  {deactivatingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <UserX className="w-4 h-4 mr-2" />}
-                  Deactivate
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+      {/* New Allocation Dialog */}
+      <Dialog open={isAllocating} onOpenChange={(open) => { setIsAllocating(open); if (!open) forceUnlockUI(); }}>
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <DialogHeader><DialogTitle className="dark:text-slate-100">New Allocation</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateAllocation} className="space-y-4">
+            <div className="space-y-1">
+              <Label className="text-xs font-bold dark:text-slate-300">Member</Label>
+              <Select name="user_id" required onOpenChange={(open) => !open && forceUnlockUI()}>
+                <SelectTrigger className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Choose member" /></SelectTrigger>
+                <SelectContent className="dark:bg-slate-900 dark:border-slate-800">{members.filter(m => m.status === 'active').map(m => (<SelectItem key={m.user_id} value={m.user_id}>{m.profiles?.full_name}</SelectItem>))}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold dark:text-slate-300">Title</Label>
+              <Input name="title" className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" required disabled={submitting} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold dark:text-slate-300">Focus</Label>
+              <Textarea name="description" className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
+            </div>
+            <DialogFooter className="flex-row gap-2">
+                <Button type="button" variant="ghost" onClick={() => { setIsAllocating(false); forceUnlockUI(); }} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+                <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>Assign</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-          {/* Delete Team AlertDialog */}
-          <AlertDialog open={!!deletingTeam} onOpenChange={(open) => { if (!open) { setDeletingTeam(null); forceUnlockUI(); } }}>
-            <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
-              <AlertDialogHeader>
-                <AlertDialogTitle className="dark:text-slate-100">Delete Team?</AlertDialogTitle>
-                <AlertDialogDescription className="dark:text-slate-400">
-                  Are you sure you want to delete the team <strong>{deletingTeam?.name}</strong>? This will remove all member assignments within the team. Tasks assigned to this team will remain but will no longer be linked to it.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => { setDeletingTeam(null); forceUnlockUI(); }} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDeleteTeam} className="bg-rose-500 hover:bg-rose-600">
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                  Delete Team
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+      {/* Create/Edit Team Dialog */}
+      <Dialog open={isCreatingTeam} onOpenChange={(open) => { setIsCreatingTeam(open); if (!open) { setEditingTeam(null); forceUnlockUI(); } }}>
+        <DialogContent className="w-[95vw] max-w-md p-6 rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <DialogHeader><DialogTitle className="dark:text-slate-100">{editingTeam ? 'Edit Team' : 'New Team'}</DialogTitle></DialogHeader>
+          <form onSubmit={handleCreateTeam} className="space-y-4">
+            <div className="space-y-1">
+              <Label className="text-xs font-bold dark:text-slate-300">Name</Label>
+              <Input name="name" defaultValue={editingTeam?.name} className="h-11 text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" required disabled={submitting} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-bold dark:text-slate-300">Description</Label>
+              <Textarea name="description" defaultValue={editingTeam?.description} className="text-base md:text-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100" rows={3} disabled={submitting} />
+            </div>
+            <DialogFooter className="flex-row gap-2">
+                <Button type="button" variant="ghost" onClick={() => { setIsCreatingTeam(false); forceUnlockUI(); }} className="flex-1 dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+                <Button type="submit" className="flex-1 shadow-lg shadow-primary/20" disabled={submitting}>{editingTeam ? 'Update' : 'Create'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-          {/* Team Member Management Dialog */}
-          <Dialog open={isManagingMembers} onOpenChange={(open) => { setIsManagingMembers(open); if (!open) { setSelectedTeamForMembers(null); forceUnlockUI(); } }}>
-            <DialogContent className="w-[95vw] max-w-xl p-0 overflow-hidden rounded-2xl dark:bg-slate-950 dark:border-slate-800">
-              <div className="p-6 pb-0">
-                <DialogHeader>
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="secondary" className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400">Team</Badge>
+      {/* Deactivate Member AlertDialog */}
+      <AlertDialog open={!!deactivatingMember} onOpenChange={(open) => { if (!open) { setDeactivatingMember(null); forceUnlockUI(); } }}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-slate-100">Deactivate Member?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              Are you sure you want to deactivate <strong>{deactivatingMember?.profiles?.full_name}</strong>? They will no longer be able to access this workspace.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deactivatingLoading} onClick={() => { setDeactivatingMember(null); forceUnlockUI(); }} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={deactivatingLoading} onClick={() => handleDeactivate(deactivatingMember?.user_id)} className="bg-rose-500 hover:bg-rose-600">
+              {deactivatingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <UserX className="w-4 h-4 mr-2" />}
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Team AlertDialog */}
+      <AlertDialog open={!!deletingTeam} onOpenChange={(open) => { if (!open) { setDeletingTeam(null); forceUnlockUI(); } }}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-slate-100">Delete Team?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              Are you sure you want to delete the team <strong>{deletingTeam?.name}</strong>? This will remove all member assignments within the team. Tasks assigned to this team will remain but will no longer be linked to it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setDeletingTeam(null); forceUnlockUI(); }} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTeam} className="bg-rose-500 hover:bg-rose-600">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Delete Team
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Team Member Management Dialog */}
+      <Dialog open={isManagingMembers} onOpenChange={(open) => { setIsManagingMembers(open); if (!open) { setSelectedTeamForMembers(null); forceUnlockUI(); } }}>
+        <DialogContent className="w-[95vw] max-w-xl p-0 overflow-hidden rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <div className="p-6 pb-0">
+            <DialogHeader>
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge variant="secondary" className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400">Team</Badge>
+                </div>
+                <DialogTitle className="text-2xl font-bold dark:text-slate-100">{selectedTeamForMembers?.name}</DialogTitle>
+                <DialogDescription className="dark:text-slate-400">Manage which members are assigned to this focus team.</DialogDescription>
+            </DialogHeader>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                    <Users className="w-3.5 h-3.5" />
+                    Team Roster ({currentTeamMembers.length})
+                  </h4>
+                </div>
+
+                <ScrollArea className="h-[300px] rounded-xl border dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4">
+                  {currentTeamMembers.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center space-y-2 opacity-60 py-12">
+                        <Users className="w-8 h-8" />
+                        <p className="text-sm font-medium">No members in this team yet.</p>
                     </div>
-                    <DialogTitle className="text-2xl font-bold dark:text-slate-100">{selectedTeamForMembers?.name}</DialogTitle>
-                    <DialogDescription className="dark:text-slate-400">Manage which members are assigned to this focus team.</DialogDescription>
-                </DialogHeader>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
-                        <Users className="w-3.5 h-3.5" />
-                        Team Roster ({currentTeamMembers.length})
-                      </h4>
-                    </div>
-
-                    <ScrollArea className="h-[300px] rounded-xl border dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4">
-                      {currentTeamMembers.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-center space-y-2 opacity-60 py-12">
-                            <Users className="w-8 h-8" />
-                            <p className="text-sm font-medium">No members in this team yet.</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                            {currentTeamMembers.map((tm) => {
-                              const isUpdating = isStatusUpdating === tm.user_id;
-                              return (
-                                <div key={tm.id} className="flex items-center justify-between group bg-white dark:bg-slate-900 p-3 rounded-lg border dark:border-slate-800 shadow-sm">
-                                  <div className="flex items-center gap-3 overflow-hidden">
-                                      <Avatar className="w-8 h-8 border dark:border-slate-800 shadow-sm shrink-0">
-                                        <AvatarImage src={tm.avatar_preset ? `/avatars/${tm.avatar_preset}.png` : tm.avatar_url} />
-                                        <AvatarFallback className="text-[10px] font-bold bg-primary/5 text-primary">{tm.full_name?.[0]}</AvatarFallback>
-                                      </Avatar>
-                                      <div className="min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                            <p className="text-sm font-bold truncate dark:text-slate-200">{tm.full_name}</p>
-                                            {tm.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
-                                        </div>
-                                        <p className="text-[10px] text-muted-foreground truncate uppercase">{tm.role}</p>
-                                      </div>
-                                  </div>
-                                  {canManageTeamMembers && (
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 opacity-0 group-hover:opacity-100 transition-opacity"
-                                      onClick={() => handleRemoveTeamMember(tm.user_id)}
-                                      disabled={isUpdating}
-                                    >
-                                        {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
-                                    </Button>
-                                  )}
-                                </div>
-                              );
-                            })}
-                        </div>
-                      )}
-                    </ScrollArea>
-                </div>
-
-                {canManageTeamMembers && (
-                  <div className="space-y-3 pt-2">
-                      <Label className="text-xs font-bold dark:text-slate-300">Add Team Member</Label>
-                      <div className="flex gap-2">
-                        <Select value={memberToTeamId || ""} onValueChange={setMemberToTeamId} onOpenChange={(open) => !open && forceUnlockUI()}>
-                            <SelectTrigger className="flex-1 h-11 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
-                              <SelectValue placeholder="Select workspace member..." />
-                            </SelectTrigger>
-                            <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
-                              <div className="p-2 border-b dark:border-slate-800">
-                                  <div className="relative">
-                                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                                    <Input 
-                                      placeholder="Search members..." 
-                                      className="h-8 pl-8 text-xs dark:bg-slate-950" 
-                                      value={teamMemberSearch}
-                                      onChange={e => setTeamMemberSearch(e.target.value)}
-                                    />
+                  ) : (
+                    <div className="space-y-3">
+                        {currentTeamMembers.map((tm) => {
+                          const isUpdating = isStatusUpdating === tm.user_id;
+                          return (
+                            <div key={tm.id} className="flex items-center justify-between group bg-white dark:bg-slate-900 p-3 rounded-lg border dark:border-slate-800 shadow-sm">
+                              <div className="flex items-center gap-3 overflow-hidden">
+                                  <Avatar className="w-8 h-8 border dark:border-slate-800 shadow-sm shrink-0">
+                                    <AvatarImage src={tm.avatar_preset ? `/avatars/${tm.avatar_preset}.png` : tm.avatar_url} />
+                                    <AvatarFallback className="text-[10px] font-bold bg-primary/5 text-primary">{tm.full_name?.[0]}</AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <p className="text-sm font-bold truncate dark:text-slate-200">{tm.full_name}</p>
+                                        {tm.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground truncate uppercase">{tm.role}</p>
                                   </div>
                               </div>
-                              <ScrollArea className="max-h-[200px]">
-                                  {addableMembers
-                                    .filter(m => m.profiles?.full_name?.toLowerCase().includes(teamMemberSearch.toLowerCase()))
-                                    .length === 0 ? (
-                                    <div className="p-4 text-center text-xs text-muted-foreground italic">No addable members found.</div>
-                                  ) : (
-                                    addableMembers
-                                      .filter(m => m.profiles?.full_name?.toLowerCase().includes(teamMemberSearch.toLowerCase()))
-                                      .map(m => (
-                                        <SelectItem key={m.user_id} value={m.user_id}>
-                                          <div className="flex items-center gap-2">
-                                              <Avatar className="w-5 h-5 shrink-0">
-                                                <AvatarImage src={m.profiles?.avatar_preset ? `/avatars/${m.profiles.avatar_preset}.png` : m.profiles?.avatar_url} />
-                                                <AvatarFallback className="text-[8px]">{m.profiles?.full_name?.[0]}</AvatarFallback>
-                                              </Avatar>
-                                              <span className="truncate">{m.profiles?.full_name}</span>
-                                              {m.is_verified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
-                                          </div>
-                                        </SelectItem>
-                                      ))
-                                  )}
-                              </ScrollArea>
-                            </SelectContent>
-                        </Select>
-                        <Button 
-                          className="h-11 shadow-lg shadow-primary/20 px-6 gap-2" 
-                          disabled={!memberToTeamId || isStatusUpdating === memberToTeamId}
-                          onClick={() => { if(memberToTeamId) handleAddTeamMember(memberToTeamId); setMemberToTeamId(null); }}
-                        >
-                            {isStatusUpdating === memberToTeamId ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                            Add
-                        </Button>
-                      </div>
-                  </div>
-                )}
-              </div>
+                              {canManageTeamMembers && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => handleRemoveTeamMember(tm.user_id)}
+                                  disabled={isUpdating}
+                                >
+                                    {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </ScrollArea>
+            </div>
 
-              <DialogFooter className="p-6 pt-0 bg-slate-50 dark:bg-slate-900/40 border-t dark:border-slate-800">
-                <Button variant="ghost" onClick={() => { setIsManagingMembers(false); forceUnlockUI(); }} className="dark:text-slate-300">Close Panel</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+            {canManageTeamMembers && (
+              <div className="space-y-3 pt-2">
+                  <Label className="text-xs font-bold dark:text-slate-300">Add Team Member</Label>
+                  <div className="flex gap-2">
+                    <Select value={memberToTeamId || ""} onValueChange={setMemberToTeamId} onOpenChange={(open) => !open && forceUnlockUI()}>
+                        <SelectTrigger className="flex-1 h-11 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
+                          <SelectValue placeholder="Select workspace member..." />
+                        </SelectTrigger>
+                        <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
+                          <div className="p-2 border-b dark:border-slate-800">
+                              <div className="relative">
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                                <Input 
+                                  placeholder="Search members..." 
+                                  className="h-8 pl-8 text-xs dark:bg-slate-950" 
+                                  value={teamMemberSearch}
+                                  onChange={e => setTeamMemberSearch(e.target.value)}
+                                />
+                              </div>
+                          </div>
+                          <ScrollArea className="max-h-[200px]">
+                              {addableMembers
+                                .filter(m => m.profiles?.full_name?.toLowerCase().includes(teamMemberSearch.toLowerCase()))
+                                .length === 0 ? (
+                                <div className="p-4 text-center text-xs text-muted-foreground italic">No addable members found.</div>
+                              ) : (
+                                addableMembers
+                                  .filter(m => m.profiles?.full_name?.toLowerCase().includes(teamMemberSearch.toLowerCase()))
+                                  .map(m => (
+                                    <SelectItem key={m.user_id} value={m.user_id}>
+                                      <div className="flex items-center gap-2">
+                                          <Avatar className="w-5 h-5 shrink-0">
+                                            <AvatarImage src={m.profiles?.avatar_preset ? `/avatars/${m.profiles.avatar_preset}.png` : m.profiles?.avatar_url} />
+                                            <AvatarFallback className="text-[8px]">{m.profiles?.full_name?.[0]}</AvatarFallback>
+                                          </Avatar>
+                                          <span className="truncate">{m.profiles?.full_name}</span>
+                                          {m.is_verified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
+                                      </div>
+                                    </SelectItem>
+                                  ))
+                              )}
+                          </ScrollArea>
+                        </SelectContent>
+                    </Select>
+                    <Button 
+                      className="h-11 shadow-lg shadow-primary/20 px-6 gap-2" 
+                      disabled={!memberToTeamId || isStatusUpdating === memberToTeamId}
+                      onClick={() => { if(memberToTeamId) handleAddTeamMember(memberToTeamId); setMemberToTeamId(null); }}
+                    >
+                        {isStatusUpdating === memberToTeamId ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                        Add
+                    </Button>
+                  </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="p-6 pt-0 bg-slate-50 dark:bg-slate-900/40 border-t dark:border-slate-800">
+            <Button variant="ghost" onClick={() => { setIsManagingMembers(false); forceUnlockUI(); }} className="dark:text-slate-300">Close Panel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
