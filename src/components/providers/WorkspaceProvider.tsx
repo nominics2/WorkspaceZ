@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -9,6 +9,8 @@ interface Workspace {
   name: string;
   join_code: string;
 }
+
+type ThemePreference = 'light' | 'dark' | 'system';
 
 interface WorkspaceContextType {
   activeWorkspace: Workspace | null;
@@ -20,6 +22,8 @@ interface WorkspaceContextType {
   switchWorkspace: (id: string) => void;
   refreshWorkspaces: () => Promise<void>;
   hasPermission: (permissionKey: string) => boolean;
+  themePreference: ThemePreference;
+  setThemePreference: (theme: ThemePreference) => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -31,9 +35,27 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>('system');
   const supabase = createClient();
   const router = useRouter();
   const pathname = usePathname();
+
+  const applyTheme = useCallback((theme: ThemePreference) => {
+    if (typeof window === 'undefined') return;
+
+    const root = window.document.documentElement;
+    let effectiveTheme = theme;
+
+    if (theme === 'system') {
+      effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+
+    if (effectiveTheme === 'dark') {
+      root.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+    }
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -56,7 +78,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         .select('*')
         .eq('id', user.id)
         .single();
+      
       setUserProfile(profile);
+      
+      if (profile?.theme_preference) {
+        setThemePreferenceState(profile.theme_preference as ThemePreference);
+        applyTheme(profile.theme_preference as ThemePreference);
+      }
 
       // Fetch Workspace Memberships
       const { data: members, error } = await supabase
@@ -79,7 +107,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setWorkspaces(wsList);
 
       if (wsList.length > 0) {
-        const currentWs = activeWorkspace || wsList[0];
+        const currentWsId = typeof window !== 'undefined' ? localStorage.getItem('last_workspace_id') : null;
+        const currentWs = (currentWsId ? wsList.find(w => w.id === currentWsId) : wsList[0]) || wsList[0];
+        
         setActiveWorkspace(currentWs);
 
         // Get role for the active workspace
@@ -89,7 +119,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
         // Fetch Permissions for this role in this workspace
         if (role === 'superadmin') {
-          setPermissions(['all']); // Superadmin has pseudo-permission 'all'
+          setPermissions(['all']);
         } else {
           const { data: perms } = await supabase
             .from('workspace_role_permissions')
@@ -107,6 +137,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       console.error('Error fetching workspace data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const setThemePreference = async (theme: ThemePreference) => {
+    if (!userProfile) return;
+    
+    setThemePreferenceState(theme);
+    applyTheme(theme);
+
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ theme_preference: theme })
+        .eq('id', userProfile.id);
+      
+      if (error) throw error;
+    } catch (err) {
+      console.error('Error saving theme preference:', err);
     }
   };
 
@@ -131,12 +179,22 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [pathname]);
 
+  // Listen for system theme changes
+  useEffect(() => {
+    if (themePreference !== 'system') return;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => applyTheme('system');
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [themePreference, applyTheme]);
+
   const switchWorkspace = (id: string) => {
     const ws = workspaces.find(w => w.id === id);
     if (ws) {
+      localStorage.setItem('last_workspace_id', id);
       setActiveWorkspace(ws);
-      // fetchData will re-run via pathname dependency if needed, 
-      // but manually calling it ensures role/perms update immediately
       fetchData();
     }
   };
@@ -156,7 +214,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       loading, 
       switchWorkspace, 
       refreshWorkspaces: fetchData,
-      hasPermission
+      hasPermission,
+      themePreference,
+      setThemePreference
     }}>
       {children}
     </WorkspaceContext.Provider>

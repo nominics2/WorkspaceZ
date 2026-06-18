@@ -16,7 +16,11 @@ import {
   LogOut,
   Send,
   Save,
-  UserCircle
+  UserCircle,
+  Sun,
+  Moon,
+  Monitor,
+  Palette
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -37,12 +41,12 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
-type TabType = 'profile' | 'notifications';
+type TabType = 'profile' | 'appearance' | 'notifications';
 
 const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`);
 
 export default function SettingsPage() {
-  const { activeWorkspace, userProfile, refreshWorkspaces } = useWorkspace();
+  const { activeWorkspace, userProfile, refreshWorkspaces, themePreference, setThemePreference } = useWorkspace();
   const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 1024 * 1024 * 1024 }); 
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -232,19 +236,28 @@ export default function SettingsPage() {
             onClick={() => setActiveTab('profile')}
             className={cn(
               "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
-              activeTab === 'profile' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 text-muted-foreground"
+              activeTab === 'profile' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground"
             )}
           >
             <User className="w-5 h-5" /> Account Profile
           </button>
           <button 
+            onClick={() => setActiveTab('appearance')}
+            className={cn(
+              "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
+              activeTab === 'appearance' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground"
+            )}
+          >
+            <Palette className="w-5 h-5" /> Appearance
+          </button>
+          <button 
             onClick={() => setActiveTab('notifications')}
             className={cn(
               "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
-              activeTab === 'notifications' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 text-muted-foreground"
+              activeTab === 'notifications' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-800 text-muted-foreground"
             )}
           >
-            <Bell className="w-5 h-5" /> Notification History
+            <Bell className="w-5 h-5" /> Notifications
           </button>
           
           <Separator className="my-4" />
@@ -265,7 +278,7 @@ export default function SettingsPage() {
           <div className="pt-8">
             <Button 
               variant="ghost" 
-              className="w-full justify-start text-rose-500 hover:text-rose-600 hover:bg-rose-50"
+              className="w-full justify-start text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
               onClick={handleLogout}
             >
               <LogOut className="w-4 h-4 mr-3" />
@@ -278,7 +291,7 @@ export default function SettingsPage() {
           {activeTab === 'profile' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
               <Card className="border-none shadow-sm overflow-hidden">
-                <CardHeader className="bg-white border-b">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b">
                   <CardTitle>Public Profile</CardTitle>
                   <CardDescription>Update your personal information visible to your team.</CardDescription>
                 </CardHeader>
@@ -286,7 +299,7 @@ export default function SettingsPage() {
                   <form onSubmit={handleUpdateProfile} className="space-y-8">
                     <div className="flex flex-col sm:flex-row items-center gap-6">
                       <div className="relative group">
-                        <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center border-4 border-white shadow-xl overflow-hidden shrink-0">
+                        <div className="w-24 h-24 rounded-2xl bg-primary/10 flex items-center justify-center border-4 border-white dark:border-slate-800 shadow-xl overflow-hidden shrink-0">
                           {currentDisplayAvatar ? (
                             <img src={currentDisplayAvatar} alt="Profile" className="w-full h-full object-cover" />
                           ) : (
@@ -314,7 +327,7 @@ export default function SettingsPage() {
                           onClick={() => setProfileForm(f => ({ ...f, avatar_preset: null }))}
                           className={cn(
                             "aspect-square rounded-xl border-2 flex items-center justify-center transition-all hover:scale-105 shadow-sm",
-                            profileForm.avatar_preset === null ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-slate-100 bg-white"
+                            profileForm.avatar_preset === null ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900"
                           )}
                           title="Use Initials"
                         >
@@ -327,7 +340,7 @@ export default function SettingsPage() {
                             onClick={() => setProfileForm(f => ({ ...f, avatar_preset: preset }))}
                             className={cn(
                               "aspect-square rounded-xl border-2 overflow-hidden transition-all hover:scale-105 shadow-sm",
-                              profileForm.avatar_preset === preset ? "border-primary ring-2 ring-primary/20" : "border-slate-100"
+                              profileForm.avatar_preset === preset ? "border-primary ring-2 ring-primary/20" : "border-slate-100 dark:border-slate-800"
                             )}
                           >
                             <img src={`/avatars/${preset}.png`} alt={preset} className="w-full h-full object-cover" />
@@ -365,7 +378,7 @@ export default function SettingsPage() {
 
                     <div className="space-y-2">
                       <Label>Email Address</Label>
-                      <Input value={userProfile?.email ?? ""} disabled className="bg-slate-50 cursor-not-allowed" />
+                      <Input value={userProfile?.email ?? ""} disabled className="bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed" />
                       <p className="text-[10px] text-muted-foreground italic">Email change is managed by workspace administrators.</p>
                     </div>
 
@@ -379,45 +392,15 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              <Card className="border-none shadow-sm overflow-hidden opacity-80">
-                <CardHeader className="bg-white border-b">
+              <Card className="border-none shadow-sm overflow-hidden">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b">
                   <div className="flex items-center gap-2">
-                    <Send className="w-5 h-5 text-sky-500" />
-                    <CardTitle>Telegram Notifications</CardTitle>
-                  </div>
-                  <CardDescription>Receive real-time alerts directly in your Telegram app.</CardDescription>
-                </CardHeader>
-                <CardContent className="p-6 space-y-4">
-                  <div className="p-4 bg-sky-50 rounded-xl border border-sky-100 flex items-start gap-3">
-                    <div className="p-2 bg-white rounded-lg shadow-sm">
-                      <Clock className="w-4 h-4 text-sky-600" />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold text-sky-900">Coming Soon</p>
-                      <p className="text-xs text-sky-700 leading-relaxed">
-                        We are working on a Telegram integration to help you stay updated with task deadlines and team messages.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-muted-foreground">Telegram Chat ID</Label>
-                    <Input disabled placeholder="e.g. 123456789" className="bg-slate-50 border-dashed" />
-                    <p className="text-[10px] text-muted-foreground">Integration status: <span className="font-bold">Experimental</span></p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-none shadow-sm">
-                <CardHeader className="flex flex-row items-center gap-3">
-                  <div className="p-2.5 bg-blue-50 rounded-xl">
-                    <HardDrive className="w-6 h-6 text-primary" />
-                  </div>
-                  <div>
+                    <HardDrive className="w-5 h-5 text-primary" />
                     <CardTitle>Workspace Usage</CardTitle>
-                    <CardDescription>Resources consumed by your active workspace.</CardDescription>
                   </div>
+                  <CardDescription>Resources consumed by your active workspace.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent className="p-6 space-y-6">
                   {loading ? (
                     <div className="flex justify-center py-8"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
                   ) : (
@@ -430,7 +413,7 @@ export default function SettingsPage() {
                         <span className="text-sm font-bold text-primary">{usagePercentage.toFixed(1)}%</span>
                       </div>
                       <Progress value={usagePercentage} className="h-3" />
-                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 flex items-start gap-3">
+                      <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800 flex items-start gap-3">
                         <Shield className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                         <p className="text-xs text-muted-foreground leading-relaxed">
                           Standard workspace accounts are limited to 1GB. To increase this limit, please contact your workspace owner.
@@ -438,6 +421,92 @@ export default function SettingsPage() {
                       </div>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {activeTab === 'appearance' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+              <Card className="border-none shadow-sm overflow-hidden">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b">
+                  <CardTitle>Theme Preference</CardTitle>
+                  <CardDescription>Choose how WorkspaceZ looks on your device.</CardDescription>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <button
+                      onClick={() => setThemePreference('light')}
+                      className={cn(
+                        "relative flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800",
+                        themePreference === 'light' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-slate-100 dark:border-slate-800"
+                      )}
+                    >
+                      <div className={cn(
+                        "p-4 rounded-xl bg-white shadow-sm border",
+                        themePreference === 'light' ? "text-primary border-primary/20" : "text-slate-400 border-slate-200"
+                      )}>
+                        <Sun className="w-8 h-8" />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-bold text-sm">Light</p>
+                        <p className="text-[10px] text-muted-foreground">Always bright and clear</p>
+                      </div>
+                      {themePreference === 'light' && (
+                        <div className="absolute top-3 right-3">
+                          <CheckCircle2 className="w-5 h-5 text-primary" />
+                        </div>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setThemePreference('dark')}
+                      className={cn(
+                        "relative flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800",
+                        themePreference === 'dark' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-slate-100 dark:border-slate-800"
+                      )}
+                    >
+                      <div className={cn(
+                        "p-4 rounded-xl bg-slate-900 shadow-sm border",
+                        themePreference === 'dark' ? "text-primary border-primary/20" : "text-slate-400 border-slate-700"
+                      )}>
+                        <Moon className="w-8 h-8" />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-bold text-sm">Dark</p>
+                        <p className="text-[10px] text-muted-foreground">Easy on the eyes</p>
+                      </div>
+                      {themePreference === 'dark' && (
+                        <div className="absolute top-3 right-3">
+                          <CheckCircle2 className="w-5 h-5 text-primary" />
+                        </div>
+                      )}
+                    </button>
+
+                    <button
+                      onClick={() => setThemePreference('system')}
+                      className={cn(
+                        "relative flex flex-col items-center gap-4 p-6 rounded-2xl border-2 transition-all group hover:bg-slate-50 dark:hover:bg-slate-800",
+                        themePreference === 'system' ? "border-primary bg-primary/5 ring-4 ring-primary/10" : "border-slate-100 dark:border-slate-800"
+                      )}
+                    >
+                      <div className={cn(
+                        "p-4 rounded-xl bg-slate-100 dark:bg-slate-800 shadow-sm border",
+                        themePreference === 'system' ? "text-primary border-primary/20" : "text-slate-400 border-slate-200 dark:border-slate-700"
+                      )}>
+                        <Monitor className="w-8 h-8" />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-bold text-sm">System</p>
+                        <p className="text-[10px] text-muted-foreground">Follow your device</p>
+                      </div>
+                      {themePreference === 'system' && (
+                        <div className="absolute top-3 right-3">
+                          <CheckCircle2 className="w-5 h-5 text-primary" />
+                        </div>
+                      )}
+                    </button>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -457,7 +526,7 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3 bg-white p-2 rounded-xl border shadow-sm">
+              <div className="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-2 rounded-xl border shadow-sm">
                  <div className="flex items-center gap-2 flex-1">
                     <Filter className="w-4 h-4 ml-2 text-muted-foreground" />
                     <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
@@ -489,9 +558,9 @@ export default function SettingsPage() {
               {notifLoading && notifications.length === 0 ? (
                 <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>
               ) : filteredNotifications.length === 0 ? (
-                <Card className="border-none shadow-sm bg-slate-50">
+                <Card className="border-none shadow-sm bg-slate-50 dark:bg-slate-800/20">
                   <CardContent className="flex flex-col items-center justify-center py-20 space-y-4">
-                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-sm">
+                    <div className="w-16 h-16 bg-white dark:bg-slate-900 rounded-full flex items-center justify-center shadow-sm">
                       <Inbox className="w-8 h-8 text-slate-300" />
                     </div>
                     <div className="text-center">
@@ -505,12 +574,12 @@ export default function SettingsPage() {
                   {filteredNotifications.map((n) => (
                     <Card key={n.id} className={cn(
                       "border-none shadow-sm hover:shadow-md transition-all group overflow-hidden",
-                      !n.is_read ? "bg-primary/[0.02] ring-1 ring-primary/10" : "bg-white"
+                      !n.is_read ? "bg-primary/[0.02] ring-1 ring-primary/10" : "bg-white dark:bg-slate-900"
                     )}>
                       <CardContent className="p-4 flex items-start gap-4">
                         <div className={cn(
                           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
-                          !n.is_read ? "bg-primary text-white" : "bg-slate-100 text-slate-400"
+                          !n.is_read ? "bg-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
                         )}>
                           {n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
                         </div>
@@ -552,7 +621,7 @@ export default function SettingsPage() {
                           <Button 
                             variant="ghost" 
                             size="icon" 
-                            className="h-8 w-8 text-rose-500 hover:bg-rose-50"
+                            className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
                             onClick={() => handleMoveToTrash(n.id)}
                             title="Move to trash"
                           >
