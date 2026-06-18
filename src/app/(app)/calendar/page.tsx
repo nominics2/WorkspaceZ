@@ -49,7 +49,7 @@ export default function CalendarPage() {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const [tasksRes, teamsRes, membersRes] = await Promise.all([
+      const [tasksRes, teamsRes] = await Promise.all([
         supabase
           .from('my_tasks_view')
           .select('*')
@@ -60,21 +60,40 @@ export default function CalendarPage() {
           .from('sub_workspaces')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
-          .order('name', { ascending: true }),
-        supabase
-          .from('workspace_members')
-          .select('user_id, profiles(full_name)')
-          .eq('workspace_id', activeWorkspace.id)
-          .eq('status', 'active')
+          .order('name', { ascending: true })
       ]);
 
       if (tasksRes.error) throw tasksRes.error;
       if (teamsRes.error) throw teamsRes.error;
-      if (membersRes.error) throw membersRes.error;
+
+      // Fetch members in two steps to avoid profile relationship ambiguity
+      const { data: mData, error: mErr } = await supabase
+        .from('workspace_members')
+        .select('user_id')
+        .eq('workspace_id', activeWorkspace.id)
+        .eq('status', 'active');
+      
+      if (mErr) throw mErr;
+
+      let enrichedMembers = [];
+      if (mData && mData.length > 0) {
+        const uids = mData.map(m => m.user_id);
+        const { data: pData, error: pErr } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', uids);
+        
+        if (pErr) throw pErr;
+
+        enrichedMembers = mData.map(m => ({
+          ...m,
+          profiles: pData?.find(p => p.id === m.user_id) || null
+        }));
+      }
 
       setTasks(tasksRes.data || []);
       setSubWorkspaces(teamsRes.data || []);
-      setMembers(membersRes.data || []);
+      setMembers(enrichedMembers);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error fetching data", description: err.message });
     } finally {

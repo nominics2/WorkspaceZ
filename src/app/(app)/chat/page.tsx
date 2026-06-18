@@ -89,13 +89,33 @@ export default function ChatPage() {
 
   const fetchMembers = useCallback(async () => {
     if (!activeWorkspace) return;
-    const { data } = await supabase
+    
+    // Fetch members and profiles in two steps to avoid ambiguous joins
+    const { data: mData, error: mErr } = await supabase
       .from('workspace_members')
-      .select('user_id, is_verified, profiles(id, full_name, avatar_url, avatar_preset)')
+      .select('user_id, is_verified')
       .eq('workspace_id', activeWorkspace.id)
       .eq('status', 'active');
     
-    setMembers(data || []);
+    if (mErr) return;
+
+    if (mData && mData.length > 0) {
+      const uids = mData.map(m => m.user_id);
+      const { data: pData, error: pErr } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, avatar_preset')
+        .in('id', uids);
+      
+      if (pErr) return;
+
+      const merged = mData.map(member => ({
+        ...member,
+        profiles: pData?.find(p => p.id === member.user_id) || null
+      }));
+      setMembers(merged);
+    } else {
+      setMembers([]);
+    }
   }, [activeWorkspace, supabase]);
 
   const fetchMessages = useCallback(async (channelId: string) => {

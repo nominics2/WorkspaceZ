@@ -124,7 +124,7 @@ function TasksPageContent() {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const [tasksRes, teamsRes, membersRes] = await Promise.all([
+      const [tasksRes, teamsRes] = await Promise.all([
         supabase
           .from('my_tasks_view')
           .select('*')
@@ -134,21 +134,40 @@ function TasksPageContent() {
           .from('sub_workspaces')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
-          .order('name', { ascending: true }),
-        supabase
-          .from('workspace_members')
-          .select('user_id, is_verified, profiles(full_name, avatar_url, avatar_preset)')
-          .eq('workspace_id', activeWorkspace.id)
-          .eq('status', 'active')
+          .order('name', { ascending: true })
       ]);
 
       if (tasksRes.error) throw tasksRes.error;
       if (teamsRes.error) throw teamsRes.error;
-      if (membersRes.error) throw membersRes.error;
+
+      // Fetch members in two steps to avoid ambiguous joins with profiles
+      const { data: mData, error: mErr } = await supabase
+        .from('workspace_members')
+        .select('user_id, is_verified')
+        .eq('workspace_id', activeWorkspace.id)
+        .eq('status', 'active');
+      
+      if (mErr) throw mErr;
+
+      let mergedMembers = [];
+      if (mData && mData.length > 0) {
+        const uids = mData.map(m => m.user_id);
+        const { data: pData, error: pErr } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, avatar_preset')
+          .in('id', uids);
+        
+        if (pErr) throw pErr;
+        
+        mergedMembers = mData.map(member => ({
+          ...member,
+          profiles: pData?.find(p => p.id === member.user_id) || null
+        }));
+      }
 
       setTasks(tasksRes.data || []);
       setSubWorkspaces(teamsRes.data || []);
-      setMembers(membersRes.data || []);
+      setMembers(mergedMembers);
 
       const taskId = searchParams.get('taskId');
       if (taskId) {
@@ -160,7 +179,7 @@ function TasksPageContent() {
       if (teamId) setFilters(f => ({ ...f, teamId }));
 
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
+      toast({ variant: "destructive", title: "Error fetching data", description: err.message });
     } finally {
       setLoading(false);
     }
