@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, Fragment } from "react";
+import React, { useState, useEffect, useCallback, Fragment, useMemo } from "react";
 import { 
   Users, 
   Layers, 
@@ -27,7 +27,9 @@ import {
   Layout,
   RefreshCw,
   BellRing,
-  BadgeCheck
+  BadgeCheck,
+  UserMinus,
+  Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -70,6 +72,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function WorkspaceAdminPage() {
   const { activeWorkspace, workspaces, refreshWorkspaces, userProfile, userRole, hasPermission } = useWorkspace();
@@ -77,6 +80,7 @@ export default function WorkspaceAdminPage() {
   const [allocations, setAllocations] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [subWorkspaces, setSubWorkspaces] = useState<any[]>([]);
+  const [allSubWorkspaceMembers, setAllSubWorkspaceMembers] = useState<any[]>([]);
   const [storage, setStorage] = useState<any>(null);
   const [permissionDefs, setPermissionDefs] = useState<any[]>([]);
   const [wsPermissions, setWsPermissions] = useState<any[]>([]);
@@ -94,6 +98,12 @@ export default function WorkspaceAdminPage() {
   const [deletingTeam, setDeletingTeam] = useState<any>(null);
   const [isStatusUpdating, setIsStatusUpdating] = useState<string | null>(null);
   const [isRunningChecks, setIsRunningChecks] = useState(false);
+
+  // Team Member Management
+  const [isManagingMembers, setIsManagingMembers] = useState(false);
+  const [selectedTeamForMembers, setSelectedTeamForMembers] = useState<any>(null);
+  const [teamMemberSearch, setTeamMemberSearch] = useState("");
+  const [memberToTeamId, setMemberToTeamId] = useState<string | null>(null);
   
   const supabase = createClient();
   const { toast } = useToast();
@@ -103,6 +113,7 @@ export default function WorkspaceAdminPage() {
   const canManageVerified = hasPermission('manage_verified_badges') || userRole === 'superadmin';
   const canManageAllocations = hasPermission('manage_work_allocations') || userRole === 'superadmin';
   const canManageSettings = hasPermission('manage_workspace_settings') || userRole === 'superadmin';
+  const canManageTeamMembers = hasPermission('manage_team_members') || userRole === 'superadmin';
   const canViewAuditLog = userRole === 'superadmin' || hasPermission('view_admin_panel');
 
   const forceUnlockUI = useCallback(() => {
@@ -136,7 +147,7 @@ export default function WorkspaceAdminPage() {
         .single();
       setWorkspaceInfo(wsData);
 
-      // Step 1: Fetch members and profiles separately for reliability
+      // Step 1: Fetch members and profiles
       const { data: wsMembers, error: wsMembersError } = await supabase
         .from('workspace_members')
         .select('*')
@@ -170,7 +181,7 @@ export default function WorkspaceAdminPage() {
         .maybeSingle();
       setStorage(storageInfo);
 
-      // Step 3: Work Allocations (Two-step fetch)
+      // Step 3: Work Allocations
       const { data: allocList, error: allocError } = await supabase
         .from('work_allocations')
         .select('*')
@@ -200,13 +211,21 @@ export default function WorkspaceAdminPage() {
         setAllocations([]);
       }
 
-      // Step 4: Teams (Sub-workspaces)
-      const { data: swList } = await supabase
-        .from('sub_workspaces')
-        .select('*')
-        .eq('workspace_id', activeWorkspace.id)
-        .order('name', { ascending: true });
-      setSubWorkspaces(swList || []);
+      // Step 4: Teams and All Team Members
+      const [swListRes, swMembersRes] = await Promise.all([
+        supabase
+          .from('sub_workspaces')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+          .order('name', { ascending: true }),
+        supabase
+          .from('sub_workspace_members_view')
+          .select('*')
+          .eq('workspace_id', activeWorkspace.id)
+      ]);
+
+      setSubWorkspaces(swListRes.data || []);
+      setAllSubWorkspaceMembers(swMembersRes.data || []);
 
       // Step 5: Permission Definitions
       const { data: defs } = await supabase
@@ -490,6 +509,75 @@ export default function WorkspaceAdminPage() {
     }
   };
 
+  const handleDeleteTeam = async () => {
+    if (!activeWorkspace || !deletingTeam || !canManageSettings) return;
+    setSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('sub_workspaces')
+        .delete()
+        .eq('id', deletingTeam.id);
+
+      if (error) throw error;
+
+      await supabase.rpc('create_admin_audit_log', {
+        p_workspace_id: activeWorkspace.id,
+        p_action: 'sub_workspace_deleted',
+        p_details: { id: deletingTeam.id, name: deletingTeam.name }
+      });
+
+      toast({ title: "Team deleted" });
+      setDeletingTeam(null);
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleAddTeamMember = async (userId: string) => {
+    if (!activeWorkspace || !selectedTeamForMembers || !canManageTeamMembers) return;
+    setIsStatusUpdating(userId);
+    try {
+      const { error } = await supabase.rpc('add_member_to_sub_workspace', {
+        p_workspace_id: activeWorkspace.id,
+        p_sub_workspace_id: selectedTeamForMembers.id,
+        p_user_id: userId
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Member added to team" });
+      await fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setIsStatusUpdating(null);
+    }
+  };
+
+  const handleRemoveTeamMember = async (userId: string) => {
+    if (!activeWorkspace || !selectedTeamForMembers || !canManageTeamMembers) return;
+    setIsStatusUpdating(userId);
+    try {
+      const { error } = await supabase.rpc('remove_member_from_sub_workspace', {
+        p_workspace_id: activeWorkspace.id,
+        p_sub_workspace_id: selectedTeamForMembers.id,
+        p_user_id: userId
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Member removed from team" });
+      await fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setIsStatusUpdating(null);
+    }
+  };
+
   const handleTogglePermission = async (role: string, permissionKey: string, currentEnabled: boolean) => {
     if (userRole !== 'superadmin') return;
     if (!activeWorkspace || !userProfile) return;
@@ -573,6 +661,12 @@ export default function WorkspaceAdminPage() {
     acc[cat].push(def);
     return acc;
   }, {});
+
+  const currentTeamMembers = allSubWorkspaceMembers.filter(m => m.sub_workspace_id === selectedTeamForMembers?.id);
+  const addableMembers = members.filter(m => 
+    m.status === 'active' && 
+    !currentTeamMembers.some(tm => tm.user_id === m.user_id)
+  );
 
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
@@ -762,30 +856,59 @@ export default function WorkspaceAdminPage() {
                 <p className="text-sm text-muted-foreground">No teams defined.</p>
               </div>
             ) : (
-              subWorkspaces.map((team) => (
-                <Card key={team.id} className="border-none shadow-sm dark:bg-slate-900">
-                  <CardHeader className="p-4 pb-2">
-                    <div className="flex items-center justify-between">
-                      <Badge variant="secondary" className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] h-4">Team</Badge>
-                      {canManageSettings && (
+              subWorkspaces.map((team) => {
+                const teamMembers = allSubWorkspaceMembers.filter(m => m.sub_workspace_id === team.id);
+                return (
+                  <Card key={team.id} className="border-none shadow-sm dark:bg-slate-900">
+                    <CardHeader className="p-4 pb-2">
+                      <div className="flex items-center justify-between">
+                        <Badge variant="secondary" className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400 text-[10px] h-4">Team</Badge>
                         <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                           <DropdownMenuTrigger asChild>
                             <Button variant="ghost" size="icon" className="h-7 w-7 dark:text-slate-400"><MoreVertical className="w-4 h-4" /></Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="dark:bg-slate-900 dark:border-slate-800">
-                            <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsCreatingTeam(true); }} className="dark:text-slate-300">Edit</DropdownMenuItem>
-                            <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10" onClick={() => setDeletingTeam(team)}>Delete</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setSelectedTeamForMembers(team); setIsManagingMembers(true); }} className="dark:text-slate-300">Manage Members</DropdownMenuItem>
+                            {canManageSettings && (
+                              <>
+                                <DropdownMenuSeparator className="dark:bg-slate-800" />
+                                <DropdownMenuItem onClick={() => { setEditingTeam(team); setIsCreatingTeam(true); }} className="dark:text-slate-300">Edit Details</DropdownMenuItem>
+                                <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10" onClick={() => setDeletingTeam(team)}>Delete Team</DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
-                      )}
-                    </div>
-                    <CardTitle className="text-base mt-1 dark:text-slate-100">{team.name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0">
-                    <p className="text-xs text-muted-foreground line-clamp-2">{team.description || 'No description.'}</p>
-                  </CardContent>
-                </Card>
-              ))
+                      </div>
+                      <CardTitle className="text-base mt-1 dark:text-slate-100">{team.name}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0 space-y-4">
+                      <p className="text-xs text-muted-foreground line-clamp-2 min-h-[2.5rem]">{team.description || 'No description.'}</p>
+                      
+                      <div className="flex items-center justify-between pt-2 border-t dark:border-slate-800">
+                        <div className="flex -space-x-2 overflow-hidden">
+                          {teamMembers.slice(0, 4).map((tm) => {
+                            const avatar = tm.avatar_preset ? `/avatars/${tm.avatar_preset}.png` : tm.avatar_url;
+                            return (
+                              <Avatar key={tm.id} className="w-6 h-6 border-2 border-white dark:border-slate-900 shadow-sm shrink-0">
+                                <AvatarImage src={avatar} />
+                                <AvatarFallback className="text-[8px] bg-primary/5 text-primary">
+                                  {tm.full_name?.[0] || 'U'}
+                                </AvatarFallback>
+                              </Avatar>
+                            );
+                          })}
+                          {teamMembers.length > 4 && (
+                            <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[8px] font-bold text-muted-foreground border-2 border-white dark:border-slate-900">
+                              +{teamMembers.length - 4}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">{teamMembers.length} members</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
             )}
           </div>
         </TabsContent>
@@ -1035,6 +1158,152 @@ export default function WorkspaceAdminPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={!!deletingTeam} onOpenChange={(open) => !open && setDeletingTeam(null)}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-slate-100">Delete Team?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              Are you sure you want to delete the team <strong>{deletingTeam?.name}</strong>? This will remove all member assignments within the team. Tasks assigned to this team will remain but will no longer be linked to it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeletingTeam(null)} className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteTeam} className="bg-rose-500 hover:bg-rose-600">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Delete Team
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={isManagingMembers} onOpenChange={(open) => { setIsManagingMembers(open); if (!open) { setSelectedTeamForMembers(null); forceUnlockUI(); } }}>
+        <DialogContent className="w-[95vw] max-w-xl p-0 overflow-hidden rounded-2xl dark:bg-slate-950 dark:border-slate-800">
+          <div className="p-6 pb-0">
+             <DialogHeader>
+                <div className="flex items-center gap-2 mb-1">
+                   <Badge variant="secondary" className="bg-violet-50 dark:bg-violet-500/10 text-violet-600 dark:text-violet-400">Team</Badge>
+                </div>
+                <DialogTitle className="text-2xl font-bold dark:text-slate-100">{selectedTeamForMembers?.name}</DialogTitle>
+                <DialogDescription className="dark:text-slate-400">Manage which members are assigned to this focus team.</DialogDescription>
+             </DialogHeader>
+          </div>
+
+          <div className="p-6 space-y-6">
+             <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                   <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-2">
+                     <Users className="w-3.5 h-3.5" />
+                     Team Roster ({currentTeamMembers.length})
+                   </h4>
+                </div>
+
+                <ScrollArea className="h-[300px] rounded-xl border dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-4">
+                   {currentTeamMembers.length === 0 ? (
+                     <div className="h-full flex flex-col items-center justify-center text-center space-y-2 opacity-60 py-12">
+                        <Users className="w-8 h-8" />
+                        <p className="text-sm font-medium">No members in this team yet.</p>
+                     </div>
+                   ) : (
+                     <div className="space-y-3">
+                        {currentTeamMembers.map((tm) => {
+                          const isUpdating = isStatusUpdating === tm.user_id;
+                          return (
+                            <div key={tm.id} className="flex items-center justify-between group bg-white dark:bg-slate-900 p-3 rounded-lg border dark:border-slate-800 shadow-sm">
+                               <div className="flex items-center gap-3 overflow-hidden">
+                                  <Avatar className="w-8 h-8 border dark:border-slate-800 shadow-sm shrink-0">
+                                     <AvatarImage src={tm.avatar_preset ? `/avatars/${tm.avatar_preset}.png` : tm.avatar_url} />
+                                     <AvatarFallback className="text-[10px] font-bold bg-primary/5 text-primary">{tm.full_name?.[0]}</AvatarFallback>
+                                  </Avatar>
+                                  <div className="min-w-0">
+                                     <div className="flex items-center gap-1.5">
+                                        <p className="text-sm font-bold truncate dark:text-slate-200">{tm.full_name}</p>
+                                        {tm.is_verified && <BadgeCheck className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                     </div>
+                                     <p className="text-[10px] text-muted-foreground truncate uppercase">{tm.role}</p>
+                                  </div>
+                               </div>
+                               {canManageTeamMembers && (
+                                 <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => handleRemoveTeamMember(tm.user_id)}
+                                  disabled={isUpdating}
+                                 >
+                                    {isUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserMinus className="w-3.5 h-3.5" />}
+                                 </Button>
+                               )}
+                            </div>
+                          );
+                        })}
+                     </div>
+                   )}
+                </ScrollArea>
+             </div>
+
+             {canManageTeamMembers && (
+               <div className="space-y-3 pt-2">
+                  <Label className="text-xs font-bold dark:text-slate-300">Add Team Member</Label>
+                  <div className="flex gap-2">
+                     <Select value={memberToTeamId || ""} onValueChange={setMemberToTeamId}>
+                        <SelectTrigger className="flex-1 h-11 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
+                           <SelectValue placeholder="Select workspace member..." />
+                        </SelectTrigger>
+                        <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
+                           <div className="p-2 border-b dark:border-slate-800">
+                              <div className="relative">
+                                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                                 <Input 
+                                  placeholder="Search members..." 
+                                  className="h-8 pl-8 text-xs dark:bg-slate-950" 
+                                  value={teamMemberSearch}
+                                  onChange={e => setTeamMemberSearch(e.target.value)}
+                                 />
+                              </div>
+                           </div>
+                           <ScrollArea className="max-h-[200px]">
+                              {addableMembers
+                                .filter(m => m.profiles?.full_name?.toLowerCase().includes(teamMemberSearch.toLowerCase()))
+                                .length === 0 ? (
+                                <div className="p-4 text-center text-xs text-muted-foreground italic">No addable members found.</div>
+                              ) : (
+                                addableMembers
+                                  .filter(m => m.profiles?.full_name?.toLowerCase().includes(teamMemberSearch.toLowerCase()))
+                                  .map(m => (
+                                    <SelectItem key={m.user_id} value={m.user_id}>
+                                       <div className="flex items-center gap-2">
+                                          <Avatar className="w-5 h-5 shrink-0">
+                                             <AvatarImage src={m.profiles?.avatar_preset ? `/avatars/${m.profiles.avatar_preset}.png` : m.profiles?.avatar_url} />
+                                             <AvatarFallback className="text-[8px]">{m.profiles?.full_name?.[0]}</AvatarFallback>
+                                          </Avatar>
+                                          <span className="truncate">{m.profiles?.full_name}</span>
+                                          {m.is_verified && <BadgeCheck className="w-3 h-3 text-primary shrink-0" />}
+                                       </div>
+                                    </SelectItem>
+                                  ))
+                              )}
+                           </ScrollArea>
+                        </SelectContent>
+                     </Select>
+                     <Button 
+                      className="h-11 shadow-lg shadow-primary/20 px-6 gap-2" 
+                      disabled={!memberToTeamId || isStatusUpdating === memberToTeamId}
+                      onClick={() => { if(memberToTeamId) handleAddTeamMember(memberToTeamId); setMemberToTeamId(null); }}
+                     >
+                        {isStatusUpdating === memberToTeamId ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                        Add
+                     </Button>
+                  </div>
+               </div>
+             )}
+          </div>
+
+          <DialogFooter className="p-6 pt-0 bg-slate-50 dark:bg-slate-900/40 border-t dark:border-slate-800">
+             <Button variant="ghost" onClick={() => setIsManagingMembers(false)} className="dark:text-slate-300">Close Panel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
