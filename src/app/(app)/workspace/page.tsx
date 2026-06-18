@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useEffect, useCallback, Fragment, useMemo } from "react";
@@ -29,7 +30,8 @@ import {
   BellRing,
   BadgeCheck,
   UserMinus,
-  Search
+  Search,
+  Save
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -85,6 +87,7 @@ export default function WorkspaceAdminPage() {
   const [permissionDefs, setPermissionDefs] = useState<any[]>([]);
   const [wsPermissions, setWsPermissions] = useState<any[]>([]);
   const [workspaceInfo, setWorkspaceInfo] = useState<any>(null);
+  const [wsNameInput, setWsNameInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
@@ -146,6 +149,9 @@ export default function WorkspaceAdminPage() {
         .eq('id', activeWorkspace.id)
         .single();
       setWorkspaceInfo(wsData);
+      if (wsData) {
+        setWsNameInput(wsData.name);
+      }
 
       // Step 1: Fetch members and profiles
       const { data: wsMembers, error: wsMembersError } = await supabase
@@ -267,6 +273,27 @@ export default function WorkspaceAdminPage() {
     if (activeWorkspace?.join_code) {
       navigator.clipboard.writeText(activeWorkspace.join_code);
       toast({ title: "Join code copied!" });
+    }
+  };
+
+  const handleUpdateWorkspaceName = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeWorkspace || !canManageSettings || !wsNameInput.trim()) return;
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.rpc("update_workspace_name", {
+        p_workspace_id: activeWorkspace.id,
+        p_name: wsNameInput.trim(),
+      });
+      if (error) throw error;
+      toast({ title: "Workspace name updated" });
+      await refreshWorkspaces();
+      await fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSubmitting(false);
+      forceUnlockUI();
     }
   };
 
@@ -1057,6 +1084,40 @@ export default function WorkspaceAdminPage() {
 
         <TabsContent value="settings" className="space-y-6">
            <Card className="border-none shadow-sm dark:bg-slate-900">
+             <CardHeader className="p-4 md:p-6">
+               <CardTitle className="text-lg dark:text-slate-100">General Details</CardTitle>
+               <CardDescription>Update the primary identification of this workspace.</CardDescription>
+             </CardHeader>
+             <CardContent className="p-4 md:p-6 space-y-4">
+               <form onSubmit={handleUpdateWorkspaceName} className="space-y-4">
+                 <div className="space-y-2">
+                   <Label htmlFor="wsName" className="dark:text-slate-300">Workspace Name</Label>
+                   <div className="flex flex-col sm:flex-row gap-3">
+                     <Input 
+                       id="wsName"
+                       value={wsNameInput}
+                       onChange={(e) => setWsNameInput(e.target.value)}
+                       placeholder="Workspace Name"
+                       className="flex-1 dark:bg-slate-950 dark:border-slate-800"
+                       required
+                       disabled={!canManageSettings || submitting}
+                     />
+                     <Button 
+                       type="submit" 
+                       disabled={!canManageSettings || submitting || !wsNameInput.trim() || wsNameInput === workspaceInfo?.name}
+                       className="gap-2 shadow-lg shadow-primary/20"
+                     >
+                       {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                       Update Name
+                     </Button>
+                   </div>
+                   <p className="text-[10px] text-muted-foreground italic">Renaming the workspace will update the display name for all members.</p>
+                 </div>
+               </form>
+             </CardContent>
+           </Card>
+
+           <Card className="border-none shadow-sm dark:bg-slate-900">
              <CardHeader className="p-4 md:p-6"><CardTitle className="text-lg dark:text-slate-100">Access Control</CardTitle></CardHeader>
              <CardContent className="p-4 md:p-6 space-y-4">
                 <div className="flex items-center justify-between gap-4 p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border dark:border-slate-800">
@@ -1233,7 +1294,7 @@ export default function WorkspaceAdminPage() {
                                  <Button 
                                   variant="ghost" 
                                   size="icon" 
-                                  className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 opacity-0 group-hover:opacity-100 transition-opacity"
                                   onClick={() => handleRemoveTeamMember(tm.user_id)}
                                   disabled={isUpdating}
                                  >
