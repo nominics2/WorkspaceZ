@@ -18,7 +18,9 @@ import {
   User,
   Check,
   Users,
-  X
+  X,
+  FileIcon,
+  Download
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +40,15 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+interface Attachment {
+  id: string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  file_size_bytes: number;
+  message_id: string;
+}
 
 interface Chat {
   id: string;
@@ -64,6 +75,7 @@ interface Message {
     avatar_url: string;
     avatar_preset: string;
   } | null;
+  attachments?: Attachment[];
 }
 
 interface WorkspaceMemberProfile {
@@ -127,6 +139,12 @@ export default function ChatPage() {
     const sizes = ['Bytes', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
+  const sanitizeFileName = (name: string) => {
+    const timestamp = Date.now();
+    const cleanName = name.replace(/[^\w\d.-]/g, '_');
+    return `${timestamp}-${cleanName}`;
   };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -247,14 +265,22 @@ export default function ChatPage() {
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
     try {
-      const { data: msgData, error: msgError } = await supabase
-        .from('chat_messages')
-        .select('id, channel_id, workspace_id, sender_id, message, created_at, is_deleted')
-        .eq('channel_id', channelId)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: true });
+      const [msgDataRes, attachDataRes] = await Promise.all([
+        supabase
+          .from('chat_messages')
+          .select('id, channel_id, workspace_id, sender_id, message, created_at, is_deleted')
+          .eq('channel_id', channelId)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('chat_message_attachments')
+          .select('*')
+          .eq('channel_id', channelId)
+      ]);
 
-      if (msgError) throw msgError;
+      if (msgDataRes.error) throw msgDataRes.error;
+      const msgData = msgDataRes.data || [];
+      const attachData = attachDataRes.data || [];
 
       if (!msgData || msgData.length === 0) {
         setMessages([]);
@@ -269,7 +295,8 @@ export default function ChatPage() {
 
       const enrichedMessages: Message[] = msgData.map(m => ({
         ...m,
-        profiles: profilesData?.find(p => p.id === m.sender_id) || null
+        profiles: profilesData?.find(p => p.id === m.sender_id) || null,
+        attachments: attachData.filter(a => a.message_id === m.id)
       }));
 
       setMessages(enrichedMessages);
@@ -353,7 +380,7 @@ export default function ChatPage() {
 
           setMessages((prev) => {
             if (prev.some(m => m.id === newMessage.id)) return prev;
-            return [...prev, { ...newMessage, profiles: null }];
+            return [...prev, { ...newMessage, profiles: null, attachments: [] }];
           });
 
           try {
@@ -429,23 +456,73 @@ export default function ChatPage() {
     if (!selectedChat || !userProfile || (!text && !selectedFile) || isSending) return;
 
     setIsSending(true);
+    let messageId: string | null = null;
     try {
-      const { error: sendError } = await supabase
+      // 1. Create the message first (required for attachment link)
+      const { data: msgData, error: sendError } = await supabase
         .from('chat_messages')
         .insert({
           channel_id: selectedChat.id,
           workspace_id: selectedChat.workspace_id,
           sender_id: userProfile.id,
-          message: text
-        });
+          message: text || "" // Messages can be empty if there's an attachment
+        })
+        .select('id')
+        .single();
 
       if (sendError) throw sendError;
+      messageId = msgData.id;
+
+      // 2. Handle Upload if file is present
+      if (selectedFile) {
+        const safeName = sanitizeFileName(selectedFile.name);
+        const storagePath = `${selectedChat.workspace_id}/${selectedChat.id}/${messageId}/${safeName}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from('chat-attachments')
+          .upload(storagePath, selectedFile, {
+            upsert: false,
+            contentType: selectedFile.type
+          });
+
+        if (uploadError) {
+          // Cleanup message if upload fails to keep DB clean
+          await supabase.from('chat_messages').delete().eq('id', messageId);
+          throw uploadError;
+        }
+
+        // 3. Create attachment record
+        const { error: attachError } = await supabase
+          .from('chat_message_attachments')
+          .insert({
+            workspace_id: selectedChat.workspace_id,
+            channel_id: selectedChat.id,
+            message_id: messageId,
+            uploaded_by: userProfile.id,
+            file_name: selectedFile.name,
+            file_path: storagePath,
+            file_type: selectedFile.type || null,
+            file_size_bytes: selectedFile.size
+          });
+
+        if (attachError) {
+          // Rollback storage & message if DB record fails
+          await supabase.storage.from('chat-attachments').remove([storagePath]);
+          await supabase.from('chat_messages').delete().eq('id', messageId);
+          throw attachError;
+        }
+      }
       
       setMessageInput("");
       setSelectedFile(null); // Clear attachment on successful send
       setTimeout(() => scrollToBottom(), 50);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Send Failed", description: "Message could not be delivered." });
+      console.error("[Chat] Send Error:", serializeSupabaseError(err));
+      toast({ 
+        variant: "destructive", 
+        title: "Send Failed", 
+        description: err.message || "Message could not be delivered." 
+      });
     } finally {
       setIsSending(false);
     }
@@ -708,6 +785,23 @@ export default function ChatPage() {
                               : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
                           )}>
                             {msg.message}
+                            
+                            {/* Attachments Placeholder (Detailed Display in 5C) */}
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="mt-2 space-y-2">
+                                {msg.attachments.map(att => (
+                                  <div key={att.id} className={cn(
+                                    "flex items-center gap-3 p-2 rounded-lg border text-[11px]",
+                                    isMe ? "bg-white/10 border-white/20" : "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                                  )}>
+                                    <FileIcon className="w-4 h-4 shrink-0" />
+                                    <span className="truncate font-medium">{att.file_name}</span>
+                                    <span className="opacity-60 ml-auto">{formatBytes(att.file_size_bytes)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
                             <div className={cn(
                               "flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold",
                               isMe ? "text-white/80" : "text-slate-400"
