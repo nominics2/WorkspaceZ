@@ -104,6 +104,12 @@ interface WorkspaceMemberProfile {
   role?: string;
 }
 
+interface ChatUnreadCount {
+  channel_id: string;
+  unread_count: number;
+  latest_message_at: string;
+}
+
 export default function ChatPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -113,6 +119,7 @@ export default function ChatPage() {
   
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -188,8 +195,35 @@ export default function ChatPage() {
     const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
     if (!viewport) return true;
     const { scrollTop, scrollHeight, clientHeight } = viewport;
+    // Buffer of 150px to account for small gaps
     return scrollHeight - scrollTop <= clientHeight + 150;
   };
+
+  const fetchUnreadCounts = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_chat_unread_counts");
+      if (error) throw error;
+      
+      const counts: Record<string, number> = {};
+      (data as ChatUnreadCount[]).forEach(item => {
+        counts[item.channel_id] = item.unread_count;
+      });
+      setUnreadCounts(counts);
+    } catch (err) {
+      console.error("[Chat] Error fetching unread counts:", serializeSupabaseError(err));
+    }
+  }, [supabase]);
+
+  const markAsRead = useCallback(async (channelId: string) => {
+    try {
+      const { error } = await supabase.rpc("mark_chat_channel_read", { p_channel_id: channelId });
+      if (error) throw error;
+      
+      setUnreadCounts(prev => ({ ...prev, [channelId]: 0 }));
+    } catch (err) {
+      console.error("[Chat] Error marking channel as read:", serializeSupabaseError(err));
+    }
+  }, [supabase]);
 
   const fetchChats = useCallback(async () => {
     if (!userProfile) return;
@@ -235,7 +269,8 @@ export default function ChatPage() {
         supabase
           .from('chat_channel_members')
           .select('channel_id, user_id, profiles(full_name, avatar_url, avatar_preset)')
-          .in('channel_id', channelIds)
+          .in('channel_id', channelIds),
+        fetchUnreadCounts()
       ]);
 
       const lastMessages = messagesRes.data || [];
@@ -272,6 +307,7 @@ export default function ChatPage() {
           display_avatar_preset: displayAvatarPreset
         };
       }).sort((a, b) => {
+        // Pin General to top
         const isAGeneral = a.name.toLowerCase() === 'general' && (activeWorkspace ? a.workspace_id === activeWorkspace.id : true);
         const isBGeneral = b.name.toLowerCase() === 'general' && (activeWorkspace ? b.workspace_id === activeWorkspace.id : true);
         if (isAGeneral) return -1;
@@ -284,6 +320,7 @@ export default function ChatPage() {
 
       setChats(formattedChats);
       
+      // Auto-select first chat if none selected and not on mobile
       if (!selectedChatId && formattedChats.length > 0 && !showConversation) {
         setSelectedChatId(formattedChats[0].id);
       }
@@ -293,7 +330,7 @@ export default function ChatPage() {
     } finally {
       setLoadingChats(false);
     }
-  }, [userProfile, supabase, activeWorkspace, selectedChatId, showConversation]);
+  }, [userProfile, supabase, activeWorkspace, selectedChatId, showConversation, fetchUnreadCounts]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
@@ -561,6 +598,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (selectedChatId) {
       fetchMessages(selectedChatId);
+      markAsRead(selectedChatId);
       setSelectedFile(null); // Clear file on channel change
       setIsSearchOpen(false); // Close contextual search on channel change
       setInChatSearchQuery("");
@@ -568,7 +606,7 @@ export default function ChatPage() {
     } else {
       setMessages([]);
     }
-  }, [selectedChatId, fetchMessages]);
+  }, [selectedChatId, fetchMessages, markAsRead]);
 
   useEffect(() => {
     if (!selectedChatId) return;
@@ -581,37 +619,54 @@ export default function ChatPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'chat_messages',
-          filter: `channel_id=eq.${selectedChatId}`,
         },
         async (payload) => {
           const newMessage = payload.new as any;
-          const wasAtBottom = isAtBottom();
+          
+          // Handle unread logic for OTHER channels
+          if (newMessage.channel_id !== selectedChatId && newMessage.sender_id !== userProfile?.id) {
+            setUnreadCounts(prev => ({
+              ...prev,
+              [newMessage.channel_id]: (prev[newMessage.channel_id] || 0) + 1
+            }));
+            return;
+          }
 
-          setMessages((prev) => {
-            if (prev.some(m => m.id === newMessage.id)) return prev;
-            return [...prev, { ...newMessage, profiles: null, attachments: [] }];
-          });
+          // Handle message for CURRENT channel
+          if (newMessage.channel_id === selectedChatId) {
+            const wasAtBottom = isAtBottom();
 
-          // Wait a brief moment to allow attachment insertion to complete, then refetch to get everything
-          setTimeout(() => fetchMessages(selectedChatId), 1000);
+            setMessages((prev) => {
+              if (prev.some(m => m.id === newMessage.id)) return prev;
+              return [...prev, { ...newMessage, profiles: null, attachments: [] }];
+            });
 
-          try {
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('id, full_name, avatar_url, avatar_preset')
-              .eq('id', newMessage.sender_id)
-              .single();
-            
-            setMessages((prev) => 
-              prev.map(m => m.id === newMessage.id ? { ...m, profiles: profileData || null } : m)
-                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-            );
-
+            // Mark as read if user is actively engaged
             if (wasAtBottom || newMessage.sender_id === userProfile?.id) {
-              setTimeout(() => scrollToBottom(), 100);
+              markAsRead(selectedChatId);
             }
-          } catch (err) {
-            console.error("Profile sync error:", err);
+
+            // Wait a brief moment to allow attachment insertion to complete, then refetch to get everything
+            setTimeout(() => fetchMessages(selectedChatId), 1000);
+
+            try {
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url, avatar_preset')
+                .eq('id', newMessage.sender_id)
+                .single();
+              
+              setMessages((prev) => 
+                prev.map(m => m.id === newMessage.id ? { ...m, profiles: profileData || null } : m)
+                  .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+              );
+
+              if (wasAtBottom || newMessage.sender_id === userProfile?.id) {
+                setTimeout(() => scrollToBottom(), 100);
+              }
+            } catch (err) {
+              console.error("Profile sync error:", err);
+            }
           }
         }
       )
@@ -621,14 +676,15 @@ export default function ChatPage() {
           event: 'UPDATE',
           schema: 'public',
           table: 'chat_messages',
-          filter: `channel_id=eq.${selectedChatId}`,
         },
         (payload) => {
           const updatedMessage = payload.new as any;
-          if (updatedMessage.is_deleted) {
-            setMessages((prev) => prev.filter(m => m.id !== updatedMessage.id));
-          } else {
-            setMessages((prev) => prev.map(m => m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m));
+          if (updatedMessage.channel_id === selectedChatId) {
+            if (updatedMessage.is_deleted) {
+              setMessages((prev) => prev.filter(m => m.id !== updatedMessage.id));
+            } else {
+              setMessages((prev) => prev.map(m => m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m));
+            }
           }
         }
       )
@@ -637,7 +693,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedChatId, supabase, userProfile?.id, scrollToBottom, fetchMessages]);
+  }, [selectedChatId, supabase, userProfile?.id, scrollToBottom, fetchMessages, markAsRead]);
 
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
@@ -652,8 +708,6 @@ export default function ChatPage() {
         setHighlightedMessageId(msgId);
         setTimeout(() => setHighlightedMessageId(null), 3000);
       } else {
-        // If not in current DOM list, we would need pagination/offset loading
-        // For MVP, just show toast
         toast({ title: "Message found", description: "Scrolling to location..." });
       }
     } else {
@@ -763,6 +817,7 @@ export default function ChatPage() {
       setMessageInput("");
       setSelectedFile(null);
       await fetchMessages(selectedChat.id);
+      fetchUnreadCounts();
     } catch (err: any) {
       console.error("[Chat] Send Error:", serializeSupabaseError(err));
       toast({ 
@@ -846,6 +901,9 @@ export default function ChatPage() {
   const mediaItems = allMedia.filter(m => m.file_type?.startsWith('image/'));
   const fileItems = allMedia.filter(m => !m.file_type?.startsWith('image/'));
 
+  // Calculate total unread (TODO: integrate into global sidebar)
+  const totalUnread = Object.values(unreadCounts).reduce((acc, curr) => acc + curr, 0);
+
   return (
     <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500">
       
@@ -856,7 +914,14 @@ export default function ChatPage() {
       )}>
         <div className="p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Chat</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Chat</h1>
+              {totalUnread > 0 && (
+                <Badge className="bg-primary text-white text-[10px] h-5 rounded-full border-2 border-white dark:border-slate-900">
+                  {totalUnread > 99 ? "99+" : totalUnread}
+                </Badge>
+              )}
+            </div>
             <Button 
               size="icon" 
               variant="ghost" 
@@ -946,6 +1011,7 @@ export default function ChatPage() {
               ) : (
                 filteredChats.map((chat) => {
                   const isActive = selectedChatId === chat.id;
+                  const unreadCount = unreadCounts[chat.id] || 0;
                   const avatarSrc = chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar;
 
                   return (
@@ -953,7 +1019,7 @@ export default function ChatPage() {
                       key={chat.id}
                       onClick={() => handleSelectChat(chat.id)}
                       className={cn(
-                        "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                        "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50 relative",
                         isActive ? "bg-primary/10 dark:bg-primary/10" : ""
                       )}
                     >
@@ -983,13 +1049,20 @@ export default function ChatPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                          {chat.last_message || (
-                            chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
-                            chat.type === 'direct' ? 'Direct Message' : 
-                            chat.type === 'group' ? 'Group Chat' : 'Channel'
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {chat.last_message || (
+                              chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
+                              chat.type === 'direct' ? 'Direct Message' : 
+                              chat.type === 'group' ? 'Group Chat' : 'Channel'
+                            )}
+                          </p>
+                          {unreadCount > 0 && (
+                            <Badge className="h-5 min-w-[20px] px-1 bg-primary text-white text-[10px] font-bold rounded-full animate-in zoom-in border-2 border-white dark:border-slate-900 shrink-0">
+                              {unreadCount > 99 ? "99+" : unreadCount}
+                            </Badge>
                           )}
-                        </p>
+                        </div>
                       </div>
                     </button>
                   );
