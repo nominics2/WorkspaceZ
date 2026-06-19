@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   Send, 
   Search, 
@@ -79,10 +79,22 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
   const { toast } = useToast();
+
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom(loadingMessages ? "auto" : "smooth");
+    }
+  }, [messages, loadingMessages]);
 
   const fetchChats = useCallback(async () => {
     if (!activeWorkspace || !userProfile) {
@@ -95,7 +107,6 @@ export default function ChatPage() {
     try {
       console.log("[Chat Debug] Fetching workspace memberships for user:", userProfile.id);
       
-      // Step 1: Get active workspace memberships
       const { data: memberData, error: memberError } = await supabase
         .from('workspace_members')
         .select('workspace_id')
@@ -114,9 +125,7 @@ export default function ChatPage() {
       }
 
       const workspaceIds = memberData.map(m => m.workspace_id);
-      console.log("[Chat Debug] Querying chat_channels for workspaces:", workspaceIds);
-
-      // Step 2: Query chat_channels for these workspaces
+      
       const { data: channelsData, error: channelsError } = await supabase
         .from('chat_channels')
         .select('id, workspace_id, sub_workspace_id, name, type, created_at')
@@ -135,7 +144,6 @@ export default function ChatPage() {
 
       const channelIds = channelsData.map(c => c.id);
 
-      // Step 3: Get latest message per channel for preview
       const { data: lastMessages, error: lastMsgError } = await supabase
         .from('chat_messages')
         .select('id, channel_id, message, created_at')
@@ -145,12 +153,6 @@ export default function ChatPage() {
 
       if (lastMsgError) {
         console.warn("[Chat Debug] Last message fetch warning:", serializeSupabaseError(lastMsgError));
-      }
-
-      // Step 4: Check for General channel duplicates in active workspace
-      const generalChannels = channelsData.filter(c => c.name === 'General' && c.workspace_id === activeWorkspace.id);
-      if (generalChannels.length > 1) {
-        console.warn("[Chat Debug] Multiple General channels found in workspace:", generalChannels.map(gc => gc.id));
       }
 
       const formattedChats: Chat[] = channelsData.map(channel => {
@@ -164,11 +166,8 @@ export default function ChatPage() {
           last_message_at: lastMsg?.created_at
         };
       }).sort((a, b) => {
-        // Rule: General channel always at the top of the current workspace
         if (a.name === 'General' && a.workspace_id === activeWorkspace.id) return -1;
         if (b.name === 'General' && b.workspace_id === activeWorkspace.id) return 1;
-        
-        // Then sort by latest message time
         const timeA = new Date(a.last_message_at || 0).getTime();
         const timeB = new Date(b.last_message_at || 0).getTime();
         return timeB - timeA;
@@ -186,8 +185,6 @@ export default function ChatPage() {
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
     try {
-      console.log("[Chat Debug] Fetching messages for channel:", channelId);
-      
       const { data: msgData, error: msgError } = await supabase
         .from('chat_messages')
         .select('id, channel_id, workspace_id, sender_id, message, created_at, is_deleted')
@@ -206,7 +203,6 @@ export default function ChatPage() {
         return;
       }
 
-      // Enrichment Step: Fetch Profiles for senders
       const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
@@ -253,6 +249,38 @@ export default function ChatPage() {
   };
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
+  const isGeneral = selectedChat?.name?.toLowerCase() === 'general';
+  
+  const handleSendMessage = async () => {
+    if (!selectedChat || !userProfile || isGeneral || !messageInput.trim() || isSending) return;
+
+    setIsSending(true);
+    try {
+      const { error: sendError } = await supabase
+        .from('chat_messages')
+        .insert({
+          channel_id: selectedChat.id,
+          workspace_id: selectedChat.workspace_id,
+          sender_id: userProfile.id,
+          message: messageInput.trim()
+        });
+
+      if (sendError) {
+        console.error("[Chat Debug] Send Message Error:", serializeSupabaseError(sendError));
+        toast({ variant: "destructive", title: "Failed to send message", description: "Please try again." });
+      } else {
+        setMessageInput("");
+        // Optimistic UI could be added here, but refetching is safer for demo
+        await fetchMessages(selectedChat.id);
+      }
+    } catch (err: any) {
+      console.error("[Chat Debug] Fatal Send Error:", err);
+      toast({ variant: "destructive", title: "Error", description: "An unexpected error occurred." });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const filteredChats = chats.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -425,32 +453,45 @@ export default function ChatPage() {
                     );
                   })
                 )}
+                <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
 
             {/* Input Bar */}
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
               <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0"><Paperclip className="w-5 h-5" /></Button>
+                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0" disabled={isGeneral}>
+                  <Paperclip className="w-5 h-5" />
+                </Button>
                 <Input 
                   className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" 
-                  placeholder="Message..." 
+                  placeholder={isGeneral ? "General Chat is read-only." : "Message..."}
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  disabled={loadingMessages}
+                  disabled={loadingMessages || isSending || isGeneral}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
                 />
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0 hidden sm:flex"><Smile className="w-5 h-5" /></Button>
+                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0 hidden sm:flex" disabled={isGeneral}>
+                  <Smile className="w-5 h-5" />
+                </Button>
                 <Button 
                   size="icon" 
+                  onClick={handleSendMessage}
                   className={cn(
                     "rounded-xl shadow-lg transition-all active:scale-95 shrink-0",
-                    messageInput.trim() && !loadingMessages ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
+                    messageInput.trim() && !loadingMessages && !isSending && !isGeneral ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
                   )}
-                  disabled={!messageInput.trim() || loadingMessages}
+                  disabled={!messageInput.trim() || loadingMessages || isSending || isGeneral}
                 >
-                  <Send className="w-5 h-5" />
+                  {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                 </Button>
               </div>
+              {isGeneral && <p className="text-[10px] text-center mt-2 text-slate-400 font-medium uppercase tracking-widest">Public channel is restricted to viewing</p>}
             </div>
           </>
         ) : (
