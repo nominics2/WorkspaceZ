@@ -296,11 +296,10 @@ export default function ChatPage() {
   };
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
-  const isGeneral = selectedChat?.name?.toLowerCase() === 'general';
   
   const handleSendMessage = async () => {
     const text = messageInput.trim();
-    if (!selectedChat || !userProfile || isGeneral || !text || isSending) return;
+    if (!selectedChat || !userProfile || !text || isSending) return;
 
     setIsSending(true);
     try {
@@ -402,7 +401,7 @@ export default function ChatPage() {
                       )}
                     </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {chat.last_message || (chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : chat.type === 'group' ? 'Group Chat' : 'Public Channel')}
+                      {chat.last_message || (chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : chat.type === 'group' ? 'Group Chat' : (chat.type === 'direct' || chat.type === 'private' ? 'Direct Message' : 'Channel'))}
                     </p>
                   </div>
                 </button>
@@ -439,7 +438,7 @@ export default function ChatPage() {
                   <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.name}</p>
                   <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : selectedChat.type === 'group' ? 'Group Chat' : 'Direct Message'}
+                    {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : selectedChat.type === 'group' ? 'Group Chat' : (selectedChat.type === 'direct' || selectedChat.type === 'private' ? 'Direct Message' : 'Channel')}
                   </p>
                 </div>
               </div>
@@ -508,15 +507,15 @@ export default function ChatPage() {
             {/* Input Bar */}
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
               <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0" disabled={isGeneral}>
+                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0">
                   <Paperclip className="w-5 h-5" />
                 </Button>
                 <Input 
                   className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" 
-                  placeholder={isGeneral ? "General Chat is read-only." : "Type a message..."}
+                  placeholder="Type a message..."
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  disabled={loadingMessages || isSending || isGeneral}
+                  disabled={loadingMessages || isSending}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -524,7 +523,7 @@ export default function ChatPage() {
                     }
                   }}
                 />
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0 hidden sm:flex" disabled={isGeneral}>
+                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0 hidden sm:flex">
                   <Smile className="w-5 h-5" />
                 </Button>
                 <Button 
@@ -532,14 +531,13 @@ export default function ChatPage() {
                   onClick={handleSendMessage}
                   className={cn(
                     "rounded-xl shadow-lg transition-all active:scale-95 shrink-0",
-                    messageInput.trim() && !loadingMessages && !isSending && !isGeneral ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
+                    messageInput.trim() && !loadingMessages && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
                   )}
-                  disabled={!messageInput.trim() || loadingMessages || isSending || isGeneral}
+                  disabled={!messageInput.trim() || loadingMessages || isSending}
                 >
                   {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                 </Button>
               </div>
-              {isGeneral && <p className="text-[10px] text-center mt-2 text-slate-400 font-bold uppercase tracking-widest">Public channel restricted to viewing</p>}
             </div>
           </>
         ) : (
