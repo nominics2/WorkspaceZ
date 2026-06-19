@@ -24,7 +24,9 @@ import {
   Image as ImageIcon,
   ExternalLink,
   Files,
-  ArrowDown
+  ArrowDown,
+  BellOff,
+  Bell
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +54,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuLabel, 
+  DropdownMenuSeparator, 
+  DropdownMenuCheckboxItem, 
+  DropdownMenuTrigger, 
+  DropdownMenuItem 
+} from "@/components/ui/dropdown-menu";
 
 interface Attachment {
   id: string;
@@ -110,6 +121,12 @@ interface ChatUnreadCount {
   latest_message_at: string;
 }
 
+interface ChatMuteState {
+  channel_id: string;
+  is_muted: boolean;
+  muted_until: string | null;
+}
+
 export default function ChatPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -120,6 +137,7 @@ export default function ChatPage() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [muteStates, setMuteStates] = useState<Record<string, { is_muted: boolean, muted_until: string | null }>>({});
   const [loadingChats, setLoadingChats] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -214,6 +232,24 @@ export default function ChatPage() {
     }
   }, [supabase]);
 
+  const fetchMuteStates = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.rpc("get_chat_mute_states");
+      if (error) throw error;
+
+      const mutes: Record<string, { is_muted: boolean, muted_until: string | null }> = {};
+      (data as ChatMuteState[]).forEach(item => {
+        mutes[item.channel_id] = { 
+          is_muted: item.is_muted, 
+          muted_until: item.muted_until 
+        };
+      });
+      setMuteStates(mutes);
+    } catch (err) {
+      console.error("[Chat] Error fetching mute states:", serializeSupabaseError(err));
+    }
+  }, [supabase]);
+
   const markAsRead = useCallback(async (channelId: string) => {
     try {
       const { error } = await supabase.rpc("mark_chat_channel_read", { p_channel_id: channelId });
@@ -270,7 +306,8 @@ export default function ChatPage() {
           .from('chat_channel_members')
           .select('channel_id, user_id, profiles(full_name, avatar_url, avatar_preset)')
           .in('channel_id', channelIds),
-        fetchUnreadCounts()
+        fetchUnreadCounts(),
+        fetchMuteStates()
       ]);
 
       const lastMessages = messagesRes.data || [];
@@ -330,7 +367,7 @@ export default function ChatPage() {
     } finally {
       setLoadingChats(false);
     }
-  }, [userProfile, supabase, activeWorkspace, selectedChatId, showConversation, fetchUnreadCounts]);
+  }, [userProfile, supabase, activeWorkspace, selectedChatId, showConversation, fetchUnreadCounts, fetchMuteStates]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
@@ -570,6 +607,60 @@ export default function ChatPage() {
       setIsGlobalSearching(false);
     }
   }, [supabase, chats, toast]);
+
+  const handleMute = async (duration: '1h' | '8h' | '24h' | 'forever') => {
+    if (!selectedChatId) return;
+
+    let mutedUntil: string | null = null;
+    const now = new Date();
+
+    if (duration === '1h') {
+      mutedUntil = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+    } else if (duration === '8h') {
+      mutedUntil = new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString();
+    } else if (duration === '24h') {
+      mutedUntil = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    try {
+      const { error } = await supabase.rpc("mute_chat_channel", {
+        p_channel_id: selectedChatId,
+        p_muted_until: mutedUntil,
+      });
+
+      if (error) throw error;
+
+      setMuteStates(prev => ({
+        ...prev,
+        [selectedChatId]: { is_muted: true, muted_until: mutedUntil }
+      }));
+      toast({ title: "Chat muted", description: duration === 'forever' ? "Notifications silenced indefinitely." : `Notifications silenced until ${new Date(mutedUntil!).toLocaleString()}` });
+    } catch (err: any) {
+      console.error("[Chat] Mute Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Unable to mute chat", description: err.message });
+    }
+  };
+
+  const handleUnmute = async () => {
+    if (!selectedChatId) return;
+
+    try {
+      const { error } = await supabase.rpc("unmute_chat_channel", {
+        p_channel_id: selectedChatId
+      });
+
+      if (error) throw error;
+
+      setMuteStates(prev => ({
+        ...prev,
+        [selectedChatId]: { is_muted: false, muted_until: null }
+      }));
+      toast({ title: "Chat unmuted", description: "Notifications restored." });
+    } catch (err: any) {
+      console.error("[Chat] Unmute Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Unable to unmute chat", description: err.message });
+    }
+  };
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -901,8 +992,16 @@ export default function ChatPage() {
   const mediaItems = allMedia.filter(m => m.file_type?.startsWith('image/'));
   const fileItems = allMedia.filter(m => !m.file_type?.startsWith('image/'));
 
-  // Calculate total unread (TODO: integrate into global sidebar)
-  const totalUnread = Object.values(unreadCounts).reduce((acc, curr) => acc + curr, 0);
+  // Calculate total unread, excluding muted channels
+  const totalUnread = Object.keys(unreadCounts).reduce((acc, currId) => {
+    const isMuted = muteStates[currId]?.is_muted && (!muteStates[currId].muted_until || new Date(muteStates[currId].muted_until!) > new Date());
+    if (isMuted) return acc;
+    return acc + (unreadCounts[currId] || 0);
+  }, 0);
+
+  const isCurrentChatMuted = selectedChatId ? 
+    (muteStates[selectedChatId]?.is_muted && (!muteStates[selectedChatId]?.muted_until || new Date(muteStates[selectedChatId].muted_until!) > new Date())) 
+    : false;
 
   return (
     <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500">
@@ -1012,6 +1111,7 @@ export default function ChatPage() {
                 filteredChats.map((chat) => {
                   const isActive = selectedChatId === chat.id;
                   const unreadCount = unreadCounts[chat.id] || 0;
+                  const isMuted = muteStates[chat.id]?.is_muted && (!muteStates[chat.id].muted_until || new Date(muteStates[chat.id].muted_until!) > new Date());
                   const avatarSrc = chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar;
 
                   return (
@@ -1039,10 +1139,13 @@ export default function ChatPage() {
                       </Avatar>
                       <div className="flex-1 min-w-0 text-left">
                         <div className="flex justify-between items-baseline mb-0.5">
-                          <p className={cn(
-                            "font-bold text-sm truncate",
-                            isActive ? "text-primary" : "text-slate-900 dark:text-white"
-                          )}>{chat.display_name}</p>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className={cn(
+                              "font-bold text-sm truncate",
+                              isActive ? "text-primary" : "text-slate-900 dark:text-white"
+                            )}>{chat.display_name}</p>
+                            {isMuted && <BellOff className="w-3 h-3 text-slate-400 shrink-0" />}
+                          </div>
                           {chat.last_message_at && (
                             <span className="text-[10px] text-slate-400 font-medium ml-2 shrink-0">
                               {new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1058,7 +1161,10 @@ export default function ChatPage() {
                             )}
                           </p>
                           {unreadCount > 0 && (
-                            <Badge className="h-5 min-w-[20px] px-1 bg-primary text-white text-[10px] font-bold rounded-full animate-in zoom-in border-2 border-white dark:border-slate-900 shrink-0">
+                            <Badge className={cn(
+                              "h-5 min-w-[20px] px-1 text-white text-[10px] font-bold rounded-full animate-in zoom-in border-2 border-white dark:border-slate-900 shrink-0",
+                              isMuted ? "bg-slate-400 opacity-70" : "bg-primary"
+                            )}>
                               {unreadCount > 99 ? "99+" : unreadCount}
                             </Badge>
                           )}
@@ -1129,12 +1235,18 @@ export default function ChatPage() {
                       )}
                     </Avatar>
                     <div className="min-w-0">
-                      <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>
+                        {isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}
+                      </div>
                       <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
                         {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
                          selectedChat.type === 'direct' ? 'Direct Message' : 
                          selectedChat.type === 'group' ? 'Group Chat' : 'Channel'}
+                        {isCurrentChatMuted && (
+                          <span className="text-slate-400 ml-1 font-bold">• Muted</span>
+                        )}
                       </p>
                     </div>
                   </div>
@@ -1145,7 +1257,28 @@ export default function ChatPage() {
                     <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}>
                       <Search className="w-5 h-5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button>
+                    <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' && (document.body.style.pointerEvents = ""))}>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-56 dark:bg-slate-900 dark:border-slate-800">
+                        <DropdownMenuLabel className="dark:text-slate-100">Notifications</DropdownMenuLabel>
+                        {isCurrentChatMuted ? (
+                          <DropdownMenuItem onClick={handleUnmute} className="gap-2 text-primary font-medium">
+                            <Bell className="w-4 h-4" /> Unmute Chat
+                          </DropdownMenuItem>
+                        ) : (
+                          <>
+                            <DropdownMenuItem onClick={() => handleMute('1h')} className="gap-2">Mute for 1 hour</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleMute('8h')} className="gap-2">Mute for 8 hours</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleMute('24h')} className="gap-2">Mute for 24 hours</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleMute('forever')} className="gap-2 text-rose-500">Mute Forever</DropdownMenuItem>
+                          </>
+                        )}
+                        <DropdownMenuSeparator className="dark:bg-slate-800" />
+                        <DropdownMenuItem className="gap-2">Channel Settings</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </>
               )}
