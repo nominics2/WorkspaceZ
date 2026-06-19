@@ -16,7 +16,8 @@ import {
   AlertCircle,
   UserPlus,
   User,
-  Check
+  Check,
+  Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Chat {
   id: string;
@@ -43,7 +45,8 @@ interface Chat {
   workspace_id: string;
   last_message?: string;
   last_message_at?: string;
-  // Resolved fields for Direct Messages
+  created_at: string;
+  // Resolved fields for UI
   display_name?: string;
   display_avatar?: string;
   display_avatar_preset?: string;
@@ -88,9 +91,12 @@ export default function ChatPage() {
 
   // New Chat Modal State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [chatMode, setChatMode] = useState<"direct" | "group">("direct");
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberProfile[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [groupName, setGroupName] = useState("");
   const [isStartingChat, setIsStartingChat] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
 
@@ -126,6 +132,7 @@ export default function ChatPage() {
     setLoadingChats(true);
     setError(null);
     try {
+      // 1. Get active workspace memberships
       const { data: memberData, error: memberError } = await supabase
         .from('workspace_members')
         .select('workspace_id')
@@ -140,6 +147,7 @@ export default function ChatPage() {
 
       const workspaceIds = memberData.map(m => m.workspace_id);
       
+      // 2. Get channels for these workspaces
       const { data: channelsData, error: channelsError } = await supabase
         .from('chat_channels')
         .select('id, workspace_id, sub_workspace_id, name, type, created_at')
@@ -147,7 +155,6 @@ export default function ChatPage() {
         .order('created_at', { ascending: false });
 
       if (channelsError) throw channelsError;
-
       if (!channelsData || channelsData.length === 0) {
         setChats([]);
         return;
@@ -155,7 +162,7 @@ export default function ChatPage() {
 
       const channelIds = channelsData.map(c => c.id);
 
-      // Fetch latest messages and participants in parallel
+      // 3. Fetch latest messages and participants
       const [messagesRes, participantsRes] = await Promise.all([
         supabase
           .from('chat_messages')
@@ -188,6 +195,8 @@ export default function ChatPage() {
             displayAvatar = otherMember.profiles.avatar_url;
             displayAvatarPreset = otherMember.profiles.avatar_preset;
           }
+        } else if (channel.type === 'group') {
+          displayName = channel.name; // Keep group name
         }
 
         return {
@@ -197,28 +206,36 @@ export default function ChatPage() {
           workspace_id: channel.workspace_id,
           last_message: lastMsg?.message,
           last_message_at: lastMsg?.created_at,
+          created_at: channel.created_at,
           display_name: displayName,
           display_avatar: displayAvatar,
           display_avatar_preset: displayAvatarPreset
         };
       }).sort((a, b) => {
+        // Sort General first if in active workspace
         const isAGeneral = a.name.toLowerCase() === 'general' && (activeWorkspace ? a.workspace_id === activeWorkspace.id : true);
         const isBGeneral = b.name.toLowerCase() === 'general' && (activeWorkspace ? b.workspace_id === activeWorkspace.id : true);
         if (isAGeneral) return -1;
         if (isBGeneral) return 1;
+        
         const timeA = new Date(a.last_message_at || a.created_at || 0).getTime();
         const timeB = new Date(b.last_message_at || b.created_at || 0).getTime();
         return timeB - timeA;
       });
 
       setChats(formattedChats);
+      
+      // Auto-select first chat if none selected
+      if (!selectedChatId && formattedChats.length > 0) {
+        setSelectedChatId(formattedChats[0].id);
+      }
     } catch (err: any) {
       console.error("[Chat] Load Error:", serializeSupabaseError(err));
       setError(err.message || "An unexpected error occurred while loading chats.");
     } finally {
       setLoadingChats(false);
     }
-  }, [userProfile, supabase, activeWorkspace]);
+  }, [userProfile, supabase, activeWorkspace, selectedChatId]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
@@ -234,7 +251,6 @@ export default function ChatPage() {
 
       if (!msgData || msgData.length === 0) {
         setMessages([]);
-        setLoadingMessages(false);
         return;
       }
 
@@ -333,6 +349,7 @@ export default function ChatPage() {
             return [...prev, { ...newMessage, profiles: null }];
           });
 
+          // Fetch sender profile for the new message
           try {
             const { data: profileData } = await supabase
               .from('profiles')
@@ -345,6 +362,7 @@ export default function ChatPage() {
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
             );
 
+            // Auto-scroll if user is already at the bottom or it's their own message
             if (wasAtBottom || newMessage.sender_id === userProfile?.id) {
               setTimeout(() => scrollToBottom(), 100);
             }
@@ -401,7 +419,7 @@ export default function ChatPage() {
 
       if (sendError) throw sendError;
       setMessageInput("");
-      fetchMessages(selectedChat.id);
+      // Realtime subscription will handle the UI update
     } catch (err: any) {
       toast({ variant: "destructive", title: "Send Failed", description: "Message could not be delivered." });
     } finally {
@@ -410,18 +428,37 @@ export default function ChatPage() {
   };
 
   const handleStartChat = async () => {
-    if (!selectedMemberId || !activeWorkspace || isStartingChat) return;
+    if (!activeWorkspace || isStartingChat) return;
+
+    // Validate inputs based on mode
+    if (chatMode === 'direct' && !selectedMemberId) return;
+    if (chatMode === 'group' && (!groupName.trim() || selectedMemberIds.length < 2)) return;
+
     setIsStartingChat(true);
     try {
-      const { data: channelId, error: rpcError } = await supabase.rpc("create_or_get_direct_chat", {
-        p_workspace_id: activeWorkspace.id,
-        p_other_user_id: selectedMemberId,
-      });
+      let channelId: string | null = null;
 
-      if (rpcError) throw rpcError;
+      if (chatMode === 'direct') {
+        const { data, error: rpcError } = await supabase.rpc("create_or_get_direct_chat", {
+          p_workspace_id: activeWorkspace.id,
+          p_other_user_id: selectedMemberId,
+        });
+        if (rpcError) throw rpcError;
+        channelId = data;
+      } else {
+        const { data, error: rpcError } = await supabase.rpc("create_group_chat", {
+          p_workspace_id: activeWorkspace.id,
+          p_name: groupName.trim(),
+          p_member_user_ids: selectedMemberIds,
+        });
+        if (rpcError) throw rpcError;
+        channelId = data;
+      }
 
       setIsNewChatOpen(false);
       setSelectedMemberId(null);
+      setSelectedMemberIds([]);
+      setGroupName("");
       setMemberSearchQuery("");
       
       // Refresh chat list to include new channel
@@ -432,17 +469,23 @@ export default function ChatPage() {
         handleSelectChat(channelId);
       }
       
-      toast({ title: "Chat started!" });
+      toast({ title: chatMode === 'group' ? "Group created!" : "Chat started!" });
     } catch (err: any) {
       console.error("[Chat] Start Error:", serializeSupabaseError(err));
       toast({ 
         variant: "destructive", 
-        title: "Unable to start chat", 
+        title: "Unable to start conversation", 
         description: err.message || "Something went wrong." 
       });
     } finally {
       setIsStartingChat(false);
     }
+  };
+
+  const toggleMemberSelection = (id: string) => {
+    setSelectedMemberIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
   };
 
   const filteredChats = chats.filter(c => 
@@ -526,7 +569,9 @@ export default function ChatPage() {
                           "bg-primary/10 text-primary font-bold",
                           isActive ? "bg-primary text-white" : ""
                         )}>
-                          {chat.name.toLowerCase() === 'general' ? <Hash className="w-5 h-5" /> : (chat.display_name?.[0] || 'C').toUpperCase()}
+                          {chat.name.toLowerCase() === 'general' ? <Hash className="w-5 h-5" /> : 
+                           chat.type === 'group' ? <Users className="w-5 h-5" /> :
+                           (chat.display_name?.[0] || 'C').toUpperCase()}
                         </AvatarFallback>
                       )}
                     </Avatar>
@@ -581,7 +626,9 @@ export default function ChatPage() {
                     <AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} />
                   ) : (
                     <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                      {selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}
+                      {selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : 
+                       selectedChat.type === 'group' ? <Users className="w-4 h-4" /> :
+                       (selectedChat.display_name?.[0] || 'C').toUpperCase()}
                     </AvatarFallback>
                   )}
                 </Avatar>
@@ -717,21 +764,48 @@ export default function ChatPage() {
                 <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Messenger</Badge>
               </div>
               <DialogTitle className="text-2xl font-bold dark:text-slate-100">New Chat</DialogTitle>
-              <DialogDescription className="dark:text-slate-400">Select a team member to start a private conversation.</DialogDescription>
+              <DialogDescription className="dark:text-slate-400">Start a conversation with your team.</DialogDescription>
             </DialogHeader>
-            <div className="relative mt-6">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input 
-                placeholder="Search members" 
-                className="pl-10 h-12 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/20"
-                value={memberSearchQuery}
-                onChange={(e) => setMemberSearchQuery(e.target.value)}
-              />
-            </div>
+
+            <Tabs value={chatMode} onValueChange={(v: any) => setChatMode(v)} className="mt-6">
+              <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900">
+                <TabsTrigger value="direct">Direct Message</TabsTrigger>
+                <TabsTrigger value="group">Group Chat</TabsTrigger>
+              </TabsList>
+
+              <div className="mt-6 space-y-4">
+                {chatMode === 'group' && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Group Details</p>
+                    <Input 
+                      placeholder="Enter group name..." 
+                      className="h-11 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/20"
+                      value={groupName}
+                      onChange={(e) => setGroupName(e.target.value)}
+                    />
+                  </div>
+                )}
+                
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                    {chatMode === 'group' ? `Select Members (${selectedMemberIds.length})` : 'Select Member'}
+                  </p>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input 
+                      placeholder="Search members" 
+                      className="pl-10 h-11 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/20"
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Tabs>
           </div>
 
           <div className="p-6">
-            <ScrollArea className="h-72">
+            <ScrollArea className="h-64">
               <div className="space-y-2">
                 {loadingMembers ? (
                   <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
@@ -744,35 +818,41 @@ export default function ChatPage() {
                     <p className="text-sm font-medium">No members found</p>
                   </div>
                 ) : (
-                  filteredMembers.map((member) => (
-                    <button
-                      key={member.id}
-                      onClick={() => setSelectedMemberId(member.id)}
-                      className={cn(
-                        "w-full flex items-center gap-4 p-3 rounded-2xl transition-all group text-left relative",
-                        selectedMemberId === member.id 
-                          ? "bg-primary/10 ring-1 ring-primary/20 shadow-sm" 
-                          : "hover:bg-slate-50 dark:hover:bg-slate-900"
-                      )}
-                    >
-                      <Avatar className="w-10 h-10 border dark:border-slate-800 shrink-0">
-                        <AvatarImage src={member.avatar_preset ? `/avatars/${member.avatar_preset}.png` : member.avatar_url} />
-                        <AvatarFallback className="bg-primary/5 text-primary font-bold">{member.full_name[0]}</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="font-bold text-sm truncate dark:text-slate-100">{member.full_name}</p>
-                          <Badge variant="outline" className="text-[8px] py-0 h-3.5 uppercase dark:border-slate-800 dark:text-slate-500">{member.role}</Badge>
+                  filteredMembers.map((member) => {
+                    const isSelected = chatMode === 'group' 
+                      ? selectedMemberIds.includes(member.id) 
+                      : selectedMemberId === member.id;
+
+                    return (
+                      <button
+                        key={member.id}
+                        onClick={() => chatMode === 'group' ? toggleMemberSelection(member.id) : setSelectedMemberId(member.id)}
+                        className={cn(
+                          "w-full flex items-center gap-4 p-3 rounded-2xl transition-all group text-left relative",
+                          isSelected 
+                            ? "bg-primary/10 ring-1 ring-primary/20 shadow-sm" 
+                            : "hover:bg-slate-50 dark:hover:bg-slate-900"
+                        )}
+                      >
+                        <Avatar className="w-10 h-10 border dark:border-slate-800 shrink-0">
+                          <AvatarImage src={member.avatar_preset ? `/avatars/${member.avatar_preset}.png` : member.avatar_url} />
+                          <AvatarFallback className="bg-primary/5 text-primary font-bold">{member.full_name[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-bold text-sm truncate dark:text-slate-100">{member.full_name}</p>
+                            <Badge variant="outline" className="text-[8px] py-0 h-3.5 uppercase dark:border-slate-800 dark:text-slate-500">{member.role}</Badge>
+                          </div>
+                          <p className="text-[10px] text-slate-500 truncate italic">@{member.username || member.email.split('@')[0]}</p>
                         </div>
-                        <p className="text-[10px] text-slate-500 truncate italic">@{member.username || member.email.split('@')[0]}</p>
-                      </div>
-                      {selectedMemberId === member.id && (
-                        <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md animate-in zoom-in">
-                          <Check className="w-3 h-3 text-white" />
-                        </div>
-                      )}
-                    </button>
-                  ))
+                        {isSelected && (
+                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md animate-in zoom-in">
+                            <Check className="w-3 h-3 text-white" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })
                 )}
               </div>
             </ScrollArea>
@@ -790,11 +870,15 @@ export default function ChatPage() {
               </Button>
               <Button 
                 className="flex-1 rounded-xl h-11 shadow-lg shadow-primary/20"
-                disabled={!selectedMemberId || loadingMembers || isStartingChat}
+                disabled={
+                  isStartingChat || 
+                  (chatMode === 'direct' && !selectedMemberId) || 
+                  (chatMode === 'group' && (!groupName.trim() || selectedMemberIds.length < 2))
+                }
                 onClick={handleStartChat}
               >
                 {isStartingChat ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                {isStartingChat ? 'Starting...' : 'Start Chat'}
+                {isStartingChat ? 'Creating...' : chatMode === 'group' ? 'Create Group' : 'Start Chat'}
               </Button>
             </div>
           </DialogFooter>
