@@ -17,7 +17,8 @@ import {
   UserPlus,
   User,
   Check,
-  Users
+  Users,
+  X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +90,10 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Attachment State
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
   // New Chat Modal State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [chatMode, setChatMode] = useState<"direct" | "group">("direct");
@@ -115,6 +120,15 @@ export default function ChatPage() {
     };
   };
 
+  const formatBytes = (bytes: number, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
@@ -132,7 +146,6 @@ export default function ChatPage() {
     setLoadingChats(true);
     setError(null);
     try {
-      // 1. Get active workspace memberships
       const { data: memberData, error: memberError } = await supabase
         .from('workspace_members')
         .select('workspace_id')
@@ -147,7 +160,6 @@ export default function ChatPage() {
 
       const workspaceIds = memberData.map(m => m.workspace_id);
       
-      // 2. Get channels for these workspaces
       const { data: channelsData, error: channelsError } = await supabase
         .from('chat_channels')
         .select('id, workspace_id, sub_workspace_id, name, type, created_at')
@@ -162,7 +174,6 @@ export default function ChatPage() {
 
       const channelIds = channelsData.map(c => c.id);
 
-      // 3. Fetch latest messages and participants
       const [messagesRes, participantsRes] = await Promise.all([
         supabase
           .from('chat_messages')
@@ -195,8 +206,6 @@ export default function ChatPage() {
             displayAvatar = otherMember.profiles.avatar_url;
             displayAvatarPreset = otherMember.profiles.avatar_preset;
           }
-        } else if (channel.type === 'group') {
-          displayName = channel.name; // Keep group name
         }
 
         return {
@@ -212,7 +221,6 @@ export default function ChatPage() {
           display_avatar_preset: displayAvatarPreset
         };
       }).sort((a, b) => {
-        // Sort General first if in active workspace
         const isAGeneral = a.name.toLowerCase() === 'general' && (activeWorkspace ? a.workspace_id === activeWorkspace.id : true);
         const isBGeneral = b.name.toLowerCase() === 'general' && (activeWorkspace ? b.workspace_id === activeWorkspace.id : true);
         if (isAGeneral) return -1;
@@ -225,8 +233,7 @@ export default function ChatPage() {
 
       setChats(formattedChats);
       
-      // Auto-select first chat if none selected
-      if (!selectedChatId && formattedChats.length > 0) {
+      if (!selectedChatId && formattedChats.length > 0 && !showConversation) {
         setSelectedChatId(formattedChats[0].id);
       }
     } catch (err: any) {
@@ -235,7 +242,7 @@ export default function ChatPage() {
     } finally {
       setLoadingChats(false);
     }
-  }, [userProfile, supabase, activeWorkspace, selectedChatId]);
+  }, [userProfile, supabase, activeWorkspace, selectedChatId, showConversation]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
@@ -321,12 +328,12 @@ export default function ChatPage() {
   useEffect(() => {
     if (selectedChatId) {
       fetchMessages(selectedChatId);
+      setSelectedFile(null); // Clear file on channel change
     } else {
       setMessages([]);
     }
   }, [selectedChatId, fetchMessages]);
 
-  // Realtime Subscription
   useEffect(() => {
     if (!selectedChatId) return;
 
@@ -349,7 +356,6 @@ export default function ChatPage() {
             return [...prev, { ...newMessage, profiles: null }];
           });
 
-          // Fetch sender profile for the new message
           try {
             const { data: profileData } = await supabase
               .from('profiles')
@@ -362,7 +368,6 @@ export default function ChatPage() {
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
             );
 
-            // Auto-scroll if user is already at the bottom or it's their own message
             if (wasAtBottom || newMessage.sender_id === userProfile?.id) {
               setTimeout(() => scrollToBottom(), 100);
             }
@@ -402,9 +407,26 @@ export default function ChatPage() {
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
   
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        variant: "destructive",
+        title: "File too large",
+        description: "Maximum size is 5MB."
+      });
+      return;
+    }
+
+    setSelectedFile(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleSendMessage = async () => {
     const text = messageInput.trim();
-    if (!selectedChat || !userProfile || !text || isSending) return;
+    if (!selectedChat || !userProfile || (!text && !selectedFile) || isSending) return;
 
     setIsSending(true);
     try {
@@ -418,8 +440,10 @@ export default function ChatPage() {
         });
 
       if (sendError) throw sendError;
+      
       setMessageInput("");
-      // Realtime subscription will handle the UI update
+      setSelectedFile(null); // Clear attachment on successful send
+      setTimeout(() => scrollToBottom(), 50);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Send Failed", description: "Message could not be delivered." });
     } finally {
@@ -430,7 +454,6 @@ export default function ChatPage() {
   const handleStartChat = async () => {
     if (!activeWorkspace || isStartingChat) return;
 
-    // Validate inputs based on mode
     if (chatMode === 'direct' && !selectedMemberId) return;
     if (chatMode === 'group' && (!groupName.trim() || selectedMemberIds.length < 2)) return;
 
@@ -461,10 +484,8 @@ export default function ChatPage() {
       setGroupName("");
       setMemberSearchQuery("");
       
-      // Refresh chat list to include new channel
       await fetchChats();
       
-      // Open the channel
       if (channelId) {
         handleSelectChat(channelId);
       }
@@ -706,8 +727,43 @@ export default function ChatPage() {
 
             {/* Input Bar */}
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
+              {/* Attachment Preview Bar */}
+              {selectedFile && (
+                <div className="mb-4 flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border dark:border-slate-800 animate-in slide-in-from-bottom-2 duration-300">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <Paperclip className="w-4 h-4 text-primary" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold truncate dark:text-slate-100">{selectedFile.name}</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">{formatBytes(selectedFile.size)}</p>
+                    </div>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500"
+                    onClick={() => setSelectedFile(null)}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+
               <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0">
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  className="hidden" 
+                  onChange={handleFileSelect}
+                />
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-slate-400 hover:text-primary rounded-xl shrink-0"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSending || !selectedChatId}
+                >
                   <Paperclip className="w-5 h-5" />
                 </Button>
                 <Input 
@@ -731,9 +787,9 @@ export default function ChatPage() {
                   onClick={handleSendMessage}
                   className={cn(
                     "rounded-xl shadow-lg transition-all active:scale-95 shrink-0",
-                    messageInput.trim() && !loadingMessages && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
+                    (messageInput.trim() || selectedFile) && !loadingMessages && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
                   )}
-                  disabled={!messageInput.trim() || loadingMessages || isSending}
+                  disabled={(!messageInput.trim() && !selectedFile) || loadingMessages || isSending}
                 >
                   {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                 </Button>
