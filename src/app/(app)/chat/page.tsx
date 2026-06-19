@@ -67,6 +67,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
+/**
+ * PRODUCTION TYPES
+ */
 interface Attachment {
   id: string;
   file_name: string;
@@ -169,6 +172,9 @@ export default function ChatPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
+  /**
+   * UTILITIES
+   */
   const serializeSupabaseError = (error: any) => {
     if (!error) return null;
     return {
@@ -205,6 +211,9 @@ export default function ChatPage() {
     return scrollHeight - scrollTop <= clientHeight + 150;
   };
 
+  /**
+   * DATA FETCHING
+   */
   const fetchUnreadCounts = useCallback(async () => {
     try {
       const { data, error } = await supabase.rpc("get_chat_unread_counts");
@@ -215,10 +224,9 @@ export default function ChatPage() {
         counts[item.channel_id] = item.unread_count;
       });
       setUnreadCounts(counts);
-      // Sync global total
       refreshUnread();
     } catch (err) {
-      console.error("[Chat] Error fetching unread counts:", serializeSupabaseError(err));
+      console.error("[Chat] Sync unreads failed:", serializeSupabaseError(err));
     }
   }, [supabase, refreshUnread]);
 
@@ -235,10 +243,9 @@ export default function ChatPage() {
         };
       });
       setMuteStates(mutes);
-      // Global badge excludes muted, so refresh global total too
       refreshUnread();
     } catch (err) {
-      console.error("[Chat] Error fetching mute states:", serializeSupabaseError(err));
+      console.error("[Chat] Sync mutes failed:", serializeSupabaseError(err));
     }
   }, [supabase, refreshUnread]);
 
@@ -248,10 +255,9 @@ export default function ChatPage() {
       if (error) throw error;
       
       setUnreadCounts(prev => ({ ...prev, [channelId]: 0 }));
-      // Optimistically update global unread count
       refreshUnread();
     } catch (err) {
-      console.error("[Chat] Error marking channel as read:", serializeSupabaseError(err));
+      console.error("[Chat] Mark read failed:", serializeSupabaseError(err));
     }
   }, [supabase, refreshUnread]);
 
@@ -423,8 +429,8 @@ export default function ChatPage() {
         }
       }, 100);
     } catch (err: any) {
-      console.error("[Chat] Message Load Error:", serializeSupabaseError(err));
-      toast({ variant: "destructive", title: "Sync Error", description: err.message });
+      console.error("[Chat] Sync Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "History Sync Failed", description: err.message });
     } finally {
       setLoadingMessages(false);
     }
@@ -496,13 +502,16 @@ export default function ChatPage() {
 
       setAllMedia(enriched);
     } catch (err: any) {
-      console.error("[Chat] Media Load Error:", serializeSupabaseError(err));
-      toast({ variant: "destructive", title: "Media Error", description: "Failed to load channel attachments." });
+      console.error("[Chat] Gallery Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Gallery Error", description: "Failed to load shared files." });
     } finally {
       setLoadingMedia(false);
     }
   }, [selectedChatId, supabase, toast]);
 
+  /**
+   * SEARCH LOGIC
+   */
   const performInChatSearch = useCallback(async (query: string) => {
     if (!selectedChatId || query.length < 2) {
       setInChatSearchResults([]);
@@ -538,12 +547,11 @@ export default function ChatPage() {
         setInChatSearchResults([]);
       }
     } catch (err: any) {
-      console.error("[Chat] In-chat Search Error:", serializeSupabaseError(err));
-      toast({ variant: "destructive", title: "Search Error", description: err.message });
+      console.error("[Chat] Context Search Error:", serializeSupabaseError(err));
     } finally {
       setIsSearching(false);
     }
-  }, [selectedChatId, supabase, toast]);
+  }, [selectedChatId, supabase]);
 
   const performGlobalSearch = useCallback(async (query: string) => {
     if (query.length < 2 || chats.length === 0) {
@@ -578,7 +586,7 @@ export default function ChatPage() {
           return {
             ...m,
             profiles: profilesData?.find(p => p.id === m.sender_id) || null,
-            channel_display_name: channel?.display_name || 'Archived Channel'
+            channel_display_name: channel?.display_name || 'Archive'
           };
         });
         setGlobalSearchResults(enriched);
@@ -586,13 +594,15 @@ export default function ChatPage() {
         setGlobalSearchResults([]);
       }
     } catch (err: any) {
-      console.error("[Chat] Global Search Error:", serializeSupabaseError(err));
-      toast({ variant: "destructive", title: "Search Failed", description: err.message });
+      console.error("[Chat] Universal Search Error:", serializeSupabaseError(err));
     } finally {
       setIsGlobalSearching(false);
     }
-  }, [supabase, chats, toast]);
+  }, [supabase, chats]);
 
+  /**
+   * MUTING ACTIONS
+   */
   const handleMute = async (duration: '1h' | '8h' | '24h' | 'forever') => {
     if (!selectedChatId) return;
 
@@ -620,9 +630,9 @@ export default function ChatPage() {
         [selectedChatId]: { is_muted: true, muted_until: mutedUntil }
       }));
       refreshUnread();
-      toast({ title: "Chat muted" });
+      toast({ title: "Notifications silenced" });
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Unable to mute chat", description: err.message });
+      toast({ variant: "destructive", title: "Mute failed", description: err.message });
     }
   };
 
@@ -640,28 +650,26 @@ export default function ChatPage() {
         [selectedChatId]: { is_muted: false, muted_until: null }
       }));
       refreshUnread();
-      toast({ title: "Chat unmuted" });
+      toast({ title: "Notifications restored" });
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Unable to unmute chat", description: err.message });
+      toast({ variant: "destructive", title: "Unmute failed", description: err.message });
     }
   };
 
+  /**
+   * EFFECTS
+   */
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (inChatSearchQuery) {
-        performInChatSearch(inChatSearchQuery);
-      }
+      if (inChatSearchQuery) performInChatSearch(inChatSearchQuery);
     }, 300);
     return () => clearTimeout(timer);
   }, [inChatSearchQuery, performInChatSearch]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (searchQuery) {
-        performGlobalSearch(searchQuery);
-      } else {
-        setGlobalSearchResults([]);
-      }
+      if (searchQuery) performGlobalSearch(searchQuery);
+      else setGlobalSearchResults([]);
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, performGlobalSearch]);
@@ -683,6 +691,9 @@ export default function ChatPage() {
     }
   }, [selectedChatId, fetchMessages, markAsRead]);
 
+  /**
+   * REALTIME SYNC
+   */
   useEffect(() => {
     if (!selectedChatId) return;
 
@@ -693,7 +704,6 @@ export default function ChatPage() {
           const newMessage = payload.new as any;
           if (newMessage.channel_id !== selectedChatId && newMessage.sender_id !== userProfile?.id) {
             setUnreadCounts(prev => ({ ...prev, [newMessage.channel_id]: (prev[newMessage.channel_id] || 0) + 1 }));
-            // Global provider also tracks this via its own subscription
             return;
           }
 
@@ -708,6 +718,7 @@ export default function ChatPage() {
               markAsRead(selectedChatId);
             }
 
+            // Sync attachments after short delay
             setTimeout(() => fetchMessages(selectedChatId), 1000);
 
             try {
@@ -740,6 +751,9 @@ export default function ChatPage() {
     return () => { supabase.removeChannel(channel); };
   }, [selectedChatId, supabase, userProfile?.id, scrollToBottom, fetchMessages, markAsRead]);
 
+  /**
+   * HANDLERS
+   */
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
     setShowConversation(true);
@@ -830,7 +844,7 @@ export default function ChatPage() {
       await fetchMessages(chatObj.id);
       fetchUnreadCounts();
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Send Failed", description: err.message });
+      toast({ variant: "destructive", title: "Transmission Failed", description: err.message });
     } finally {
       setIsSending(false);
     }
@@ -868,14 +882,17 @@ export default function ChatPage() {
       setMemberSearchQuery("");
       await fetchChats();
       if (channelId) handleSelectChat(channelId);
-      toast({ title: chatMode === 'group' ? "Group created!" : "Chat started!" });
+      toast({ title: chatMode === 'group' ? "Focus group created" : "Direct chat initialized" });
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Unable to start conversation", description: err.message });
+      toast({ variant: "destructive", title: "Handshake Failed", description: err.message });
     } finally {
       setIsStartingChat(false);
     }
   };
 
+  /**
+   * RENDER HELPERS
+   */
   const filteredChats = chats.filter(c => 
     c.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -907,14 +924,14 @@ export default function ChatPage() {
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Chat</h1>
               {totalUnread > 0 && <Badge className="bg-primary text-white text-[10px] h-5 rounded-full border-2 border-white dark:border-slate-900">{totalUnread > 99 ? "99+" : totalUnread}</Badge>}
             </div>
-            <Button size="icon" variant="ghost" className="rounded-xl text-primary hover:bg-primary/5" onClick={() => { setIsNewChatOpen(true); fetchMembers(); }}>
+            <Button size="icon" variant="ghost" className="rounded-xl text-primary hover:bg-primary/5" aria-label="New Chat" onClick={() => { setIsNewChatOpen(true); fetchMembers(); }}>
               <Plus className="w-5 h-5" />
             </Button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input placeholder="Search chats and messages" className="pl-10 h-11 bg-slate-100 dark:bg-slate-800 border-none rounded-xl" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            {searchQuery && <button className="absolute right-3 top-1/2 -translate-y-1/2" onClick={() => { setSearchQuery(""); setGlobalSearchResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>}
+            <Input placeholder="Search everything..." className="pl-10 h-11 bg-slate-100 dark:bg-slate-800 border-none rounded-xl" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            {searchQuery && <button className="absolute right-3 top-1/2 -translate-y-1/2" aria-label="Clear Search" onClick={() => { setSearchQuery(""); setGlobalSearchResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>}
           </div>
         </div>
         <ScrollArea className="flex-1 px-3">
@@ -922,7 +939,7 @@ export default function ChatPage() {
             {searchQuery.length >= 2 && (
               <div className="space-y-1 px-1">
                 <div className="flex items-center justify-between px-2 mb-2">
-                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Message Results</p>
+                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Message Threads</p>
                    {isGlobalSearching && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
                 </div>
                 {globalSearchResults.map((res) => (
@@ -939,7 +956,7 @@ export default function ChatPage() {
             )}
             <div className="space-y-1">
               {loadingChats ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /><p className="text-xs font-medium">Syncing...</p></div>
+                <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400"><Loader2 className="w-6 h-6 animate-spin" /><p className="text-xs font-medium">Synchronizing conversations...</p></div>
               ) : filteredChats.map((chat) => {
                   const isActive = selectedChatId === chat.id;
                   const unreadCount = unreadCounts[chat.id] || 0;
@@ -958,7 +975,7 @@ export default function ChatPage() {
                           {chat.last_message_at && <span className="text-[10px] text-slate-400 font-medium ml-2 shrink-0">{new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
                         </div>
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{chat.last_message || 'No messages'}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{chat.last_message || 'No activity yet'}</p>
                           {unreadCount > 0 && <Badge className={cn("h-5 min-w-[20px] px-1 text-white text-[10px] font-bold rounded-full border-2 border-white dark:border-slate-900 shrink-0", isMuted ? "bg-slate-400" : "bg-primary")}>{unreadCount > 99 ? "99+" : unreadCount}</Badge>}
                         </div>
                       </div>
@@ -975,25 +992,25 @@ export default function ChatPage() {
           <>
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-b dark:border-slate-800 flex items-center justify-between">
               {isSearchOpen ? (
-                <div className="flex items-center gap-3 w-full"><Button variant="ghost" size="icon" onClick={() => { setIsSearchOpen(false); setInChatSearchQuery(""); setInChatSearchResults([]); }}><ChevronLeft className="w-5 h-5" /></Button><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Search in this chat..." className="pl-10 h-10 bg-slate-100 dark:bg-slate-800 border-none rounded-xl" value={inChatSearchQuery} onChange={(e) => setInChatSearchQuery(e.target.value)} autoFocus />{inChatSearchQuery && <button className="absolute right-3 top-1/2 -translate-y-1/2" onClick={() => { setInChatSearchQuery(""); setInChatSearchResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>}</div></div>
+                <div className="flex items-center gap-3 w-full"><Button variant="ghost" size="icon" aria-label="Close Search" onClick={() => { setIsSearchOpen(false); setInChatSearchQuery(""); setInChatSearchResults([]); }}><ChevronLeft className="w-5 h-5" /></Button><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Filter this thread..." className="pl-10 h-10 bg-slate-100 dark:bg-slate-800 border-none rounded-xl" value={inChatSearchQuery} onChange={(e) => setInChatSearchQuery(e.target.value)} autoFocus />{inChatSearchQuery && <button className="absolute right-3 top-1/2 -translate-y-1/2" aria-label="Clear Query" onClick={() => { setInChatSearchQuery(""); setInChatSearchResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>}</div></div>
               ) : (
                 <>
-                  <div className="flex items-center gap-4 min-w-0"><Button variant="ghost" size="icon" className="md:hidden rounded-xl h-10 w-10" onClick={() => setShowConversation(false)}><ChevronLeft className="w-6 h-6" /></Button><Avatar className="w-10 h-10"><AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} /><AvatarFallback className="bg-primary/10 text-primary font-bold">{selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.type === 'group' ? <Users className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>{isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}</div><p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />{selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : selectedChat.type === 'direct' ? 'Direct Message' : 'Group Chat'}{isCurrentChatMuted && <span className="text-slate-400 ml-1 font-bold">• Muted</span>}</p></div></div>
+                  <div className="flex items-center gap-4 min-w-0"><Button variant="ghost" size="icon" aria-label="Back" className="md:hidden rounded-xl h-10 w-10" onClick={() => setShowConversation(false)}><ChevronLeft className="w-6 h-6" /></Button><Avatar className="w-10 h-10"><AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} /><AvatarFallback className="bg-primary/10 text-primary font-bold">{selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.type === 'group' ? <Users className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>{isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}</div><p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />{selectedChat.name.toLowerCase() === 'general' ? 'Workspace Hub' : selectedChat.type === 'direct' ? 'Private Discussion' : 'Group Workspace'}{isCurrentChatMuted && <span className="text-slate-400 ml-1 font-bold">• Silenced</span>}</p></div></div>
                   <div className="flex items-center gap-1">
-                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="rounded-xl text-slate-400 hover:text-primary" onClick={() => addBubble(selectedChat)}><MessageCircle className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Open globally</TooltipContent></Tooltip></TooltipProvider>
-                    <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}><Files className="w-5 h-5" /></Button>
-                    <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}><Search className="w-5 h-5" /></Button>
-                    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56 dark:bg-slate-900 dark:border-slate-800"><DropdownMenuLabel className="dark:text-slate-100">Notifications</DropdownMenuLabel>{isCurrentChatMuted ? <DropdownMenuItem onClick={handleUnmute} className="gap-2 text-primary font-medium"><Bell className="w-4 h-4" /> Unmute Chat</DropdownMenuItem> : <><DropdownMenuItem onClick={() => handleMute('1h')}>Mute for 1 hour</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('8h')}>Mute for 8 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('24h')}>Mute for 24 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('forever')} className="text-rose-500">Mute Forever</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu>
+                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Detach" className="rounded-xl text-slate-400 hover:text-primary" onClick={() => addBubble(selectedChat)}><MessageCircle className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Open as floating window</TooltipContent></Tooltip></TooltipProvider>
+                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Media & Files" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}><Files className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Shared assets</TooltipContent></Tooltip></TooltipProvider>
+                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Search" className="rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}><Search className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Search thread</TooltipContent></Tooltip></TooltipProvider>
+                    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="More Options" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56 dark:bg-slate-900 dark:border-slate-800"><DropdownMenuLabel className="dark:text-slate-100">Notification Settings</DropdownMenuLabel>{isCurrentChatMuted ? <DropdownMenuItem onClick={handleUnmute} className="gap-2 text-primary font-medium"><Bell className="w-4 h-4" /> Restore Alerts</DropdownMenuItem> : <><DropdownMenuItem onClick={() => handleMute('1h')}>Mute for 1 hour</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('8h')}>Mute for 8 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('24h')}>Mute for 24 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('forever')} className="text-rose-500">Mute Indefinitely</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu>
                   </div>
                 </>
               )}
             </div>
             {isSearchOpen && inChatSearchQuery.length >= 2 && (
-              <div className="absolute top-20 left-4 right-4 md:left-[350px] z-[40] pointer-events-none"><div className="max-w-xl mx-auto w-full pointer-events-auto bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-2xl rounded-2xl overflow-hidden max-h-[60vh] flex flex-col"><div className="p-3 bg-slate-50 dark:bg-slate-950 border-b dark:border-slate-800 flex items-center justify-between"><span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Search Results</span>{isSearching && <Loader2 className="w-3 h-3 animate-spin text-primary" />}</div><ScrollArea className="flex-1"><div className="p-1 space-y-1">{inChatSearchResults.map(res => (<button key={res.id} className="w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 flex gap-3 group" onClick={() => { const el = document.getElementById(`message-${res.id}`); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightedMessageId(res.id); setTimeout(() => setHighlightedMessageId(null), 3000); } }}><Avatar className="w-8 h-8"><AvatarImage src={res.profiles?.avatar_preset ? `/avatars/${res.profiles.avatar_preset}.png` : res.profiles?.avatar_url} /><AvatarFallback className="text-[10px]">{res.profiles?.full_name?.[0]}</AvatarFallback></Avatar><div className="flex-1 min-w-0"><div className="flex justify-between items-baseline mb-0.5"><p className="text-xs font-bold truncate group-hover:text-primary">{res.profiles?.full_name}</p><span className="text-[9px] text-slate-400 shrink-0 ml-2">{new Date(res.created_at).toLocaleDateString()}</span></div><p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{res.message}</p></div></button>))}</div></ScrollArea></div></div>
+              <div className="absolute top-20 left-4 right-4 md:left-[350px] z-[40] pointer-events-none"><div className="max-w-xl mx-auto w-full pointer-events-auto bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-2xl rounded-2xl overflow-hidden max-h-[60vh] flex flex-col"><div className="p-3 bg-slate-50 dark:bg-slate-950 border-b dark:border-slate-800 flex items-center justify-between"><span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Context Hits</span>{isSearching && <Loader2 className="w-3 h-3 animate-spin text-primary" />}</div><ScrollArea className="flex-1"><div className="p-1 space-y-1">{inChatSearchResults.map(res => (<button key={res.id} className="w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 flex gap-3 group" onClick={() => { const el = document.getElementById(`message-${res.id}`); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); setHighlightedMessageId(res.id); setTimeout(() => setHighlightedMessageId(null), 3000); } }}><Avatar className="w-8 h-8"><AvatarImage src={res.profiles?.avatar_preset ? `/avatars/${res.profiles.avatar_preset}.png` : res.profiles?.avatar_url} /><AvatarFallback className="text-[10px]">{res.profiles?.full_name?.[0]}</AvatarFallback></Avatar><div className="flex-1 min-w-0"><div className="flex justify-between items-baseline mb-0.5"><p className="text-xs font-bold truncate group-hover:text-primary">{res.profiles?.full_name}</p><span className="text-[9px] text-slate-400 shrink-0 ml-2">{new Date(res.created_at).toLocaleDateString()}</span></div><p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{res.message}</p></div></button>))}</div></ScrollArea></div></div>
             )}
             <ScrollArea ref={scrollAreaRef} className="flex-1 px-4 md:px-8">
               <div className="py-8 space-y-6">
-                {loadingMessages ? <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3"><Loader2 className="w-8 h-8 animate-spin" /><p className="text-sm font-medium">History is loading...</p></div> : messages.map((msg) => {
+                {loadingMessages ? <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3"><Loader2 className="w-8 h-8 animate-spin" /><p className="text-sm font-medium">Synchronizing history...</p></div> : messages.map((msg) => {
                   const isMe = msg.sender_id === userProfile?.id;
                   const isHighlighted = highlightedMessageId === msg.id;
                   return (
@@ -1009,7 +1026,7 @@ export default function ChatPage() {
                                 const isImage = att.file_type?.startsWith('image/');
                                 return (
                                   <div key={att.id} className="max-w-xs">
-                                    {isImage && att.signed_url ? <img src={att.signed_url} alt={att.file_name} className="w-full rounded-xl cursor-pointer" onClick={() => window.open(att.signed_url, '_blank')} /> : <div className="flex items-center gap-4 p-3 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900"><FileIcon className="w-5 h-5" /><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{att.file_name}</p><p className="text-[10px] opacity-60 uppercase">{formatBytes(att.file_size_bytes)}</p></div><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>}
+                                    {isImage && att.signed_url ? <img src={att.signed_url} alt={att.file_name} className="w-full rounded-xl cursor-pointer" onClick={() => window.open(att.signed_url, '_blank')} /> : <div className="flex items-center gap-4 p-3 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900"><FileIcon className="w-5 h-5" /><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{att.file_name}</p><p className="text-[10px] opacity-60 uppercase">{formatBytes(att.file_size_bytes)}</p></div><Button variant="ghost" size="icon" aria-label="Download" className="h-8 w-8" onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>}
                                   </div>
                                 );
                               })}
@@ -1026,31 +1043,31 @@ export default function ChatPage() {
             </ScrollArea>
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
               {selectedFile && <div className="mb-4 flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border dark:border-slate-800">
-                <div className="flex items-center gap-3 overflow-hidden"><div className="p-2 bg-primary/10 rounded-lg"><Paperclip className="w-4 h-4 text-primary" /></div><div className="min-w-0"><p className="text-sm font-bold truncate">{selectedFile.name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(selectedFile.size)}</p></div></div><Button variant="ghost" size="icon" onClick={() => setSelectedFile(null)}><X className="w-4 h-4" /></Button>
+                <div className="flex items-center gap-3 overflow-hidden"><div className="p-2 bg-primary/10 rounded-lg"><Paperclip className="w-4 h-4 text-primary" /></div><div className="min-w-0"><p className="text-sm font-bold truncate">{selectedFile.name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(selectedFile.size)}</p></div></div><Button variant="ghost" size="icon" aria-label="Remove Attachment" onClick={() => setSelectedFile(null)}><X className="w-4 h-4" /></Button>
               </div>}
               <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
-                <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip className="w-5 h-5" /></Button>
-                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder="Type a message..." value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
-                <Button size="icon" onClick={handleSendMessage} className={cn("rounded-xl transition-all", (messageInput.trim() || selectedFile) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && !selectedFile) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
+                <Button variant="ghost" size="icon" aria-label="Attach File" className="text-slate-400 hover:text-primary rounded-xl shrink-0" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip className="w-5 h-5" /></Button>
+                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder="Compose message..." value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
+                <Button size="icon" aria-label="Send" onClick={handleSendMessage} className={cn("rounded-xl transition-all", (messageInput.trim() || selectedFile) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && !selectedFile) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
               </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4"><MessageSquare className="w-12 h-12 text-primary/40" /><h2 className="text-xl font-bold">Workspace Messenger</h2><p className="text-sm text-slate-500 max-w-xs">Select a conversation to start collaborating.</p></div>
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4"><MessageSquare className="w-12 h-12 text-primary/40" /><h2 className="text-xl font-bold">Workspace Messenger</h2><p className="text-sm text-slate-500 max-w-xs">Select or start a conversation to begin collaborating with your team.</p></div>
         )}
       </div>
 
       <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
         <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 rounded-[2rem]">
-          <div className="p-6 pb-0"><DialogHeader><DialogTitle className="text-2xl font-bold">New Chat</DialogTitle><DialogDescription>Start a conversation with your team.</DialogDescription></DialogHeader><Tabs value={chatMode} onValueChange={(v: any) => setChatMode(v)} className="mt-6"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900"><TabsTrigger value="direct">Direct Message</TabsTrigger><TabsTrigger value="group">Group Chat</TabsTrigger></TabsList><div className="mt-6 space-y-4">{chatMode === 'group' && <div className="space-y-2"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Group Details</p><Input placeholder="Enter group name..." value={groupName} onChange={(e) => setGroupName(e.target.value)} className="rounded-2xl" /></div>}<div className="space-y-2"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">{chatMode === 'group' ? `Select Members (${selectedMemberIds.length})` : 'Select Member'}</p><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Search members" className="pl-10 rounded-2xl" value={memberSearchQuery} onChange={(e) => setMemberSearchQuery(e.target.value)} /></div></div></div></Tabs></div>
+          <div className="p-6 pb-0"><DialogHeader><DialogTitle className="text-2xl font-bold">New Thread</DialogTitle><DialogDescription>Start a secure conversation within the workspace.</DialogDescription></DialogHeader><Tabs value={chatMode} onValueChange={(v: any) => setChatMode(v)} className="mt-6"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900"><TabsTrigger value="direct">Direct Message</TabsTrigger><TabsTrigger value="group">Group Channel</TabsTrigger></TabsList><div className="mt-6 space-y-4">{chatMode === 'group' && <div className="space-y-2"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Channel Label</p><Input placeholder="Internal Project X..." value={groupName} onChange={(e) => setGroupName(e.target.value)} className="rounded-2xl" /></div>}<div className="space-y-2"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">{chatMode === 'group' ? `Participants (${selectedMemberIds.length})` : 'Select Recipient'}</p><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Search roster..." className="pl-10 rounded-2xl" value={memberSearchQuery} onChange={(e) => setMemberSearchQuery(e.target.value)} /></div></div></div></Tabs></div>
           <div className="p-6"><ScrollArea className="h-64"><div className="space-y-2">{loadingMembers ? <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : filteredMembers.map((member) => { const isSelected = chatMode === 'group' ? selectedMemberIds.includes(member.id) : selectedMemberId === member.id; return (<button key={member.id} onClick={() => chatMode === 'group' ? (setSelectedMemberIds(prev => prev.includes(member.id) ? prev.filter(x => x !== member.id) : [...prev, member.id])) : setSelectedMemberId(member.id)} className={cn("w-full flex items-center gap-4 p-3 rounded-2xl transition-all", isSelected ? "bg-primary/10 ring-1 ring-primary/20 shadow-sm" : "hover:bg-slate-50 dark:hover:bg-slate-900")}><Avatar className="w-10 h-10"><AvatarImage src={member.avatar_preset ? `/avatars/${member.avatar_preset}.png` : member.avatar_url} /><AvatarFallback>{member.full_name[0]}</AvatarFallback></Avatar><div className="flex-1 min-w-0"><div className="flex items-center gap-1.5"><p className="font-bold text-sm truncate">{member.full_name}</p><Badge variant="outline" className="text-[8px] uppercase">{member.role}</Badge></div><p className="text-[10px] text-slate-500 truncate">@{member.username || member.email.split('@')[0]}</p></div>{isSelected && <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md animate-in zoom-in"><Check className="w-3 h-3 text-white" /></div>}</button>); })}</div></ScrollArea></div>
-          <DialogFooter className="p-6 pt-0 border-t dark:border-slate-800"><Button variant="ghost" className="flex-1 rounded-xl" onClick={() => setIsNewChatOpen(false)}>Cancel</Button><Button className="flex-1 rounded-xl shadow-lg" disabled={isStartingChat || (chatMode === 'direct' && !selectedMemberId) || (chatMode === 'group' && (!groupName.trim() || selectedMemberIds.length < 2))} onClick={handleStartChat}>{isStartingChat ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}{isStartingChat ? 'Creating...' : chatMode === 'group' ? 'Create Group' : 'Start Chat'}</Button></DialogFooter>
+          <DialogFooter className="p-6 pt-0 border-t dark:border-slate-800"><Button variant="ghost" className="flex-1 rounded-xl" onClick={() => setIsNewChatOpen(false)}>Cancel</Button><Button className="flex-1 rounded-xl shadow-lg" disabled={isStartingChat || (chatMode === 'direct' && !selectedMemberId) || (chatMode === 'group' && (!groupName.trim() || selectedMemberIds.length < 2))} onClick={handleStartChat}>{isStartingChat ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}{isStartingChat ? 'Initializing...' : chatMode === 'group' ? 'Launch Group' : 'Start Thread'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Sheet open={isMediaSheetOpen} onOpenChange={setIsMediaSheetOpen}>
-        <SheetContent className="w-full sm:max-w-lg p-0 flex flex-col dark:bg-slate-950 overflow-hidden"><div className="p-6 pb-0"><SheetHeader><div className="flex items-center gap-2 mb-1"><Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Storage</Badge></div><SheetTitle className="text-2xl font-bold">Media & Files</SheetTitle><SheetDescription>Shared assets in {selectedChat?.display_name}.</SheetDescription></SheetHeader><Tabs defaultValue="media" className="mt-8 flex-1 flex flex-col"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900/50 mb-6"><TabsTrigger value="media" className="gap-2"><ImageIcon className="w-3.5 h-3.5" /> Media</TabsTrigger><TabsTrigger value="files" className="gap-2"><FileIcon className="w-3.5 h-3.5" /> Files</TabsTrigger></TabsList><ScrollArea className="flex-1 -mx-6 px-6"><TabsContent value="media" className="m-0 pb-8">{loadingMedia ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin" /></div> : <div className="grid grid-cols-2 gap-4">{allMedia.filter(m => m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">{item.signed_url && <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover" />}<div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"><Button size="icon" variant="secondary" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button></div></div>))}</div>}</TabsContent><TabsContent value="files" className="m-0 pb-8">{allMedia.filter(m => !m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 transition-colors group"><div className="p-2.5 bg-primary/10 rounded-xl"><FileIcon className="w-5 h-5 text-primary" /></div><div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div><Button size="icon" variant="ghost" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>))}</TabsContent></ScrollArea></Tabs></div></SheetContent>
+        <SheetContent className="w-full sm:max-w-lg p-0 flex flex-col dark:bg-slate-950 overflow-hidden"><div className="p-6 pb-0"><SheetHeader><div className="flex items-center gap-2 mb-1"><Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Asset Manager</Badge></div><SheetTitle className="text-2xl font-bold">Media & Files</SheetTitle><SheetDescription>All attachments shared in {selectedChat?.display_name}.</SheetDescription></SheetHeader><Tabs defaultValue="media" className="mt-8 flex-1 flex flex-col"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900/50 mb-6"><TabsTrigger value="media" className="gap-2"><ImageIcon className="w-3.5 h-3.5" /> Gallery</TabsTrigger><TabsTrigger value="files" className="gap-2"><FileIcon className="w-3.5 h-3.5" /> Documents</TabsTrigger></TabsList><ScrollArea className="flex-1 -mx-6 px-6"><TabsContent value="media" className="m-0 pb-8">{loadingMedia ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin" /></div> : allMedia.filter(m => m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No images shared yet.</p> : <div className="grid grid-cols-2 gap-4">{allMedia.filter(m => m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">{item.signed_url && <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover" />}<div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"><Button size="icon" variant="secondary" aria-label="Download" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button></div></div>))}</div>}</TabsContent><TabsContent value="files" className="m-0 pb-8">{allMedia.filter(m => !m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No files shared yet.</p> : allMedia.filter(m => !m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 transition-colors group"><div className="p-2.5 bg-primary/10 rounded-xl"><FileIcon className="w-5 h-5 text-primary" /></div><div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div><Button size="icon" variant="ghost" aria-label="Download" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>))}</TabsContent></ScrollArea></Tabs></div></SheetContent>
       </Sheet>
     </div>
   );

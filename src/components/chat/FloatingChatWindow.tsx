@@ -71,7 +71,7 @@ export function FloatingChatWindow({
       setMessages(enriched);
       setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'auto' }), 50);
     } catch (err) {
-      console.error("[Floating Chat] Load Error:", err);
+      console.error("[Floating Chat] Load Failed:", err);
     } finally {
       setLoading(false);
     }
@@ -80,10 +80,9 @@ export function FloatingChatWindow({
   const markRead = useCallback(async () => {
     try {
       await supabase.rpc("mark_chat_channel_read", { p_channel_id: chat.id });
-      // Sync global unread count
       refreshUnread();
     } catch (err) {
-      console.error("[Floating Chat] Read Error:", err);
+      // Background operation failure handled silently
     }
   }, [chat.id, supabase, refreshUnread]);
 
@@ -109,7 +108,7 @@ export function FloatingChatWindow({
           const { data: profile } = await supabase.from('profiles').select('id, full_name, avatar_url, avatar_preset').eq('id', newMessage.sender_id).single();
           setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, profiles: profile } : m));
           setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-        } catch (err) { console.error(err); }
+        } catch (err) {}
       })
       .subscribe();
 
@@ -131,7 +130,7 @@ export function FloatingChatWindow({
       if (error) throw error;
       setInput("");
     } catch (err) {
-      console.error(err);
+      console.error("[Floating Chat] Transmission Error:", err);
     } finally {
       setIsSending(false);
     }
@@ -144,7 +143,7 @@ export function FloatingChatWindow({
           <Avatar className="w-8 h-8">
             <AvatarImage src={chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar} />
             <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">
-              {chat.name[0].toUpperCase()}
+              {chat.display_name?.[0]?.toUpperCase() || 'C'}
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
@@ -152,14 +151,14 @@ export function FloatingChatWindow({
               {chat.display_name}
               {isMuted && <BellOff className="w-3 h-3 text-slate-400" />}
             </p>
-            <p className="text-[10px] text-emerald-500 font-medium">Online</p>
+            <p className="text-[10px] text-emerald-500 font-medium">Ready</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={onMinimize}>
+          <Button variant="ghost" size="icon" aria-label="Minimize" className="h-8 w-8 rounded-lg" onClick={onMinimize}>
             <Minus className="w-4 h-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-rose-500" onClick={onClose}>
+          <Button variant="ghost" size="icon" aria-label="Close" className="h-8 w-8 rounded-lg text-rose-500" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -170,7 +169,7 @@ export function FloatingChatWindow({
           {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
           ) : messages.length === 0 ? (
-            <p className="text-[10px] text-center text-slate-400 py-10">No messages yet</p>
+            <p className="text-[10px] text-center text-slate-400 py-10">Empty conversation</p>
           ) : (
             messages.map((msg) => {
               const isMe = msg.sender_id === userProfile?.id;
@@ -196,11 +195,11 @@ export function FloatingChatWindow({
           <Input 
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Aa"
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="Type..."
             className="border-none shadow-none focus-visible:ring-0 h-8 text-xs bg-transparent dark:text-white"
           />
-          <Button size="icon" onClick={handleSend} disabled={!input.trim() || isSending} className="h-7 w-7 rounded-lg shrink-0">
+          <Button size="icon" aria-label="Send" onClick={handleSend} disabled={!input.trim() || isSending} className="h-7 w-7 rounded-lg shrink-0">
             {isSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-4 h-4" />}
           </Button>
         </div>

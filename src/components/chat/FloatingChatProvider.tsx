@@ -43,18 +43,16 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
         return;
       }
 
-      // Fetch unread counts and mute states concurrently
       const [unreadRes, muteRes] = await Promise.all([
         supabase.rpc("get_chat_unread_counts"),
         supabase.rpc("get_chat_mute_states")
       ]);
 
-      if (unreadRes.error) throw unreadRes.error;
+      if (unreadRes.error) return;
       
       const unreadData = (unreadRes.data || []) as any[];
       const muteData = (muteRes.data || []) as any[];
 
-      // Calculate total excluding muted channels
       const total = unreadData.reduce((acc: number, curr: any) => {
         const isMuted = muteData.some((m: any) => 
           m.channel_id === curr.channel_id && 
@@ -68,14 +66,13 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
 
       setTotalUnreadCount(total);
     } catch (err) {
-      console.error("[FloatingChat] Error syncing unread counts:", err);
+      // Silently handle errors in background refresh
     }
   }, [supabase]);
 
   useEffect(() => {
     fetchUnreadData();
 
-    // Listen for events that affect unread status
     const channel = supabase
       .channel('chat_global_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => {
@@ -89,10 +86,11 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       })
       .subscribe();
 
-    // Auth state listener to clear counts on logout
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         setTotalUnreadCount(0);
+        setFloatingBubbles([]);
+        setExpandedChannelId(null);
       } else {
         fetchUnreadData();
       }
