@@ -26,7 +26,10 @@ import {
   Files,
   ArrowDown,
   BellOff,
-  Bell
+  Bell,
+  MessageCircle,
+  Minus,
+  Maximize2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +66,7 @@ import {
   DropdownMenuTrigger, 
   DropdownMenuItem 
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface Attachment {
   id: string;
@@ -127,6 +131,30 @@ interface ChatMuteState {
   muted_until: string | null;
 }
 
+const BUBBLE_COLORS = [
+  'ring-blue-500 bg-blue-500',
+  'ring-indigo-500 bg-indigo-500',
+  'ring-violet-500 bg-violet-500',
+  'ring-purple-500 bg-purple-500',
+  'ring-fuchsia-500 bg-fuchsia-500',
+  'ring-pink-500 bg-pink-500',
+  'ring-rose-500 bg-rose-500',
+  'ring-orange-500 bg-orange-500',
+  'ring-amber-500 bg-amber-500',
+  'ring-emerald-500 bg-emerald-500',
+  'ring-teal-500 bg-teal-500',
+  'ring-cyan-500 bg-cyan-500',
+  'ring-sky-500 bg-sky-500'
+];
+
+const getChannelBubbleColor = (id: string) => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return BUBBLE_COLORS[Math.abs(hash) % BUBBLE_COLORS.length];
+};
+
 export default function ChatPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
@@ -142,6 +170,10 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Floating Bubbles State
+  const [floatingBubbles, setFloatingBubbles] = useState<Chat[]>([]);
+  const [expandedBubbleId, setExpandedBubbleId] = useState<string | null>(null);
 
   // Search in Chat state (Contextual)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -662,6 +694,18 @@ export default function ChatPage() {
     }
   };
 
+  const handleToggleFloating = (chat: Chat) => {
+    if (!floatingBubbles.some(b => b.id === chat.id)) {
+      setFloatingBubbles(prev => [...prev, chat]);
+    }
+    setExpandedBubbleId(chat.id);
+  };
+
+  const handleRemoveFloating = (chatId: string) => {
+    setFloatingBubbles(prev => prev.filter(b => b.id !== chatId));
+    if (expandedBubbleId === chatId) setExpandedBubbleId(null);
+  };
+
   useEffect(() => {
     const timer = setTimeout(() => {
       if (inChatSearchQuery) {
@@ -1004,7 +1048,7 @@ export default function ChatPage() {
     : false;
 
   return (
-    <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500">
+    <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500 relative">
       
       {/* Sidebar */}
       <div className={cn(
@@ -1251,6 +1295,22 @@ export default function ChatPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="rounded-xl text-slate-400 hover:text-primary"
+                            onClick={() => handleToggleFloating(selectedChat)}
+                          >
+                            <MessageCircle className="w-5 h-5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Open as floating bubble</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
                     <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}>
                       <Files className="w-5 h-5" />
                     </Button>
@@ -1532,6 +1592,76 @@ export default function ChatPage() {
         )}
       </div>
 
+      {/* Floating Bubbles Stack */}
+      <div className="fixed bottom-6 right-6 flex flex-col items-end gap-3 z-50 pointer-events-none">
+        {floatingBubbles.map((chat) => {
+          const isExpanded = expandedBubbleId === chat.id;
+          const unreadCount = unreadCounts[chat.id] || 0;
+          const isMuted = muteStates[chat.id]?.is_muted && (!muteStates[chat.id].muted_until || new Date(muteStates[chat.id].muted_until!) > new Date());
+          const bubbleColor = getChannelBubbleColor(chat.id);
+          const avatarSrc = chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar;
+
+          return (
+            <div key={`floating-${chat.id}`} className="flex flex-col items-end gap-3 pointer-events-auto">
+              {isExpanded && (
+                <FloatingChatWindow 
+                  chat={chat} 
+                  onMinimize={() => setExpandedBubbleId(null)}
+                  onClose={() => handleRemoveFloating(chat.id)}
+                  muteState={muteStates[chat.id]}
+                />
+              )}
+              {!isExpanded && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => setExpandedBubbleId(chat.id)}
+                        className={cn(
+                          "w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group relative ring-2 ring-offset-2 dark:ring-offset-slate-900",
+                          bubbleColor.split(' ')[0]
+                        )}
+                      >
+                        <Avatar className="w-full h-full border-none">
+                          <AvatarImage src={avatarSrc} />
+                          <AvatarFallback className={cn("text-white font-bold", bubbleColor.split(' ')[1])}>
+                            {chat.name.toLowerCase() === 'general' ? <Hash className="w-6 h-6" /> : 
+                             chat.type === 'group' ? <Users className="w-6 h-6" /> :
+                             (chat.display_name?.[0] || 'C').toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        
+                        {unreadCount > 0 && (
+                          <Badge className={cn(
+                            "absolute -top-1 -right-1 h-5 min-w-[20px] px-1 flex items-center justify-center text-[10px] font-bold border-2 border-white dark:border-slate-900 rounded-full",
+                            isMuted ? "bg-slate-400" : "bg-primary"
+                          )}>
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                          </Badge>
+                        )}
+                        
+                        {isMuted && (
+                          <div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-900 rounded-full p-1 shadow-sm">
+                            <BellOff className="w-3 h-3 text-slate-400" />
+                          </div>
+                        )}
+
+                        <div className="absolute -left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-full pr-4 pointer-events-none">
+                          <Badge variant="secondary" className="whitespace-nowrap bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 py-1 px-3 text-xs font-bold">
+                            {chat.display_name}
+                          </Badge>
+                        </div>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="left">{chat.display_name}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
       {/* New Chat Modal */}
       <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
         <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 dark:border-slate-800 rounded-[2rem]">
@@ -1773,6 +1903,194 @@ export default function ChatPage() {
           </div>
         </SheetContent>
       </Sheet>
+    </div>
+  );
+}
+
+function FloatingChatWindow({ 
+  chat, 
+  onMinimize, 
+  onClose,
+  muteState
+}: { 
+  chat: Chat; 
+  onMinimize: () => void; 
+  onClose: () => void;
+  muteState?: { is_muted: boolean; muted_until: string | null };
+}) {
+  const { userProfile } = useWorkspace();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [input, setInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const supabase = createClient();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const fetchMessages = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at, is_deleted')
+        .eq('channel_id', chat.id)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      
+      const senderIds = Array.from(new Set(data?.map(m => m.sender_id) || []));
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, avatar_preset')
+        .in('id', senderIds);
+
+      const enriched = (data || []).map(m => ({
+        ...m,
+        profiles: profilesData?.find(p => p.id === m.sender_id) || null
+      }));
+
+      setMessages(enriched);
+      setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'auto' }), 50);
+    } catch (err) {
+      console.error("[Floating Chat] Load Error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [chat.id, supabase]);
+
+  const markRead = useCallback(async () => {
+    try {
+      await supabase.rpc("mark_chat_channel_read", { p_channel_id: chat.id });
+    } catch (err) {
+      console.error("[Floating Chat] Read Error:", err);
+    }
+  }, [chat.id, supabase]);
+
+  useEffect(() => {
+    fetchMessages();
+    markRead();
+  }, [fetchMessages, markRead]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`floating_chat:${chat.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${chat.id}` }, async (payload) => {
+        const newMessage = payload.new as any;
+        
+        setMessages(prev => {
+          if (prev.some(m => m.id === newMessage.id)) return prev;
+          return [...prev, { ...newMessage, profiles: null }];
+        });
+
+        markRead();
+
+        try {
+          const { data: profile } = await supabase.from('profiles').select('id, full_name, avatar_url, avatar_preset').eq('id', newMessage.sender_id).single();
+          setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, profiles: profile } : m));
+          setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+        } catch (err) { console.error(err); }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [chat.id, supabase, markRead]);
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || isSending || !userProfile) return;
+
+    setIsSending(true);
+    try {
+      const { error } = await supabase.from('chat_messages').insert({
+        channel_id: chat.id,
+        workspace_id: chat.workspace_id,
+        sender_id: userProfile.id,
+        message: text
+      });
+      if (error) throw error;
+      setInput("");
+      fetchMessages();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const isMuted = muteState?.is_muted && (!muteState.muted_until || new Date(muteState.muted_until) > new Date());
+
+  return (
+    <div className="w-[calc(100vw-2rem)] sm:w-[350px] h-[450px] sm:h-[500px] bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto">
+      {/* Header */}
+      <div className="p-4 border-b dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <Avatar className="w-8 h-8">
+            <AvatarImage src={chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar} />
+            <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">
+              {chat.name[0].toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="text-sm font-bold truncate dark:text-white flex items-center gap-1.5">
+              {chat.display_name}
+              {isMuted && <BellOff className="w-3 h-3 text-slate-400" />}
+            </p>
+            <p className="text-[10px] text-emerald-500 font-medium">Online</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={onMinimize}>
+            <Minus className="w-4 h-4" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-rose-500" onClick={onClose}>
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <ScrollArea ref={scrollRef} className="flex-1 p-4 bg-slate-50/30 dark:bg-slate-950/10">
+        <div className="space-y-4">
+          {loading ? (
+            <div className="flex justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+          ) : messages.length === 0 ? (
+            <p className="text-[10px] text-center text-slate-400 py-10">No messages yet</p>
+          ) : (
+            messages.map((msg) => {
+              const isMe = msg.sender_id === userProfile?.id;
+              return (
+                <div key={msg.id} className={cn("flex flex-col max-w-[85%]", isMe ? "ml-auto items-end" : "items-start")}>
+                  {!isMe && <span className="text-[9px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
+                  <div className={cn(
+                    "px-3 py-2 rounded-xl text-xs shadow-sm",
+                    isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
+                  )}>
+                    {msg.message}
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={endRef} />
+        </div>
+      </ScrollArea>
+
+      {/* Input */}
+      <div className="p-3 border-t dark:border-slate-800 bg-white dark:bg-slate-900">
+        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950 p-1.5 rounded-xl border dark:border-slate-800">
+          <Input 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Aa"
+            className="border-none shadow-none focus-visible:ring-0 h-8 text-xs bg-transparent dark:text-white"
+          />
+          <Button size="icon" onClick={handleSend} disabled={!input.trim() || isSending} className="h-7 w-7 rounded-lg shrink-0">
+            {isSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-4 h-4" />}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
