@@ -23,7 +23,8 @@ import {
   Download,
   Image as ImageIcon,
   ExternalLink,
-  Files
+  Files,
+  ArrowDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +115,13 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Search in Chat state
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [inChatSearchQuery, setInChatSearchQuery] = useState("");
+  const [inChatSearchResults, setInChatSearchResults] = useState<Message[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
 
   // Attachment State
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -415,6 +423,57 @@ export default function ChatPage() {
     }
   }, [selectedChatId, supabase, toast]);
 
+  const performInChatSearch = useCallback(async (query: string) => {
+    if (!selectedChatId || query.length < 2) {
+      setInChatSearchResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at')
+        .eq('channel_id', selectedChatId)
+        .eq('is_deleted', false)
+        .ilike('message', `%${query}%`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const senderIds = Array.from(new Set(data.map(m => m.sender_id)));
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, avatar_preset')
+          .in('id', senderIds);
+
+        const enriched = data.map(m => ({
+          ...m,
+          profiles: profilesData?.find(p => p.id === m.sender_id) || null
+        }));
+        setInChatSearchResults(enriched);
+      } else {
+        setInChatSearchResults([]);
+      }
+    } catch (err: any) {
+      console.error("[Chat] In-chat Search Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Search Error", description: err.message });
+    } finally {
+      setIsSearching(false);
+    }
+  }, [selectedChatId, supabase, toast]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inChatSearchQuery) {
+        performInChatSearch(inChatSearchQuery);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [inChatSearchQuery, performInChatSearch]);
+
   useEffect(() => {
     fetchChats();
   }, [fetchChats]);
@@ -423,6 +482,9 @@ export default function ChatPage() {
     if (selectedChatId) {
       fetchMessages(selectedChatId);
       setSelectedFile(null); // Clear file on channel change
+      setIsSearchOpen(false); // Close search on channel change
+      setInChatSearchQuery("");
+      setInChatSearchResults([]);
     } else {
       setMessages([]);
     }
@@ -500,6 +562,27 @@ export default function ChatPage() {
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
     setShowConversation(true);
+  };
+
+  const handleSearchResultClick = (msgId: string) => {
+    // Check if message is in current list
+    const found = messages.find(m => m.id === msgId);
+    if (found) {
+      const element = document.getElementById(`message-${msgId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedMessageId(msgId);
+        setTimeout(() => setHighlightedMessageId(null), 3000);
+      }
+    } else {
+      // For MVP, we assume all messages are loaded for the channel
+      // If we had pagination, we would refetch with proper offset here
+      toast({ title: "Message found", description: "Scrolling to message location..." });
+    }
+    // Optionally close search on mobile
+    if (window.innerWidth < 768) {
+      setIsSearchOpen(false);
+    }
   };
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
@@ -782,44 +865,115 @@ export default function ChatPage() {
           <>
             {/* Header */}
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-b dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-4 min-w-0">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="md:hidden rounded-xl h-10 w-10" 
-                  onClick={() => setShowConversation(false)}
-                >
-                  <ChevronLeft className="w-6 h-6" />
-                </Button>
-                <Avatar className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm">
-                  {selectedChat.display_avatar_preset || selectedChat.display_avatar ? (
-                    <AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} />
-                  ) : (
-                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                      {selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : 
-                       selectedChat.type === 'group' ? <Users className="w-4 h-4" /> :
-                       (selectedChat.display_name?.[0] || 'C').toUpperCase()}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
-                <div className="min-w-0">
-                  <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>
-                  <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
-                     selectedChat.type === 'direct' ? 'Direct Message' : 
-                     selectedChat.type === 'group' ? 'Group Chat' : 'Channel'}
-                  </p>
+              {isSearchOpen ? (
+                <div className="flex items-center gap-3 w-full animate-in slide-in-from-top-2 duration-300">
+                   <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { setIsSearchOpen(false); setInChatSearchQuery(""); setInChatSearchResults([]); }}>
+                     <ChevronLeft className="w-5 h-5" />
+                   </Button>
+                   <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <Input 
+                        placeholder="Search in chat..."
+                        className="pl-10 h-10 bg-slate-100 dark:bg-slate-800 border-none rounded-xl"
+                        value={inChatSearchQuery}
+                        onChange={(e) => setInChatSearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                      {inChatSearchQuery && (
+                        <button 
+                          className="absolute right-3 top-1/2 -translate-y-1/2"
+                          onClick={() => { setInChatSearchQuery(""); setInChatSearchResults([]); }}
+                        >
+                          <X className="w-4 h-4 text-slate-400" />
+                        </button>
+                      )}
+                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}>
-                  <Files className="w-5 h-5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><Search className="w-5 h-5" /></Button>
-                <Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button>
-              </div>
+              ) : (
+                <>
+                  <div className="flex items-center gap-4 min-w-0">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="md:hidden rounded-xl h-10 w-10" 
+                      onClick={() => setShowConversation(false)}
+                    >
+                      <ChevronLeft className="w-6 h-6" />
+                    </Button>
+                    <Avatar className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm">
+                      {selectedChat.display_avatar_preset || selectedChat.display_avatar ? (
+                        <AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} />
+                      ) : (
+                        <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                          {selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : 
+                           selectedChat.type === 'group' ? <Users className="w-4 h-4" /> :
+                           (selectedChat.display_name?.[0] || 'C').toUpperCase()}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                    <div className="min-w-0">
+                      <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>
+                      <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                        {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
+                         selectedChat.type === 'direct' ? 'Direct Message' : 
+                         selectedChat.type === 'group' ? 'Group Chat' : 'Channel'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}>
+                      <Files className="w-5 h-5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}>
+                      <Search className="w-5 h-5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button>
+                  </div>
+                </>
+              )}
             </div>
+
+            {/* In-Chat Search Results Overlay */}
+            {isSearchOpen && inChatSearchQuery.length >= 2 && (
+              <div className="absolute top-20 left-4 right-4 md:left-[350px] z-[40] pointer-events-none">
+                 <div className="max-w-xl mx-auto w-full pointer-events-auto bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-2xl rounded-2xl overflow-hidden max-h-[60vh] flex flex-col animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="p-3 bg-slate-50 dark:bg-slate-950 border-b dark:border-slate-800 flex items-center justify-between">
+                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Search Results</span>
+                       {isSearching && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
+                    </div>
+                    <ScrollArea className="flex-1">
+                       <div className="p-1 space-y-1">
+                          {inChatSearchResults.length === 0 && !isSearching ? (
+                            <div className="p-8 text-center opacity-50">
+                              <p className="text-sm font-medium">No messages found</p>
+                            </div>
+                          ) : (
+                            inChatSearchResults.map(res => (
+                              <button 
+                                key={res.id} 
+                                className="w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex gap-3 group"
+                                onClick={() => handleSearchResultClick(res.id)}
+                              >
+                                 <Avatar className="w-8 h-8 shrink-0">
+                                   <AvatarImage src={res.profiles?.avatar_preset ? `/avatars/${res.profiles.avatar_preset}.png` : res.profiles?.avatar_url} />
+                                   <AvatarFallback className="text-[10px] bg-primary/5 text-primary font-bold">{res.profiles?.full_name?.[0]}</AvatarFallback>
+                                 </Avatar>
+                                 <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-baseline mb-0.5">
+                                      <p className="text-xs font-bold truncate group-hover:text-primary transition-colors">{res.profiles?.full_name}</p>
+                                      <span className="text-[9px] text-slate-400 shrink-0 ml-2">{new Date(res.created_at).toLocaleDateString()}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">{res.message}</p>
+                                 </div>
+                              </button>
+                            ))
+                          )}
+                       </div>
+                    </ScrollArea>
+                 </div>
+              </div>
+            )}
 
             {/* Messages Area */}
             <ScrollArea ref={scrollAreaRef} className="flex-1 px-4 md:px-8">
@@ -839,12 +993,18 @@ export default function ChatPage() {
                   messages.map((msg) => {
                     const isMe = msg.sender_id === userProfile?.id;
                     const avatarSrc = msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url;
+                    const isHighlighted = highlightedMessageId === msg.id;
                     
                     return (
-                      <div key={msg.id} className={cn(
-                        "flex gap-3 max-w-[85%] md:max-w-[70%]",
-                        isMe ? "ml-auto flex-row-reverse" : "mr-auto"
-                      )}>
+                      <div 
+                        key={msg.id} 
+                        id={`message-${msg.id}`}
+                        className={cn(
+                          "flex gap-3 max-w-[85%] md:max-w-[70%] transition-all duration-1000",
+                          isMe ? "ml-auto flex-row-reverse" : "mr-auto",
+                          isHighlighted && "scale-105"
+                        )}
+                      >
                         {!isMe && (
                           <Avatar className="w-8 h-8 shrink-0 shadow-sm mt-1">
                             <AvatarImage src={avatarSrc} />
@@ -854,10 +1014,11 @@ export default function ChatPage() {
                         <div className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
                           {!isMe && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mb-1 ml-1">{msg.profiles?.full_name}</span>}
                           <div className={cn(
-                            "px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed relative group",
+                            "px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed relative group border-2 border-transparent transition-all",
                             isMe 
                               ? "bg-primary text-white rounded-tr-none" 
-                              : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
+                              : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700",
+                            isHighlighted && (isMe ? "border-white ring-4 ring-primary/20" : "border-primary ring-4 ring-primary/20 shadow-xl")
                           )}>
                             {msg.message}
                             
