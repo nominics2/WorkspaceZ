@@ -43,6 +43,10 @@ interface Chat {
   workspace_id: string;
   last_message?: string;
   last_message_at?: string;
+  // Resolved fields for Direct Messages
+  display_name?: string;
+  display_avatar?: string;
+  display_avatar_preset?: string;
 }
 
 interface Message {
@@ -87,12 +91,23 @@ export default function ChatPage() {
   const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberProfile[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [isStartingChat, setIsStartingChat] = useState(false);
   const [memberSearchQuery, setMemberSearchQuery] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
   const { toast } = useToast();
+
+  const serializeSupabaseError = (error: any) => {
+    if (!error) return null;
+    return {
+      message: error.message || "Unknown error",
+      details: error.details,
+      hint: error.hint,
+      code: error.code
+    };
+  };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -104,12 +119,6 @@ export default function ChatPage() {
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     return scrollHeight - scrollTop <= clientHeight + 150;
   };
-
-  useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom(loadingMessages ? "auto" : "smooth");
-    }
-  }, [messages, loadingMessages, scrollToBottom]);
 
   const fetchChats = useCallback(async () => {
     if (!userProfile) return;
@@ -123,7 +132,7 @@ export default function ChatPage() {
         .eq('user_id', userProfile.id)
         .eq('status', 'active');
 
-      if (memberError) throw new Error(`Unable to load membership: ${memberError.message}`);
+      if (memberError) throw memberError;
       if (!memberData || memberData.length === 0) {
         setChats([]);
         return;
@@ -137,7 +146,7 @@ export default function ChatPage() {
         .in('workspace_id', workspaceIds)
         .order('created_at', { ascending: false });
 
-      if (channelsError) throw new Error(`Unable to load channels: ${channelsError.message}`);
+      if (channelsError) throw channelsError;
 
       if (!channelsData || channelsData.length === 0) {
         setChats([]);
@@ -146,22 +155,51 @@ export default function ChatPage() {
 
       const channelIds = channelsData.map(c => c.id);
 
-      const { data: lastMessages } = await supabase
-        .from('chat_messages')
-        .select('id, channel_id, message, created_at')
-        .in('channel_id', channelIds)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: false });
+      // Fetch latest messages and participants in parallel
+      const [messagesRes, participantsRes] = await Promise.all([
+        supabase
+          .from('chat_messages')
+          .select('id, channel_id, message, created_at')
+          .in('channel_id', channelIds)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('chat_channel_members')
+          .select('channel_id, user_id, profiles(full_name, avatar_url, avatar_preset)')
+          .in('channel_id', channelIds)
+      ]);
+
+      const lastMessages = messagesRes.data || [];
+      const participants = participantsRes.data || [];
 
       const formattedChats: Chat[] = channelsData.map(channel => {
-        const lastMsg = lastMessages?.find(m => m.channel_id === channel.id);
+        const lastMsg = lastMessages.find(m => m.channel_id === channel.id);
+        
+        let displayName = channel.name;
+        let displayAvatar = null;
+        let displayAvatarPreset = null;
+
+        if (channel.type === 'direct') {
+          const otherMember = (participants as any[]).find(
+            p => p.channel_id === channel.id && p.user_id !== userProfile.id
+          );
+          if (otherMember?.profiles) {
+            displayName = otherMember.profiles.full_name;
+            displayAvatar = otherMember.profiles.avatar_url;
+            displayAvatarPreset = otherMember.profiles.avatar_preset;
+          }
+        }
+
         return {
           id: channel.id,
           name: channel.name,
           type: channel.type,
           workspace_id: channel.workspace_id,
           last_message: lastMsg?.message,
-          last_message_at: lastMsg?.created_at
+          last_message_at: lastMsg?.created_at,
+          display_name: displayName,
+          display_avatar: displayAvatar,
+          display_avatar_preset: displayAvatarPreset
         };
       }).sort((a, b) => {
         const isAGeneral = a.name.toLowerCase() === 'general' && (activeWorkspace ? a.workspace_id === activeWorkspace.id : true);
@@ -174,16 +212,13 @@ export default function ChatPage() {
       });
 
       setChats(formattedChats);
-      
-      if (!selectedChatId && formattedChats.length > 0 && typeof window !== 'undefined' && window.innerWidth >= 768) {
-        setSelectedChatId(formattedChats[0].id);
-      }
     } catch (err: any) {
+      console.error("[Chat] Load Error:", serializeSupabaseError(err));
       setError(err.message || "An unexpected error occurred while loading chats.");
     } finally {
       setLoadingChats(false);
     }
-  }, [userProfile, supabase, selectedChatId, activeWorkspace]);
+  }, [userProfile, supabase, activeWorkspace]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
@@ -195,7 +230,7 @@ export default function ChatPage() {
         .eq('is_deleted', false)
         .order('created_at', { ascending: true });
 
-      if (msgError) throw new Error(msgError.message);
+      if (msgError) throw msgError;
 
       if (!msgData || msgData.length === 0) {
         setMessages([]);
@@ -215,12 +250,14 @@ export default function ChatPage() {
       }));
 
       setMessages(enrichedMessages);
+      setTimeout(() => scrollToBottom("auto"), 50);
     } catch (err: any) {
+      console.error("[Chat] Message Load Error:", serializeSupabaseError(err));
       toast({ variant: "destructive", title: "Sync Error", description: err.message });
     } finally {
       setLoadingMessages(false);
     }
-  }, [supabase, toast]);
+  }, [supabase, toast, scrollToBottom]);
 
   const fetchMembers = useCallback(async () => {
     if (!activeWorkspace || !userProfile) return;
@@ -235,7 +272,6 @@ export default function ChatPage() {
       if (memberError) throw memberError;
 
       if (memberData && memberData.length > 0) {
-        // Exclude current user from the list
         const uids = memberData.map(m => m.user_id).filter(id => id !== userProfile.id);
         
         if (uids.length > 0) {
@@ -256,7 +292,7 @@ export default function ChatPage() {
         }
       }
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: "Unable to load workspace members." });
+      toast({ variant: "destructive", title: "Error", description: "Unable to load workspace roster." });
     } finally {
       setLoadingMembers(false);
     }
@@ -273,14 +309,6 @@ export default function ChatPage() {
       setMessages([]);
     }
   }, [selectedChatId, fetchMessages]);
-
-  useEffect(() => {
-    if (isNewChatOpen) {
-      fetchMembers();
-      setSelectedMemberId(null);
-      setMemberSearchQuery("");
-    }
-  }, [isNewChatOpen, fetchMembers]);
 
   // Realtime Subscription
   useEffect(() => {
@@ -373,17 +401,52 @@ export default function ChatPage() {
 
       if (sendError) throw sendError;
       setMessageInput("");
-      await fetchMessages(selectedChat.id);
-      setTimeout(() => scrollToBottom(), 100);
+      fetchMessages(selectedChat.id);
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Send Failed", description: "Your message could not be delivered." });
+      toast({ variant: "destructive", title: "Send Failed", description: "Message could not be delivered." });
     } finally {
       setIsSending(false);
     }
   };
 
+  const handleStartChat = async () => {
+    if (!selectedMemberId || !activeWorkspace || isStartingChat) return;
+    setIsStartingChat(true);
+    try {
+      const { data: channelId, error: rpcError } = await supabase.rpc("create_or_get_direct_chat", {
+        p_workspace_id: activeWorkspace.id,
+        p_other_user_id: selectedMemberId,
+      });
+
+      if (rpcError) throw rpcError;
+
+      setIsNewChatOpen(false);
+      setSelectedMemberId(null);
+      setMemberSearchQuery("");
+      
+      // Refresh chat list to include new channel
+      await fetchChats();
+      
+      // Open the channel
+      if (channelId) {
+        handleSelectChat(channelId);
+      }
+      
+      toast({ title: "Chat started!" });
+    } catch (err: any) {
+      console.error("[Chat] Start Error:", serializeSupabaseError(err));
+      toast({ 
+        variant: "destructive", 
+        title: "Unable to start chat", 
+        description: err.message || "Something went wrong." 
+      });
+    } finally {
+      setIsStartingChat(false);
+    }
+  };
+
   const filteredChats = chats.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+    c.display_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredMembers = workspaceMembers.filter(m => 
@@ -407,7 +470,7 @@ export default function ChatPage() {
               size="icon" 
               variant="ghost" 
               className="rounded-xl text-primary hover:bg-primary/5"
-              onClick={() => setIsNewChatOpen(true)}
+              onClick={() => { setIsNewChatOpen(true); fetchMembers(); }}
             >
               <Plus className="w-5 h-5" />
             </Button>
@@ -442,41 +505,54 @@ export default function ChatPage() {
                 <p className="text-sm font-medium">No channels found</p>
               </div>
             ) : (
-              filteredChats.map((chat) => (
-                <button
-                  key={chat.id}
-                  onClick={() => handleSelectChat(chat.id)}
-                  className={cn(
-                    "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50",
-                    selectedChatId === chat.id ? "bg-primary/10 dark:bg-primary/10" : ""
-                  )}
-                >
-                  <Avatar className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
-                    <AvatarFallback className={cn(
-                      "bg-primary/10 text-primary font-bold",
-                      selectedChatId === chat.id ? "bg-primary text-white" : ""
-                    )}>
-                      {chat.name.toLowerCase() === 'general' ? <Hash className="w-5 h-5" /> : chat.name[0].toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0 text-left">
-                    <div className="flex justify-between items-baseline mb-0.5">
-                      <p className={cn(
-                        "font-bold text-sm truncate",
-                        selectedChatId === chat.id ? "text-primary" : "text-slate-900 dark:text-white"
-                      )}>{chat.name}</p>
-                      {chat.last_message_at && (
-                        <span className="text-[10px] text-slate-400 font-medium ml-2 shrink-0">
-                          {new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+              filteredChats.map((chat) => {
+                const isActive = selectedChatId === chat.id;
+                const avatarSrc = chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar;
+
+                return (
+                  <button
+                    key={chat.id}
+                    onClick={() => handleSelectChat(chat.id)}
+                    className={cn(
+                      "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                      isActive ? "bg-primary/10 dark:bg-primary/10" : ""
+                    )}
+                  >
+                    <Avatar className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
+                      {avatarSrc ? (
+                        <AvatarImage src={avatarSrc} />
+                      ) : (
+                        <AvatarFallback className={cn(
+                          "bg-primary/10 text-primary font-bold",
+                          isActive ? "bg-primary text-white" : ""
+                        )}>
+                          {chat.name.toLowerCase() === 'general' ? <Hash className="w-5 h-5" /> : (chat.display_name?.[0] || 'C').toUpperCase()}
+                        </AvatarFallback>
                       )}
+                    </Avatar>
+                    <div className="flex-1 min-w-0 text-left">
+                      <div className="flex justify-between items-baseline mb-0.5">
+                        <p className={cn(
+                          "font-bold text-sm truncate",
+                          isActive ? "text-primary" : "text-slate-900 dark:text-white"
+                        )}>{chat.display_name}</p>
+                        {chat.last_message_at && (
+                          <span className="text-[10px] text-slate-400 font-medium ml-2 shrink-0">
+                            {new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                        {chat.last_message || (
+                          chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
+                          chat.type === 'direct' ? 'Direct Message' : 
+                          chat.type === 'group' ? 'Group Chat' : 'Channel'
+                        )}
+                      </p>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {chat.last_message || (chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : chat.type === 'group' ? 'Group Chat' : (chat.type === 'direct' || chat.type === 'private' ? 'Direct Message' : 'Channel'))}
-                    </p>
-                  </div>
-                </button>
-              ))
+                  </button>
+                );
+              })
             )}
           </div>
         </ScrollArea>
@@ -501,15 +577,21 @@ export default function ChatPage() {
                   <ChevronLeft className="w-6 h-6" />
                 </Button>
                 <Avatar className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm">
-                  <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                    {selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.name[0].toUpperCase()}
-                  </AvatarFallback>
+                  {selectedChat.display_avatar_preset || selectedChat.display_avatar ? (
+                    <AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} />
+                  ) : (
+                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                      {selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}
+                    </AvatarFallback>
+                  )}
                 </Avatar>
                 <div className="min-w-0">
-                  <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.name}</p>
+                  <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>
                   <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : selectedChat.type === 'group' ? 'Group Chat' : (selectedChat.type === 'direct' || selectedChat.type === 'private' ? 'Direct Message' : 'Channel')}
+                    {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
+                     selectedChat.type === 'direct' ? 'Direct Message' : 
+                     selectedChat.type === 'group' ? 'Group Chat' : 'Channel'}
                   </p>
                 </div>
               </div>
@@ -702,21 +784,17 @@ export default function ChatPage() {
                 variant="ghost" 
                 className="flex-1 rounded-xl h-11 dark:text-slate-300"
                 onClick={() => setIsNewChatOpen(false)}
+                disabled={isStartingChat}
               >
                 Cancel
               </Button>
               <Button 
                 className="flex-1 rounded-xl h-11 shadow-lg shadow-primary/20"
-                disabled={!selectedMemberId || loadingMembers}
-                onClick={() => {
-                  toast({ 
-                    title: "Success", 
-                    description: "Private chat creation will be enabled in the next step." 
-                  });
-                  setIsNewChatOpen(false);
-                }}
+                disabled={!selectedMemberId || loadingMembers || isStartingChat}
+                onClick={handleStartChat}
               >
-                Start Chat
+                {isStartingChat ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                {isStartingChat ? 'Starting...' : 'Start Chat'}
               </Button>
             </div>
           </DialogFooter>
