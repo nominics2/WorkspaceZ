@@ -71,6 +71,17 @@ import {
   DropdownMenuItem 
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 /**
  * PRODUCTION TYPES
@@ -143,7 +154,7 @@ interface ChatMuteState {
 
 export default function ChatPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
-  const { addBubble, refreshUnread } = useFloatingChat();
+  const { addBubble, refreshUnread, removeBubble } = useFloatingChat();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [showConversation, setShowConversation] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -179,10 +190,14 @@ export default function ChatPage() {
   const [allMedia, setAllMedia] = useState<Attachment[]>([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
 
-  // Info State
+  // Info & Group Management State
   const [isInfoSheetOpen, setIsInfoSheetOpen] = useState(false);
   const [infoMembers, setInfoMembers] = useState<ChatMemberWithProfile[]>([]);
   const [loadingInfo, setLoadingInfo] = useState(false);
+  const [isRenamingGroup, setIsRenamingGroup] = useState(false);
+  const [newGroupNameInput, setNewGroupNameInput] = useState("");
+  const [isRenamingLoading, setIsRenamingLoading] = useState(false);
+  const [isLeavingLoading, setIsLeavingLoading] = useState(false);
 
   // New Chat Modal State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -725,6 +740,60 @@ export default function ChatPage() {
   };
 
   /**
+   * GROUP MANAGEMENT ACTIONS
+   */
+  const handleRenameGroup = async () => {
+    const text = newGroupNameInput.trim();
+    if (!selectedChatId || !text || isRenamingLoading) return;
+    if (text.length > 80) {
+      toast({ variant: "destructive", title: "Name too long", description: "Maximum 80 characters allowed." });
+      return;
+    }
+
+    setIsRenamingLoading(true);
+    try {
+      const { error } = await supabase.rpc("rename_group_chat", {
+        p_channel_id: selectedChatId,
+        p_name: text
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Group renamed" });
+      setIsRenamingGroup(false);
+      await fetchChats();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Rename failed", description: err.message });
+    } finally {
+      setIsRenamingLoading(false);
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!selectedChatId || isLeavingLoading) return;
+
+    setIsLeavingLoading(true);
+    try {
+      const { error } = await supabase.rpc("leave_group_chat", {
+        p_channel_id: selectedChatId
+      });
+
+      if (error) throw error;
+
+      toast({ title: "You left the group" });
+      setIsInfoSheetOpen(false);
+      removeBubble(selectedChatId);
+      setSelectedChatId(null);
+      setShowConversation(false);
+      await fetchChats();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Exit failed", description: err.message });
+    } finally {
+      setIsLeavingLoading(false);
+    }
+  };
+
+  /**
    * EFFECTS
    */
   useEffect(() => {
@@ -754,6 +823,7 @@ export default function ChatPage() {
       setIsSearchOpen(false);
       setInChatSearchQuery("");
       setInChatSearchResults([]);
+      setIsRenamingGroup(false);
     } else {
       setMessages([]);
     }
@@ -1079,7 +1149,7 @@ export default function ChatPage() {
             )}
             <ScrollArea ref={scrollAreaRef} className="flex-1 px-4 md:px-8">
               <div className="py-8 space-y-6">
-                {loadingMessages ? <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3"><Loader2 className="w-8 h-8 animate-spin" /><p className="text-sm font-medium">Synchronizing history...</p></div> : messages.map((msg) => {
+                {loadingMessages ? <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3"><Loader2 className="w-8 h-8 animate-spin" /><p className="text-sm font-medium">Synchronizing history...</p></div> : messages.length === 0 ? <p className="text-center text-sm text-slate-400 py-20 italic">No messages yet. Start the conversation!</p> : messages.map((msg) => {
                   const isMe = msg.sender_id === userProfile?.id;
                   const isHighlighted = highlightedMessageId === msg.id;
                   return (
@@ -1139,7 +1209,7 @@ export default function ChatPage() {
         <SheetContent className="w-full sm:max-w-lg p-0 flex flex-col dark:bg-slate-950 overflow-hidden"><div className="p-6 pb-0"><SheetHeader><div className="flex items-center gap-2 mb-1"><Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Asset Manager</Badge></div><SheetTitle className="text-2xl font-bold">Media & Files</SheetTitle><SheetDescription>All attachments shared in {selectedChat?.display_name}.</SheetDescription></SheetHeader><Tabs defaultValue="media" className="mt-8 flex-1 flex flex-col"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900/50 mb-6"><TabsTrigger value="media" className="gap-2"><ImageIcon className="w-3.5 h-3.5" /> Gallery</TabsTrigger><TabsTrigger value="files" className="gap-2"><FileIcon className="w-3.5 h-3.5" /> Documents</TabsTrigger></TabsList><ScrollArea className="flex-1 -mx-6 px-6"><TabsContent value="media" className="m-0 pb-8">{loadingMedia ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin" /></div> : allMedia.filter(m => m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No images shared yet.</p> : <div className="grid grid-cols-2 gap-4">{allMedia.filter(m => m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">{item.signed_url && <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover" />}<div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"><Button size="icon" variant="secondary" aria-label="Download" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button></div></div>))}</div>}</TabsContent><TabsContent value="files" className="m-0 pb-8">{allMedia.filter(m => !m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No files shared yet.</p> : allMedia.filter(m => !m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 transition-colors group"><div className="p-2.5 bg-primary/10 rounded-xl"><FileIcon className="w-5 h-5 text-primary" /></div><div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div><Button size="icon" variant="ghost" aria-label="Download" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>))}</TabsContent></ScrollArea></Tabs></div></SheetContent>
       </Sheet>
 
-      <Sheet open={isInfoSheetOpen} onOpenChange={setIsInfoSheetOpen}>
+      <Sheet open={isInfoSheetOpen} onOpenChange={(open) => { setIsInfoSheetOpen(open); if (!open) { setIsRenamingGroup(false); } }}>
         <SheetContent className="w-full sm:max-w-md p-0 flex flex-col dark:bg-slate-950 overflow-hidden">
           <div className="p-8 pb-4">
             <SheetHeader className="items-center text-center">
@@ -1149,8 +1219,37 @@ export default function ChatPage() {
                   {selectedChat?.name.toLowerCase() === 'general' ? <Hash className="w-10 h-10" /> : selectedChat?.type === 'group' ? <Users className="w-10 h-10" /> : selectedChat?.display_name?.[0]?.toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <SheetTitle className="text-2xl font-bold dark:text-white">{selectedChat?.display_name}</SheetTitle>
-              <SheetDescription className="text-sm font-medium text-emerald-500 uppercase tracking-widest">
+              <div className="flex items-center gap-2">
+                {isRenamingGroup ? (
+                  <div className="flex items-center gap-2 mt-2">
+                    <Input 
+                      value={newGroupNameInput} 
+                      onChange={e => setNewGroupNameInput(e.target.value)} 
+                      className="h-9 w-48 text-sm"
+                      autoFocus
+                      maxLength={80}
+                      disabled={isRenamingLoading}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleRenameGroup(); if (e.key === 'Escape') setIsRenamingGroup(false); }}
+                    />
+                    <Button size="icon" className="h-8 w-8 shrink-0" onClick={handleRenameGroup} disabled={isRenamingLoading || !newGroupNameInput.trim()}>
+                      {isRenamingLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-4 h-4" />}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setIsRenamingGroup(false)} disabled={isRenamingLoading}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <SheetTitle className="text-2xl font-bold dark:text-white">{selectedChat?.display_name}</SheetTitle>
+                    {selectedChat?.type === 'group' && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400" onClick={() => { setNewGroupNameInput(selectedChat.name); setIsRenamingGroup(true); }}>
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+              <SheetDescription className="text-sm font-medium text-emerald-500 uppercase tracking-widest mt-1">
                 {selectedChat?.name.toLowerCase() === 'general' ? 'Workspace Channel' : selectedChat?.type === 'direct' ? 'Direct Message' : 'Group Workspace'}
               </SheetDescription>
             </SheetHeader>
@@ -1219,15 +1318,41 @@ export default function ChatPage() {
                 <div className="space-y-4 pt-4 border-t dark:border-slate-800">
                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Management</h4>
                    <div className="space-y-2">
-                      <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800 opacity-50 cursor-not-allowed" disabled>
-                         <Edit2 className="w-4 h-4" /> Rename Conversation
-                      </Button>
-                      <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800 opacity-50 cursor-not-allowed" disabled>
-                         <UserPlus className="w-4 h-4" /> Add Participants
-                      </Button>
-                      <Button variant="outline" className="w-full justify-start gap-3 rounded-xl text-rose-500 border-rose-50 dark:border-rose-900/20 hover:bg-rose-50 dark:hover:bg-rose-950/20 opacity-50 cursor-not-allowed" disabled>
-                         <LogOut className="w-4 h-4" /> Leave Conversation
-                      </Button>
+                      {selectedChat?.type === 'group' ? (
+                        <>
+                          <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800" onClick={() => { setNewGroupNameInput(selectedChat.name); setIsRenamingGroup(true); }}>
+                             <Edit2 className="w-4 h-4" /> Rename Group
+                          </Button>
+                          <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800 opacity-50 cursor-not-allowed" disabled>
+                             <UserPlus className="w-4 h-4" /> Add Participants
+                          </Button>
+                          
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" className="w-full justify-start gap-3 rounded-xl text-rose-500 border-rose-50 dark:border-rose-900/20 hover:bg-rose-50 dark:hover:bg-rose-950/20">
+                                 <LogOut className="w-4 h-4" /> Leave Group
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle className="dark:text-white">Leave Group?</AlertDialogTitle>
+                                <AlertDialogDescription className="dark:text-slate-400">
+                                  Are you sure you want to leave <strong>{selectedChat.name}</strong>? You will no longer be able to see or send messages in this group.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleLeaveGroup} className="bg-rose-500 hover:bg-rose-600 text-white">
+                                  {isLeavingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                                  Leave Group
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground italic px-1">Management actions are not available for this chat type.</p>
+                      )}
                    </div>
                 </div>
              </div>
