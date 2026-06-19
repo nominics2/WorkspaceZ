@@ -12,7 +12,9 @@ import {
   Loader2,
   Calendar as CalendarIcon,
   CheckCircle2,
-  BadgeCheck
+  BadgeCheck,
+  Hash,
+  Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,7 +92,6 @@ export default function ChatPage() {
   const fetchMembers = useCallback(async () => {
     if (!activeWorkspace) return;
     
-    // Fetch members and profiles in two steps to avoid ambiguous joins
     const { data: mData, error: mErr } = await supabase
       .from('workspace_members')
       .select('user_id, is_verified')
@@ -327,92 +328,131 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col gap-4 animate-in fade-in duration-500">
-      <div className="flex items-center justify-between">
+    <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex flex-col gap-4 animate-in fade-in duration-500 pb-safe">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-950 dark:text-slate-100">Workspace Chat</h1>
-          <p className="text-muted-foreground">Collaborate with your team in {activeWorkspace?.name}</p>
+          <p className="text-muted-foreground text-sm">Collaborate in real-time with your {activeWorkspace?.name} team</p>
         </div>
       </div>
 
-      <Card className="flex-1 flex flex-col border-none shadow-xl overflow-hidden relative dark:bg-slate-900">
-        <div className="p-4 border-b dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-              <span className="text-primary font-bold">#</span>
+      <Card className="flex-1 flex flex-col border-none shadow-2xl overflow-hidden relative dark:bg-slate-900 rounded-[2rem]">
+        {/* Chat Header */}
+        <div className="p-4 md:p-6 border-b dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between z-10">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center shrink-0">
+              <Hash className="text-primary w-6 h-6" />
             </div>
-            <div>
-              <p className="font-bold dark:text-slate-100">{channel?.name || 'General'}</p>
-              <p className="text-xs text-muted-foreground">{members.length} members in workspace</p>
+            <div className="min-w-0">
+              <p className="font-bold text-lg dark:text-slate-100 truncate">{channel?.name || 'General'}</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {members.length} members</span>
+                <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                <span className="text-emerald-500 font-bold">Online</span>
+              </div>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="dark:text-slate-400">
-            <MoreVertical className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="dark:text-slate-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+              <Plus className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="dark:text-slate-400 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+              <MoreVertical className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
-        <ScrollArea className="flex-1 bg-slate-50/50 dark:bg-slate-950/40">
-          <div className="p-6 space-y-6">
+        {/* Messages Area */}
+        <ScrollArea className="flex-1 bg-slate-50/30 dark:bg-slate-950/20 px-4 md:px-6">
+          <div className="py-8 space-y-8">
             {loading ? (
-              <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+              <div className="flex flex-col items-center justify-center py-20 gap-4">
+                <Loader2 className="w-10 h-10 animate-spin text-primary opacity-50" />
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading messages...</p>
+              </div>
             ) : messages.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground italic">No messages yet. Start the conversation!</div>
+              <div className="flex flex-col items-center justify-center py-24 text-center space-y-4 opacity-70">
+                <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
+                   <MessageSquare className="w-10 h-10 text-slate-300" />
+                </div>
+                <div>
+                   <p className="font-bold text-lg dark:text-slate-100">No messages yet</p>
+                   <p className="text-sm text-muted-foreground">Start the conversation with your team!</p>
+                </div>
+              </div>
             ) : (
-              messages.map((msg) => {
+              messages.map((msg, idx) => {
                 const isMe = msg.sender_id === userProfile?.id;
                 const profile = msg.profiles;
                 const avatarSrc = profile?.avatar_preset ? `/avatars/${profile.avatar_preset}.png` : profile?.avatar_url;
                 const senderMembership = members.find(m => m.user_id === msg.sender_id);
                 const isVerified = !!senderMembership?.is_verified;
 
+                // Group messages from same user within 2 minutes
+                const prevMsg = messages[idx - 1];
+                const showHeader = !prevMsg || prevMsg.sender_id !== msg.sender_id || 
+                                  (new Date(msg.created_at).getTime() - new Date(prevMsg.created_at).getTime() > 120000);
+
                 return (
-                  <div key={msg.id} className={cn("flex gap-3 group", isMe ? "flex-row-reverse" : "")}>
-                    <Avatar className="w-10 h-10 border dark:border-slate-800 shadow-sm">
-                      <AvatarImage src={avatarSrc} />
-                      <AvatarFallback className="bg-primary/5 text-primary text-xs font-bold">
-                        {profile?.full_name?.[0] || 'U'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className={cn("max-w-[70%] flex flex-col", isMe ? "items-end" : "items-start")}>
-                      <div className={cn("flex items-center gap-2 mb-1 px-1", isMe ? "flex-row-reverse" : "")}>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold dark:text-slate-300">{profile?.full_name || 'User'}</span>
-                          {isVerified && <BadgeCheck className="w-3 h-3 text-primary" />}
+                  <div key={msg.id} className={cn(
+                    "flex gap-4 group transition-all",
+                    isMe ? "flex-row-reverse" : "flex-row",
+                    showHeader ? "mt-6" : "mt-1"
+                  )}>
+                    <div className={cn("shrink-0 w-10 flex flex-col items-center", !showHeader && "opacity-0")}>
+                      <Avatar className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-md">
+                        <AvatarImage src={avatarSrc} />
+                        <AvatarFallback className="bg-primary/10 text-primary text-xs font-extrabold uppercase">
+                          {profile?.full_name?.[0] || 'U'}
+                        </AvatarFallback>
+                      </Avatar>
+                    </div>
+
+                    <div className={cn("max-w-[80%] md:max-w-[70%] flex flex-col", isMe ? "items-end" : "items-start")}>
+                      {showHeader && (
+                        <div className={cn("flex items-center gap-2 mb-1.5 px-1", isMe ? "flex-row-reverse" : "flex-row")}>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-extrabold text-slate-700 dark:text-slate-300">{profile?.full_name || 'User'}</span>
+                            {isVerified && <BadgeCheck className="w-3.5 h-3.5 text-primary fill-primary/10" />}
+                          </div>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
-                        <span className="text-[10px] text-muted-foreground">
-                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                      <div className="relative group/bubble">
+                      )}
+                      
+                      <div className="relative group/bubble flex items-center gap-2">
                         <div className={cn(
-                          "p-4 rounded-2xl shadow-sm break-words whitespace-pre-wrap text-sm",
+                          "px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed break-words whitespace-pre-wrap transition-all",
                           isMe 
                             ? "bg-primary text-white rounded-tr-none" 
-                            : "bg-white dark:bg-slate-800 text-foreground dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
+                            : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-100 dark:border-slate-700"
                         )}>
                           {msg.message}
+                          
                           {msg.created_task_id && (
                             <div className={cn(
-                              "mt-2 pt-2 border-t flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider",
+                              "mt-3 pt-2 border-t flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-widest",
                               isMe ? "border-white/20 text-white/80" : "border-slate-100 dark:border-slate-700 text-primary"
                             )}>
                               <CheckCircle2 className="w-3.5 h-3.5" /> Task Created
                             </div>
                           )}
                         </div>
+
                         {!msg.created_task_id && (
                           <div className={cn(
-                            "absolute top-0 opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center gap-2",
-                            isMe ? "-left-12 pr-2" : "-right-12 pl-2"
+                            "opacity-0 group-hover/bubble:opacity-100 transition-opacity flex items-center shrink-0",
+                            isMe ? "order-first" : ""
                           )}>
                              <Button 
                                variant="secondary" 
                                size="icon" 
-                               className="h-8 w-8 rounded-full shadow-md bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border dark:border-slate-700"
+                               className="h-9 w-9 rounded-xl shadow-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border dark:border-slate-700"
                                onClick={() => openTaskModal(msg)}
                                title="Create task from message"
                              >
-                               <CheckSquare className="w-4 h-4 text-primary" />
+                               <CheckSquare className="w-4.5 h-4.5 text-primary" />
                              </Button>
                           </div>
                         )}
@@ -426,111 +466,133 @@ export default function ChatPage() {
           </div>
         </ScrollArea>
 
-        <div className="p-4 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
-          <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary shrink-0">
+        {/* Input Bar */}
+        <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
+          <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary/30">
+            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary hover:bg-white dark:hover:bg-slate-800 rounded-xl shrink-0 transition-colors">
               <Paperclip className="w-5 h-5" />
             </Button>
             <Input 
-              className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-slate-100" 
-              placeholder="Type your message..." 
+              className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-slate-100 h-10 px-0" 
+              placeholder="Message your team..." 
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               disabled={sending}
             />
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-primary shrink-0">
+            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary hover:bg-white dark:hover:bg-slate-800 rounded-xl shrink-0 hidden sm:flex transition-colors">
               <Smile className="w-5 h-5" />
             </Button>
             <Button 
               size="icon" 
-              className="rounded-lg shadow-lg shadow-primary/20 shrink-0" 
+              className={cn(
+                "rounded-xl shadow-xl transition-all active:scale-95 shrink-0 w-10 h-10",
+                input.trim() ? "bg-primary shadow-primary/20" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed shadow-none"
+              )} 
               onClick={handleSend}
               disabled={sending || !input.trim()}
             >
               {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </Button>
           </div>
+          <div className="mt-2 text-[9px] text-center text-slate-400 font-bold uppercase tracking-[0.2em] hidden md:block">
+            Press <span className="text-slate-500">Enter</span> to send • <span className="text-slate-500">Shift+Enter</span> for new line
+          </div>
         </div>
       </Card>
 
+      {/* Convert to Task Dialog */}
       <Dialog open={isTaskModalOpen} onOpenChange={(open) => { 
         if (!converting) {
           setIsTaskModalOpen(open);
           if (!open) forceUnlockUI();
         }
       }}>
-        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800">
-          <DialogHeader>
-            <DialogTitle className="dark:text-slate-100">Create Task from Message</DialogTitle>
-            <DialogDescription>Convert this chat message into a project assignment.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateTask} className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="t-title" className="dark:text-slate-300">Task Title</Label>
-              <Input 
-                id="t-title" 
-                value={taskForm.title} 
-                onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
-                required 
-                disabled={converting}
-                className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="t-desc" className="dark:text-slate-300">Description</Label>
-              <Textarea 
-                id="t-desc" 
-                value={taskForm.description} 
-                onChange={e => setTaskForm({...taskForm, description: e.target.value})} 
-                rows={4}
-                disabled={converting}
-                className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="dark:text-slate-300">Priority</Label>
-                <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})} disabled={converting}>
-                  <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue /></SelectTrigger>
-                  <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High</SelectItem>
-                    <SelectItem value="urgent">Urgent</SelectItem>
+        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl">
+          <div className="p-8 space-y-6">
+            <DialogHeader>
+              <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-2">
+                <CheckSquare className="text-primary w-6 h-6" />
+              </div>
+              <DialogTitle className="text-2xl font-bold dark:text-slate-100">Create Task</DialogTitle>
+              <DialogDescription>Transform this message into a tracked assignment.</DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleCreateTask} className="space-y-5">
+              <div className="space-y-1.5">
+                <Label htmlFor="t-title" className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Title</Label>
+                <Input 
+                  id="t-title" 
+                  value={taskForm.title} 
+                  onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
+                  required 
+                  disabled={converting}
+                  className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100 border-slate-200"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="t-desc" className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Description</Label>
+                <Textarea 
+                  id="t-desc" 
+                  value={taskForm.description} 
+                  onChange={e => setTaskForm({...taskForm, description: e.target.value})} 
+                  rows={3}
+                  disabled={converting}
+                  className="rounded-xl dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100 border-slate-200"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Priority</Label>
+                  <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})} disabled={converting}>
+                    <SelectTrigger className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100 border-slate-200"><SelectValue /></SelectTrigger>
+                    <SelectContent className="dark:bg-slate-900 dark:border-slate-800 rounded-xl">
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Due Date</Label>
+                  <Input 
+                    type="date" 
+                    value={taskForm.dueDate} 
+                    onChange={e => setTaskForm({...taskForm, dueDate: e.target.value})} 
+                    disabled={converting}
+                    className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100 border-slate-200"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Assign To</Label>
+                <Select value={taskForm.assignedTo} onValueChange={v => setTaskForm({...taskForm, assignedTo: v})} disabled={converting}>
+                  <SelectTrigger className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100 border-slate-200"><SelectValue placeholder="Select member" /></SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900 dark:border-slate-800 rounded-xl">
+                    {members.map(m => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        <div className="flex items-center gap-2">
+                           <Avatar className="w-5 h-5">
+                             <AvatarImage src={m.profiles?.avatar_preset ? `/avatars/${m.profiles.avatar_preset}.png` : m.profiles?.avatar_url} />
+                             <AvatarFallback className="text-[8px]">{m.profiles?.full_name?.[0]}</AvatarFallback>
+                           </Avatar>
+                           <span>{(m.profiles as any)?.full_name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="dark:text-slate-300">Due Date</Label>
-                <Input 
-                  type="date" 
-                  value={taskForm.dueDate} 
-                  onChange={e => setTaskForm({...taskForm, dueDate: e.target.value})} 
-                  disabled={converting}
-                  className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="dark:text-slate-300">Assigned To</Label>
-              <Select value={taskForm.assignedTo} onValueChange={v => setTaskForm({...taskForm, assignedTo: v})} disabled={converting}>
-                <SelectTrigger className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"><SelectValue placeholder="Select member" /></SelectTrigger>
-                <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
-                  {members.map(m => (
-                    <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter className="pt-4">
-              <Button type="button" variant="ghost" onClick={() => { setIsTaskModalOpen(false); forceUnlockUI(); }} disabled={converting} className="dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
-              <Button type="submit" disabled={converting} className="shadow-lg shadow-primary/20">
-                {converting && <Loader2 className="w-4 h-4 animate-spin mr-2" />}
-                Convert to Task
-              </Button>
-            </DialogFooter>
-          </form>
+              <DialogFooter className="pt-4 flex-row gap-3">
+                <Button type="button" variant="ghost" onClick={() => { setIsTaskModalOpen(false); forceUnlockUI(); }} disabled={converting} className="flex-1 h-12 rounded-xl dark:text-slate-300 dark:hover:bg-slate-800">Cancel</Button>
+                <Button type="submit" disabled={converting} className="flex-1 h-12 rounded-xl shadow-xl shadow-primary/20">
+                  {converting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  Assign Task
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
