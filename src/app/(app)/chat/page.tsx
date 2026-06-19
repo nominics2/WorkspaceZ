@@ -19,7 +19,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -47,9 +46,6 @@ interface Message {
   } | null;
 }
 
-/**
- * Serializes a Supabase error into a readable object.
- */
 function serializeSupabaseError(error: any) {
   if (!error) return null;
   return {
@@ -60,11 +56,7 @@ function serializeSupabaseError(error: any) {
     code: error.code ?? null,
     status: error.status ?? null,
     statusText: error.statusText ?? null,
-    raw: String(error),
-    ownProperties: Object.getOwnPropertyNames(error).reduce((acc: any, key) => {
-      acc[key] = error[key];
-      return acc;
-    }, {}),
+    raw: String(error)
   };
 }
 
@@ -83,6 +75,7 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
   const { toast } = useToast();
 
@@ -90,6 +83,14 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
+  const isAtBottom = () => {
+    const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (!viewport) return true;
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    return scrollHeight - scrollTop <= clientHeight + 100;
+  };
+
+  // Scroll on messages load or change
   useEffect(() => {
     if (messages.length > 0) {
       scrollToBottom(loadingMessages ? "auto" : "smooth");
@@ -97,29 +98,19 @@ export default function ChatPage() {
   }, [messages, loadingMessages]);
 
   const fetchChats = useCallback(async () => {
-    if (!activeWorkspace || !userProfile) {
-      console.log("[Chat Debug] Missing workspace or profile, skipping fetch.");
-      return;
-    }
+    if (!activeWorkspace || !userProfile) return;
     
     setLoadingChats(true);
     setError(null);
     try {
-      console.log("[Chat Debug] Fetching workspace memberships for user:", userProfile.id);
-      
       const { data: memberData, error: memberError } = await supabase
         .from('workspace_members')
         .select('workspace_id')
         .eq('user_id', userProfile.id)
         .eq('status', 'active');
 
-      if (memberError) {
-        console.error("[Chat Debug] workspace_members error:", serializeSupabaseError(memberError));
-        throw new Error(`Unable to load your workspace membership (Code: ${memberError.code})`);
-      }
-
+      if (memberError) throw new Error(`Unable to load membership: ${memberError.message}`);
       if (!memberData || memberData.length === 0) {
-        console.log("[Chat Debug] User has no active workspace memberships.");
         setChats([]);
         return;
       }
@@ -132,10 +123,7 @@ export default function ChatPage() {
         .in('workspace_id', workspaceIds)
         .order('created_at', { ascending: false });
 
-      if (channelsError) {
-        console.error("[Chat Debug] chat_channels error:", serializeSupabaseError(channelsError));
-        throw new Error(`Unable to load chat channels (Code: ${channelsError.code})`);
-      }
+      if (channelsError) throw new Error(`Unable to load channels: ${channelsError.message}`);
 
       if (!channelsData || channelsData.length === 0) {
         setChats([]);
@@ -144,16 +132,12 @@ export default function ChatPage() {
 
       const channelIds = channelsData.map(c => c.id);
 
-      const { data: lastMessages, error: lastMsgError } = await supabase
+      const { data: lastMessages } = await supabase
         .from('chat_messages')
         .select('id, channel_id, message, created_at')
         .in('channel_id', channelIds)
         .eq('is_deleted', false)
         .order('created_at', { ascending: false });
-
-      if (lastMsgError) {
-        console.warn("[Chat Debug] Last message fetch warning:", serializeSupabaseError(lastMsgError));
-      }
 
       const formattedChats: Chat[] = channelsData.map(channel => {
         const lastMsg = lastMessages?.find(m => m.channel_id === channel.id);
@@ -166,21 +150,27 @@ export default function ChatPage() {
           last_message_at: lastMsg?.created_at
         };
       }).sort((a, b) => {
-        if (a.name === 'General' && a.workspace_id === activeWorkspace.id) return -1;
-        if (b.name === 'General' && b.workspace_id === activeWorkspace.id) return 1;
-        const timeA = new Date(a.last_message_at || 0).getTime();
-        const timeB = new Date(b.last_message_at || 0).getTime();
+        const isAGeneral = a.name.toLowerCase() === 'general' && a.workspace_id === activeWorkspace.id;
+        const isBGeneral = b.name.toLowerCase() === 'general' && b.workspace_id === activeWorkspace.id;
+        if (isAGeneral) return -1;
+        if (isBGeneral) return 1;
+        const timeA = new Date(a.last_message_at || a.last_message_at || 0).getTime();
+        const timeB = new Date(b.last_message_at || b.last_message_at || 0).getTime();
         return timeB - timeA;
       });
 
       setChats(formattedChats);
+      
+      // Auto-select first chat on desktop if none selected
+      if (!selectedChatId && formattedChats.length > 0 && typeof window !== 'undefined' && window.innerWidth >= 768) {
+        setSelectedChatId(formattedChats[0].id);
+      }
     } catch (err: any) {
-      console.error("[Chat Debug] Final Error Catch:", err);
       setError(err.message || "An unexpected error occurred while loading chats.");
     } finally {
       setLoadingChats(false);
     }
-  }, [activeWorkspace, userProfile, supabase]);
+  }, [activeWorkspace, userProfile, supabase, selectedChatId]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
@@ -192,10 +182,7 @@ export default function ChatPage() {
         .eq('is_deleted', false)
         .order('created_at', { ascending: true });
 
-      if (msgError) {
-        console.error("[Chat Debug] chat_messages error:", serializeSupabaseError(msgError));
-        throw new Error(`Unable to load messages (Code: ${msgError.code})`);
-      }
+      if (msgError) throw new Error(msgError.message);
 
       if (!msgData || msgData.length === 0) {
         setMessages([]);
@@ -204,14 +191,10 @@ export default function ChatPage() {
       }
 
       const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
-      const { data: profilesData, error: profilesError } = await supabase
+      const { data: profilesData } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, avatar_preset')
         .in('id', senderIds);
-
-      if (profilesError) {
-        console.warn("[Chat Debug] Profile enrichment warning:", serializeSupabaseError(profilesError));
-      }
 
       const enrichedMessages: Message[] = msgData.map(m => ({
         ...m,
@@ -220,12 +203,7 @@ export default function ChatPage() {
 
       setMessages(enrichedMessages);
     } catch (err: any) {
-      console.error("[Chat Debug] Fetch Messages Error:", serializeSupabaseError(err));
-      toast({ 
-        variant: "destructive", 
-        title: "Error", 
-        description: err.message || "Failed to load messages" 
-      });
+      toast({ variant: "destructive", title: "Sync Error", description: err.message });
     } finally {
       setLoadingMessages(false);
     }
@@ -247,8 +225,6 @@ export default function ChatPage() {
   useEffect(() => {
     if (!selectedChatId) return;
 
-    console.log(`[Chat Debug] Subscribing to realtime messages for channel: ${selectedChatId}`);
-
     const channel = supabase
       .channel(`chat_messages:${selectedChatId}`)
       .on(
@@ -261,21 +237,14 @@ export default function ChatPage() {
         },
         async (payload) => {
           const newMessage = payload.new as Message;
-          console.log("[Chat Debug] Realtime INSERT received:", newMessage.id);
+          const wasAtBottom = isAtBottom();
 
-          // Prevent duplication if the message was already added via optimistic UI or manual refetch
           setMessages((prev) => {
-            const exists = prev.some(m => m.id === newMessage.id);
-            if (exists) {
-              console.log("[Chat Debug] Realtime message ignored because duplicate:", newMessage.id);
-              return prev;
-            }
-            
-            // We'll append the message temporarily while we fetch the profile
+            if (prev.some(m => m.id === newMessage.id)) return prev;
             return [...prev, { ...newMessage, profiles: null }];
           });
 
-          // Fetch sender profile for the new message
+          // Fetch sender profile
           try {
             const { data: profileData } = await supabase
               .from('profiles')
@@ -287,8 +256,13 @@ export default function ChatPage() {
               prev.map(m => m.id === newMessage.id ? { ...m, profiles: profileData || null } : m)
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
             );
-          } catch (profileErr) {
-            console.error("[Chat Debug] Error fetching profile for realtime message:", profileErr);
+
+            // Auto-scroll if user is already at bottom or it's their own message
+            if (wasAtBottom || newMessage.sender_id === userProfile?.id) {
+              setTimeout(() => scrollToBottom(), 100);
+            }
+          } catch (err) {
+            console.error("Profile sync error:", err);
           }
         }
       )
@@ -309,19 +283,12 @@ export default function ChatPage() {
           }
         }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`[Chat Debug] Realtime subscription active for ${selectedChatId}`);
-        } else {
-          console.log(`[Chat Debug] Realtime subscription status for ${selectedChatId}:`, status);
-        }
-      });
+      .subscribe();
 
     return () => {
-      console.log(`[Chat Debug] Unsubscribing from realtime messages for channel: ${selectedChatId}`);
       supabase.removeChannel(channel);
     };
-  }, [selectedChatId, supabase]);
+  }, [selectedChatId, supabase, userProfile?.id]);
 
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
@@ -332,7 +299,8 @@ export default function ChatPage() {
   const isGeneral = selectedChat?.name?.toLowerCase() === 'general';
   
   const handleSendMessage = async () => {
-    if (!selectedChat || !userProfile || isGeneral || !messageInput.trim() || isSending) return;
+    const text = messageInput.trim();
+    if (!selectedChat || !userProfile || isGeneral || !text || isSending) return;
 
     setIsSending(true);
     try {
@@ -342,19 +310,14 @@ export default function ChatPage() {
           channel_id: selectedChat.id,
           workspace_id: selectedChat.workspace_id,
           sender_id: userProfile.id,
-          message: messageInput.trim()
+          message: text
         });
 
-      if (sendError) {
-        console.error("[Chat Debug] Send Message Error:", serializeSupabaseError(sendError));
-        toast({ variant: "destructive", title: "Failed to send message", description: "Please try again." });
-      } else {
-        setMessageInput("");
-        // Note: Realtime listener will handle appending the message to the UI
-      }
+      if (sendError) throw sendError;
+      setMessageInput("");
+      // Realtime listener handles append
     } catch (err: any) {
-      console.error("[Chat Debug] Fatal Send Error:", err);
-      toast({ variant: "destructive", title: "Error", description: "An unexpected error occurred." });
+      toast({ variant: "destructive", title: "Send Failed", description: "Your message could not be delivered." });
     } finally {
       setIsSending(false);
     }
@@ -396,13 +359,12 @@ export default function ChatPage() {
             {loadingChats ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
                 <Loader2 className="w-6 h-6 animate-spin" />
-                <p className="text-xs font-medium">Loading channels...</p>
+                <p className="text-xs font-medium">Syncing channels...</p>
               </div>
             ) : error ? (
               <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-rose-500 gap-2">
                 <AlertCircle className="w-8 h-8 opacity-50" />
-                <p className="text-sm font-bold">Fetch Failed</p>
-                <p className="text-[11px] leading-relaxed opacity-80">{error}</p>
+                <p className="text-sm font-bold">Failed to load</p>
                 <Button variant="outline" size="sm" onClick={fetchChats} className="mt-4 h-8 text-[10px] uppercase font-bold tracking-wider">Retry</Button>
               </div>
             ) : filteredChats.length === 0 ? (
@@ -424,16 +386,23 @@ export default function ChatPage() {
                       "bg-primary/10 text-primary font-bold",
                       selectedChatId === chat.id ? "bg-primary text-white" : ""
                     )}>
-                      {chat.type === 'channel' || chat.name === 'General' ? <Hash className="w-5 h-5" /> : chat.name[0]}
+                      {chat.name.toLowerCase() === 'general' ? <Hash className="w-5 h-5" /> : chat.name[0].toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 text-left">
-                    <p className={cn(
-                      "font-bold text-sm truncate",
-                      selectedChatId === chat.id ? "text-primary" : "text-slate-900 dark:text-white"
-                    )}>{chat.name}</p>
+                    <div className="flex justify-between items-baseline mb-0.5">
+                      <p className={cn(
+                        "font-bold text-sm truncate",
+                        selectedChatId === chat.id ? "text-primary" : "text-slate-900 dark:text-white"
+                      )}>{chat.name}</p>
+                      {chat.last_message_at && (
+                        <span className="text-[10px] text-slate-400 font-medium ml-2 shrink-0">
+                          {new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {chat.last_message || (chat.name === 'General' ? 'Workspace Channel' : chat.type === 'group' ? 'Group Chat' : chat.type === 'channel' ? 'Public Channel' : 'Direct Message')}
+                      {chat.last_message || (chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : chat.type === 'group' ? 'Group Chat' : 'Public Channel')}
                     </p>
                   </div>
                 </button>
@@ -463,14 +432,14 @@ export default function ChatPage() {
                 </Button>
                 <Avatar className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm">
                   <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                    {selectedChat.type === 'channel' || selectedChat.name === 'General' ? <Hash className="w-4 h-4" /> : selectedChat.name[0]}
+                    {selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.name[0].toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
                   <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.name}</p>
                   <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    {selectedChat.name === 'General' ? 'Workspace Channel' : selectedChat.type === 'group' ? 'Group Chat' : selectedChat.type === 'channel' ? 'Channel' : 'Direct Message'}
+                    {selectedChat.name.toLowerCase() === 'general' ? 'Workspace Channel' : selectedChat.type === 'group' ? 'Group Chat' : 'Direct Message'}
                   </p>
                 </div>
               </div>
@@ -481,18 +450,18 @@ export default function ChatPage() {
             </div>
 
             {/* Messages Area */}
-            <ScrollArea className="flex-1 px-4 md:px-8">
+            <ScrollArea ref={scrollAreaRef} className="flex-1 px-4 md:px-8">
               <div className="py-8 space-y-6">
                 {loadingMessages ? (
                   <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
                     <Loader2 className="w-8 h-8 animate-spin" />
-                    <p className="text-sm font-medium">Syncing history...</p>
+                    <p className="text-sm font-medium">History is loading...</p>
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
                     <MessageSquare className="w-12 h-12 mb-4 text-slate-300" />
                     <p className="font-bold text-lg">No messages here yet</p>
-                    <p className="text-sm">Say hello to start the conversation!</p>
+                    <p className="text-sm">Be the first to say hello!</p>
                   </div>
                 ) : (
                   messages.map((msg) => {
@@ -544,7 +513,7 @@ export default function ChatPage() {
                 </Button>
                 <Input 
                   className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" 
-                  placeholder={isGeneral ? "General Chat is read-only." : "Message..."}
+                  placeholder={isGeneral ? "General Chat is read-only." : "Type a message..."}
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
                   disabled={loadingMessages || isSending || isGeneral}
@@ -570,7 +539,7 @@ export default function ChatPage() {
                   {isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                 </Button>
               </div>
-              {isGeneral && <p className="text-[10px] text-center mt-2 text-slate-400 font-medium uppercase tracking-widest">Public channel is restricted to viewing</p>}
+              {isGeneral && <p className="text-[10px] text-center mt-2 text-slate-400 font-bold uppercase tracking-widest">Public channel restricted to viewing</p>}
             </div>
           </>
         ) : (
@@ -579,9 +548,9 @@ export default function ChatPage() {
               <MessageSquare className="w-10 h-10 text-primary/40" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Your Workspace Messenger</h2>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Workspace Messenger</h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto mt-1">
-                Select a channel from the left to start collaborating with your team.
+                Select a conversation to start collaborating with your team members.
               </p>
             </div>
           </div>
