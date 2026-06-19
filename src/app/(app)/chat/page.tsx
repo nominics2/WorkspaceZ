@@ -22,7 +22,8 @@ import {
   FileIcon,
   Download,
   Image as ImageIcon,
-  ExternalLink
+  ExternalLink,
+  Files
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,8 +41,16 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 
 interface Attachment {
   id: string;
@@ -50,6 +59,7 @@ interface Attachment {
   file_type: string;
   file_size_bytes: number;
   message_id: string;
+  created_at: string;
   signed_url?: string;
 }
 
@@ -108,6 +118,11 @@ export default function ChatPage() {
   // Attachment State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Gallery State
+  const [isMediaSheetOpen, setIsMediaSheetOpen] = useState(false);
+  const [allMedia, setAllMedia] = useState<Attachment[]>([]);
+  const [loadingMedia, setLoadingMedia] = useState(false);
 
   // New Chat Modal State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -366,6 +381,40 @@ export default function ChatPage() {
     }
   }, [activeWorkspace, userProfile, supabase, toast]);
 
+  const fetchMedia = useCallback(async () => {
+    if (!selectedChatId) return;
+    setLoadingMedia(true);
+    try {
+      const { data: attachData, error: attachError } = await supabase
+        .from('chat_message_attachments')
+        .select('*')
+        .eq('channel_id', selectedChatId)
+        .order('created_at', { ascending: false });
+
+      if (attachError) throw attachError;
+      if (!attachData || attachData.length === 0) {
+        setAllMedia([]);
+        return;
+      }
+
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('chat-attachments')
+        .createSignedUrls(attachData.map(a => a.file_path), 3600);
+      
+      const enriched = attachData.map(a => {
+        const signedInfo = signedData?.find(s => s.path === a.file_path);
+        return { ...a, signed_url: signedInfo?.signedUrl };
+      });
+
+      setAllMedia(enriched);
+    } catch (err: any) {
+      console.error("[Chat] Media Load Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Media Error", description: "Failed to load channel attachments." });
+    } finally {
+      setLoadingMedia(false);
+    }
+  }, [selectedChatId, supabase, toast]);
+
   useEffect(() => {
     fetchChats();
   }, [fetchChats]);
@@ -616,6 +665,9 @@ export default function ChatPage() {
     m.email?.toLowerCase().includes(memberSearchQuery.toLowerCase())
   );
 
+  const mediaItems = allMedia.filter(m => m.file_type?.startsWith('image/'));
+  const fileItems = allMedia.filter(m => !m.file_type?.startsWith('image/'));
+
   return (
     <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500">
       
@@ -761,6 +813,9 @@ export default function ChatPage() {
                 </div>
               </div>
               <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}>
+                  <Files className="w-5 h-5" />
+                </Button>
                 <Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><Search className="w-5 h-5" /></Button>
                 <Button variant="ghost" size="icon" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button>
               </div>
@@ -1095,6 +1150,118 @@ export default function ChatPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Media & Files Gallery Sheet */}
+      <Sheet open={isMediaSheetOpen} onOpenChange={setIsMediaSheetOpen}>
+        <SheetContent className="w-full sm:max-w-md md:max-w-lg p-0 flex flex-col dark:bg-slate-950 dark:border-slate-800 overflow-hidden">
+          <div className="p-6 pb-0">
+            <SheetHeader>
+              <div className="flex items-center gap-2 mb-1">
+                 <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Storage</Badge>
+              </div>
+              <SheetTitle className="text-2xl font-bold dark:text-slate-100">Media & Files</SheetTitle>
+              <SheetDescription className="dark:text-slate-400">
+                Shared assets in {selectedChat?.display_name}.
+              </SheetDescription>
+            </SheetHeader>
+
+            <Tabs defaultValue="media" className="mt-8 flex-1 flex flex-col overflow-hidden">
+              <TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900/50 mb-6">
+                <TabsTrigger value="media" className="gap-2">
+                   <ImageIcon className="w-3.5 h-3.5" /> Media
+                </TabsTrigger>
+                <TabsTrigger value="files" className="gap-2">
+                   <FileIcon className="w-3.5 h-3.5" /> Files
+                </TabsTrigger>
+              </TabsList>
+
+              <ScrollArea className="flex-1 -mx-6 px-6">
+                <TabsContent value="media" className="m-0 pb-8">
+                  {loadingMedia ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                      <Loader2 className="w-8 h-8 animate-spin" />
+                      <p className="text-sm font-medium">Scanning gallery...</p>
+                    </div>
+                  ) : mediaItems.length === 0 ? (
+                    <div className="text-center py-20 opacity-50 space-y-3">
+                      <div className="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mx-auto">
+                         <ImageIcon className="w-8 h-8 text-slate-300" />
+                      </div>
+                      <p className="text-sm font-medium">No media shared yet</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      {mediaItems.map((item) => (
+                        <div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+                          {item.signed_url ? (
+                            <img 
+                              src={item.signed_url} 
+                              alt={item.file_name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-rose-500">
+                              <AlertCircle className="w-6 h-6 opacity-30" />
+                            </div>
+                          )}
+                          <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-4 text-center">
+                             <p className="text-white text-[10px] font-bold line-clamp-2 leading-tight">{item.file_name}</p>
+                             <div className="flex gap-2 mt-1">
+                                <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}>
+                                   <ExternalLink className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}>
+                                   <Download className="w-3.5 h-3.5" />
+                                </Button>
+                             </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="files" className="m-0 pb-8">
+                  {loadingMedia ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                      <Loader2 className="w-8 h-8 animate-spin" />
+                      <p className="text-sm font-medium">Listing documents...</p>
+                    </div>
+                  ) : fileItems.length === 0 ? (
+                    <div className="text-center py-20 opacity-50 space-y-3">
+                      <div className="w-16 h-16 bg-slate-100 dark:bg-slate-900 rounded-full flex items-center justify-center mx-auto">
+                         <FileIcon className="w-8 h-8 text-slate-300" />
+                      </div>
+                      <p className="text-sm font-medium">No files shared yet</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {fileItems.map((item) => (
+                        <div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors group">
+                           <div className="p-2.5 bg-primary/10 rounded-xl">
+                              <FileIcon className="w-5 h-5 text-primary" />
+                           </div>
+                           <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold truncate dark:text-slate-100">{item.file_name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-widest">{formatBytes(item.file_size_bytes)}</span>
+                                 <Separator orientation="vertical" className="h-2 dark:bg-slate-800" />
+                                 <span className="text-[10px] text-muted-foreground">{new Date(item.created_at).toLocaleDateString()}</span>
+                              </div>
+                           </div>
+                           <Button size="icon" variant="ghost" className="h-9 w-9 rounded-full group-hover:text-primary" onClick={() => window.open(item.signed_url, '_blank')}>
+                              <Download className="w-4 h-4" />
+                           </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+              </ScrollArea>
+            </Tabs>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
