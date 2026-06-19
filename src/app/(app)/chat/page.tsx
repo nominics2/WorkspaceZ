@@ -29,18 +29,18 @@ interface Chat {
   id: string;
   name: string;
   type: string;
+  workspace_id: string;
   last_message?: string;
   last_message_at?: string;
-  workspace_id: string;
 }
 
 interface Message {
   id: string;
-  chat_id: string;
-  user_id: string;
-  content: string;
+  channel_id: string;
+  sender_id: string;
+  message: string;
   created_at: string;
-  profiles: {
+  profiles?: {
     full_name: string;
     avatar_url: string;
     avatar_preset: string;
@@ -93,58 +93,77 @@ export default function ChatPage() {
     setLoadingChats(true);
     setError(null);
     try {
-      console.log("[Chat Debug] Running Diagnostic Test Query...");
+      console.log("[Chat Debug] Fetching workspace memberships for user:", userProfile.id);
       
-      // DIAGNOSTIC TEST: Can we see ANY memberships?
-      const { data: testData, error: testError } = await supabase
-        .from('chat_members')
-        .select('*')
-        .limit(1);
+      // Step 1: Get active workspace memberships
+      const { data: memberData, error: memberError } = await supabase
+        .from('workspace_members')
+        .select('workspace_id')
+        .eq('user_id', userProfile.id)
+        .eq('status', 'active');
 
-      if (testError) {
-        const serialized = serializeSupabaseError(testError);
-        console.error("[Chat Debug] DIAGNOSTIC TEST FAILED:", serialized);
-        throw new Error(`Database Access Denied (Code: ${serialized?.code}). Check RLS policies for chat_members.`);
-      }
-      
-      console.log("[Chat Debug] DIAGNOSTIC TEST PASSED. Table is readable.");
-
-      // STEP 1: Get memberships for this user
-      // Column 'user_id' is assumed standard based on workspace_members schema.
-      const { data: membershipData, error: membershipError } = await supabase
-        .from('chat_members')
-        .select('chat_id')
-        .eq('user_id', userProfile.id);
-
-      if (membershipError) {
-        const serialized = serializeSupabaseError(membershipError);
-        console.error("[Chat Debug] Fetch Membership Error:", serialized);
-        throw new Error(`Unable to fetch your chat memberships (Code: ${serialized?.code})`);
+      if (memberError) {
+        console.error("[Chat Debug] workspace_members error:", serializeSupabaseError(memberError));
+        throw new Error(`Unable to load your workspace membership (Code: ${memberError.code})`);
       }
 
-      console.log("[Chat Debug] Found memberships:", membershipData?.length || 0);
+      console.log("[Chat Debug] Found active workspace memberships:", memberData?.length || 0);
 
-      if (!membershipData || membershipData.length === 0) {
+      if (!memberData || memberData.length === 0) {
+        console.log("[Chat Debug] User has no active workspace memberships.");
         setChats([]);
         return;
       }
 
-      const chatIds = membershipData.map(m => m.chat_id);
+      const workspaceIds = memberData.map(m => m.workspace_id);
+      console.log("[Chat Debug] Querying chat_channels for workspaces:", workspaceIds);
 
-      // STEP 2: Get chat details for those IDs in the active workspace
-      const { data: chatsData, error: chatsError } = await supabase
-        .from('chats')
-        .select('id, name, type, workspace_id')
-        .in('id', chatIds)
-        .eq('workspace_id', activeWorkspace.id);
+      // Step 2: Query chat_channels for these workspaces
+      const { data: channelsData, error: channelsError } = await supabase
+        .from('chat_channels')
+        .select('id, workspace_id, sub_workspace_id, name, type, created_at')
+        .in('workspace_id', workspaceIds)
+        .order('created_at', { ascending: false });
 
-      if (chatsError) {
-        const serialized = serializeSupabaseError(chatsError);
-        console.error("[Chat Debug] Fetch Chats Detail Error:", serialized);
-        throw new Error(`Unable to fetch chat details (Code: ${serialized?.code})`);
+      if (channelsError) {
+        console.error("[Chat Debug] chat_channels error:", serializeSupabaseError(channelsError));
+        throw new Error(`Unable to load chat channels (Code: ${channelsError.code})`);
       }
 
-      setChats(chatsData || []);
+      console.log("[Chat Debug] Found chat_channels:", channelsData?.length || 0);
+
+      if (!channelsData || channelsData.length === 0) {
+        setChats([]);
+        return;
+      }
+
+      const channelIds = channelsData.map(c => c.id);
+
+      // Step 3: Get latest message per channel for preview
+      const { data: lastMessages, error: lastMsgError } = await supabase
+        .from('chat_messages')
+        .select('id, channel_id, message, created_at')
+        .in('channel_id', channelIds)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false });
+
+      if (lastMsgError) {
+        console.warn("[Chat Debug] Last message fetch warning:", serializeSupabaseError(lastMsgError));
+      }
+
+      const formattedChats: Chat[] = channelsData.map(channel => {
+        const lastMsg = lastMessages?.find(m => m.channel_id === channel.id);
+        return {
+          id: channel.id,
+          name: channel.name,
+          type: channel.type,
+          workspace_id: channel.workspace_id,
+          last_message: lastMsg?.message,
+          last_message_at: lastMsg?.created_at
+        };
+      });
+
+      setChats(formattedChats);
     } catch (err: any) {
       console.error("[Chat Debug] Final Error Catch:", err);
       setError(err.message || "An unexpected error occurred while loading chats.");
@@ -153,35 +172,55 @@ export default function ChatPage() {
     }
   }, [activeWorkspace, userProfile, supabase]);
 
-  const fetchMessages = useCallback(async (chatId: string) => {
+  const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
     try {
-      const { data, error: msgError } = await supabase
-        .from('messages')
-        .select(`
-          id,
-          chat_id,
-          user_id,
-          content,
-          created_at,
-          profiles:user_id (
-            full_name,
-            avatar_url,
-            avatar_preset
-          )
-        `)
-        .eq('chat_id', chatId)
+      console.log("[Chat Debug] Fetching messages for channel:", channelId);
+      
+      const { data: msgData, error: msgError } = await supabase
+        .from('chat_messages')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at, is_deleted')
+        .eq('channel_id', channelId)
+        .eq('is_deleted', false)
         .order('created_at', { ascending: true });
 
-      if (msgError) throw msgError;
-      setMessages(data as any[] || []);
+      if (msgError) {
+        console.error("[Chat Debug] chat_messages error:", serializeSupabaseError(msgError));
+        throw new Error(`Unable to load messages (Code: ${msgError.code})`);
+      }
+
+      if (!msgData || msgData.length === 0) {
+        setMessages([]);
+        setLoadingMessages(false);
+        return;
+      }
+
+      // Enrichment Step: Fetch Profiles for senders
+      const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
+      console.log("[Chat Debug] Enriching profiles for senders:", senderIds);
+
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, avatar_preset')
+        .in('id', senderIds);
+
+      if (profilesError) {
+        console.warn("[Chat Debug] Profile enrichment warning:", serializeSupabaseError(profilesError));
+      }
+
+      const enrichedMessages: Message[] = msgData.map(m => ({
+        ...m,
+        profiles: profilesData?.find(p => p.id === m.sender_id) || null
+      }));
+
+      setMessages(enrichedMessages);
     } catch (err: any) {
       const serialized = serializeSupabaseError(err);
       console.error("[Chat Debug] Fetch Messages Error:", serialized);
       toast({ 
         variant: "destructive", 
         title: "Error", 
-        description: `Failed to load messages (Code: ${serialized?.code})` 
+        description: err.message || "Failed to load messages" 
       });
     } finally {
       setLoadingMessages(false);
@@ -242,18 +281,18 @@ export default function ChatPage() {
             {loadingChats ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
                 <Loader2 className="w-6 h-6 animate-spin" />
-                <p className="text-xs font-medium">Loading conversations...</p>
+                <p className="text-xs font-medium">Loading channels...</p>
               </div>
             ) : error ? (
               <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-rose-500 gap-2">
                 <AlertCircle className="w-8 h-8 opacity-50" />
-                <p className="text-sm font-bold">Connection Failed</p>
+                <p className="text-sm font-bold">Fetch Failed</p>
                 <p className="text-[11px] leading-relaxed opacity-80">{error}</p>
-                <Button variant="outline" size="sm" onClick={fetchChats} className="mt-4 h-8 text-[10px] uppercase font-bold tracking-wider">Retry Connection</Button>
+                <Button variant="outline" size="sm" onClick={fetchChats} className="mt-4 h-8 text-[10px] uppercase font-bold tracking-wider">Retry</Button>
               </div>
             ) : filteredChats.length === 0 ? (
               <div className="text-center py-10 opacity-50">
-                <p className="text-sm font-medium">No conversations yet</p>
+                <p className="text-sm font-medium">No channels found</p>
               </div>
             ) : (
               filteredChats.map((chat) => (
@@ -279,7 +318,7 @@ export default function ChatPage() {
                       selectedChatId === chat.id ? "text-primary" : "text-slate-900 dark:text-white"
                     )}>{chat.name}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {chat.type === 'channel' ? 'Shared channel' : 'Direct Message'}
+                      {chat.last_message || (chat.type === 'channel' ? 'Shared channel' : 'Direct Message')}
                     </p>
                   </div>
                 </button>
@@ -316,7 +355,7 @@ export default function ChatPage() {
                   <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.name}</p>
                   <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    Active
+                    Channel
                   </p>
                 </div>
               </div>
@@ -342,7 +381,7 @@ export default function ChatPage() {
                   </div>
                 ) : (
                   messages.map((msg) => {
-                    const isMe = msg.user_id === userProfile?.id;
+                    const isMe = msg.sender_id === userProfile?.id;
                     const avatarSrc = msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url;
                     
                     return (
@@ -364,7 +403,7 @@ export default function ChatPage() {
                               ? "bg-primary text-white rounded-tr-none" 
                               : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
                           )}>
-                            {msg.content}
+                            {msg.message}
                             <div className={cn(
                               "flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold",
                               isMe ? "text-white/80" : "text-slate-400"
@@ -414,7 +453,7 @@ export default function ChatPage() {
             <div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">Your Workspace Messenger</h2>
               <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto mt-1">
-                Select a conversation from the left to start collaborating with your team.
+                Select a channel from the left to start collaborating with your team.
               </p>
             </div>
           </div>
