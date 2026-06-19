@@ -32,7 +32,8 @@ import {
   ShieldCheck,
   Calendar,
   LogOut,
-  Edit2
+  Edit2,
+  UserMinus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +83,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * PRODUCTION TYPES
@@ -198,6 +200,12 @@ export default function ChatPage() {
   const [newGroupNameInput, setNewGroupNameInput] = useState("");
   const [isRenamingLoading, setIsRenamingLoading] = useState(false);
   const [isLeavingLoading, setIsLeavingLoading] = useState(false);
+
+  // Add Members State
+  const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
+  const [selectedMemberIdsToAdd, setSelectedMemberIdsToAdd] = useState<string[]>([]);
+  const [isAddingMembersLoading, setIsAddingMembersLoading] = useState(false);
+  const [addMembersSearchQuery, setAddMembersSearchQuery] = useState("");
 
   // New Chat Modal State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -793,6 +801,36 @@ export default function ChatPage() {
     }
   };
 
+  const handleAddMembersToGroup = async () => {
+    if (!selectedChatId || selectedMemberIdsToAdd.length === 0 || isAddingMembersLoading) return;
+
+    setIsAddingMembersLoading(true);
+    try {
+      const { data, error } = await supabase.rpc("add_group_chat_members", {
+        p_channel_id: selectedChatId,
+        p_member_user_ids: selectedMemberIdsToAdd
+      });
+
+      if (error) throw error;
+
+      const insertedCount = (data as number) || 0;
+      if (insertedCount > 0) {
+        toast({ title: "Group Roster Updated", description: `${insertedCount} new member${insertedCount === 1 ? '' : 's'} added successfully.` });
+      } else {
+        toast({ title: "Roster Unchanged", description: "Selected members were already in the group." });
+      }
+
+      setIsAddMembersOpen(false);
+      setSelectedMemberIdsToAdd([]);
+      setAddMembersSearchQuery("");
+      await fetchInfoMembers();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Enrollment Failed", description: err.message });
+    } finally {
+      setIsAddingMembersLoading(false);
+    }
+  };
+
   /**
    * EFFECTS
    */
@@ -1040,6 +1078,15 @@ export default function ChatPage() {
     m.username?.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
     m.email?.toLowerCase().includes(memberSearchQuery.toLowerCase())
   );
+
+  const addableMembers = workspaceMembers.filter(m => {
+    const isAlreadyMember = infoMembers.some(im => im.user_id === m.id);
+    const matchesSearch = 
+      m.full_name?.toLowerCase().includes(addMembersSearchQuery.toLowerCase()) ||
+      m.username?.toLowerCase().includes(addMembersSearchQuery.toLowerCase()) ||
+      m.email?.toLowerCase().includes(addMembersSearchQuery.toLowerCase());
+    return !isAlreadyMember && matchesSearch;
+  });
 
   const totalUnread = Object.keys(unreadCounts).reduce((acc, currId) => {
     const isMuted = muteStates[currId]?.is_muted && (!muteStates[currId].muted_until || new Date(muteStates[currId].muted_until!) > new Date());
@@ -1323,7 +1370,7 @@ export default function ChatPage() {
                           <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800" onClick={() => { setNewGroupNameInput(selectedChat.name); setIsRenamingGroup(true); }}>
                              <Edit2 className="w-4 h-4" /> Rename Group
                           </Button>
-                          <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800 opacity-50 cursor-not-allowed" disabled>
+                          <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800" onClick={() => { setIsAddMembersOpen(true); fetchMembers(); }}>
                              <UserPlus className="w-4 h-4" /> Add Participants
                           </Button>
                           
@@ -1359,6 +1406,64 @@ export default function ChatPage() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      <Dialog open={isAddMembersOpen} onOpenChange={setIsAddMembersOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 rounded-[2rem]">
+          <div className="p-6 pb-0">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold">Expand Roster</DialogTitle>
+              <DialogDescription>Select active workspace members to enroll in this group.</DialogDescription>
+            </DialogHeader>
+            <div className="relative mt-6">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input 
+                placeholder="Search roster..." 
+                className="pl-10 rounded-2xl bg-slate-100 dark:bg-slate-900 border-none" 
+                value={addMembersSearchQuery} 
+                onChange={(e) => setAddMembersSearchQuery(e.target.value)} 
+              />
+            </div>
+          </div>
+          <div className="p-6">
+            <ScrollArea className="h-64">
+              <div className="space-y-2">
+                {loadingMembers ? (
+                  <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+                ) : addableMembers.length === 0 ? (
+                  <p className="text-center text-sm text-slate-400 py-10 italic">No eligible members found.</p>
+                ) : addableMembers.map((member) => {
+                  const isSelected = selectedMemberIdsToAdd.includes(member.id);
+                  return (
+                    <button 
+                      key={member.id} 
+                      onClick={() => setSelectedMemberIdsToAdd(prev => prev.includes(member.id) ? prev.filter(x => x !== member.id) : [...prev, member.id])} 
+                      className={cn("w-full flex items-center gap-4 p-3 rounded-2xl transition-all", isSelected ? "bg-primary/10 ring-1 ring-primary/20 shadow-sm" : "hover:bg-slate-50 dark:hover:bg-slate-900")}
+                    >
+                      <Avatar className="w-10 h-10"><AvatarImage src={member.avatar_preset ? `/avatars/${member.avatar_preset}.png` : member.avatar_url} /><AvatarFallback>{member.full_name[0]}</AvatarFallback></Avatar>
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="flex items-center gap-1.5"><p className="font-bold text-sm truncate">{member.full_name}</p><Badge variant="outline" className="text-[8px] uppercase">{member.role}</Badge></div>
+                        <p className="text-[10px] text-slate-500 truncate">@{member.username || member.email.split('@')[0]}</p>
+                      </div>
+                      <Checkbox checked={isSelected} className="rounded-full" />
+                    </button>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+          </div>
+          <DialogFooter className="p-6 pt-0 border-t dark:border-slate-800">
+            <Button variant="ghost" className="flex-1 rounded-xl" onClick={() => { setIsAddMembersOpen(false); setSelectedMemberIdsToAdd([]); }}>Cancel</Button>
+            <Button 
+              className="flex-1 rounded-xl shadow-lg" 
+              disabled={isAddingMembersLoading || selectedMemberIdsToAdd.length === 0} 
+              onClick={handleAddMembersToGroup}
+            >
+              {isAddingMembersLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              {isAddingMembersLoading ? 'Enrolling...' : `Add Selected (${selectedMemberIdsToAdd.length})`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
