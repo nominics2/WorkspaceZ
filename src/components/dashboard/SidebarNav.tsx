@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { useFloatingChat } from "@/components/chat/FloatingChatProvider";
 import { createClient } from "@/lib/supabase/client";
 import {
   DropdownMenu,
@@ -33,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { Badge } from "@/components/ui/badge";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -46,6 +48,7 @@ export function SidebarNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { activeWorkspace, workspaces, switchWorkspace, hasPermission, userRole, userProfile, isVerified } = useWorkspace();
+  const { totalUnreadCount } = useFloatingChat();
   const [mounted, setMounted] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const supabase = createClient();
@@ -155,8 +158,29 @@ export function SidebarNav() {
                   : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-900 hover:text-slate-950 dark:hover:text-slate-100"
               )}>
                 <item.icon className={cn("w-5 h-5", isActive ? "scale-110" : "")} />
-                {!isCollapsed && <span>{item.label}</span>}
-                {isActive && !isCollapsed && <div className="absolute right-3 w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                {!isCollapsed && <span className="flex-1 truncate">{item.label}</span>}
+                
+                {/* Chat Unread Badge */}
+                {item.label === "Chat" && totalUnreadCount > 0 && (
+                  <>
+                    {!isCollapsed ? (
+                      <Badge className="ml-auto bg-white/20 text-white dark:bg-primary-foreground/20 border-none text-[10px] font-bold h-5 px-1.5 rounded-full ring-1 ring-white/30">
+                        {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+                      </Badge>
+                    ) : (
+                      <Badge 
+                        variant="destructive" 
+                        className="absolute top-2 right-2 h-4 min-w-[16px] px-1 flex items-center justify-center text-[8px] font-extrabold border border-white dark:border-slate-950 rounded-full animate-in zoom-in"
+                      >
+                        {totalUnreadCount > 9 ? "!" : totalUnreadCount}
+                      </Badge>
+                    )}
+                  </>
+                )}
+
+                {isActive && !isCollapsed && item.label !== "Chat" && (
+                  <div className="absolute right-3 w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                )}
               </span>
             );
 

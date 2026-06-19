@@ -117,7 +117,7 @@ interface ChatMuteState {
 
 export default function ChatPage() {
   const { activeWorkspace, userProfile } = useWorkspace();
-  const { addBubble } = useFloatingChat();
+  const { addBubble, refreshUnread } = useFloatingChat();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [showConversation, setShowConversation] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -215,10 +215,12 @@ export default function ChatPage() {
         counts[item.channel_id] = item.unread_count;
       });
       setUnreadCounts(counts);
+      // Sync global total
+      refreshUnread();
     } catch (err) {
       console.error("[Chat] Error fetching unread counts:", serializeSupabaseError(err));
     }
-  }, [supabase]);
+  }, [supabase, refreshUnread]);
 
   const fetchMuteStates = useCallback(async () => {
     try {
@@ -233,10 +235,12 @@ export default function ChatPage() {
         };
       });
       setMuteStates(mutes);
+      // Global badge excludes muted, so refresh global total too
+      refreshUnread();
     } catch (err) {
       console.error("[Chat] Error fetching mute states:", serializeSupabaseError(err));
     }
-  }, [supabase]);
+  }, [supabase, refreshUnread]);
 
   const markAsRead = useCallback(async (channelId: string) => {
     try {
@@ -244,10 +248,12 @@ export default function ChatPage() {
       if (error) throw error;
       
       setUnreadCounts(prev => ({ ...prev, [channelId]: 0 }));
+      // Optimistically update global unread count
+      refreshUnread();
     } catch (err) {
       console.error("[Chat] Error marking channel as read:", serializeSupabaseError(err));
     }
-  }, [supabase]);
+  }, [supabase, refreshUnread]);
 
   const fetchChats = useCallback(async () => {
     if (!userProfile) return;
@@ -613,6 +619,7 @@ export default function ChatPage() {
         ...prev,
         [selectedChatId]: { is_muted: true, muted_until: mutedUntil }
       }));
+      refreshUnread();
       toast({ title: "Chat muted" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Unable to mute chat", description: err.message });
@@ -632,6 +639,7 @@ export default function ChatPage() {
         ...prev,
         [selectedChatId]: { is_muted: false, muted_until: null }
       }));
+      refreshUnread();
       toast({ title: "Chat unmuted" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Unable to unmute chat", description: err.message });
@@ -685,6 +693,7 @@ export default function ChatPage() {
           const newMessage = payload.new as any;
           if (newMessage.channel_id !== selectedChatId && newMessage.sender_id !== userProfile?.id) {
             setUnreadCounts(prev => ({ ...prev, [newMessage.channel_id]: (prev[newMessage.channel_id] || 0) + 1 }));
+            // Global provider also tracks this via its own subscription
             return;
           }
 

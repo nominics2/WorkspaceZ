@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { cn } from "@/lib/utils";
-import { Chat } from "./FloatingChatProvider";
+import { Chat, useFloatingChat } from "./FloatingChatProvider";
 
 interface Message {
   id: string;
@@ -36,6 +36,7 @@ export function FloatingChatWindow({
   isMuted?: boolean;
 }) {
   const { userProfile } = useWorkspace();
+  const { refreshUnread } = useFloatingChat();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
@@ -79,10 +80,12 @@ export function FloatingChatWindow({
   const markRead = useCallback(async () => {
     try {
       await supabase.rpc("mark_chat_channel_read", { p_channel_id: chat.id });
+      // Sync global unread count
+      refreshUnread();
     } catch (err) {
       console.error("[Floating Chat] Read Error:", err);
     }
-  }, [chat.id, supabase]);
+  }, [chat.id, supabase, refreshUnread]);
 
   useEffect(() => {
     fetchMessages();

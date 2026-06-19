@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
 export interface Chat {
   id: string;
@@ -18,9 +19,11 @@ export interface Chat {
 interface FloatingChatContextType {
   floatingBubbles: Chat[];
   expandedChannelId: string | null;
+  totalUnreadCount: number;
   addBubble: (chat: Chat) => void;
   removeBubble: (chatId: string) => void;
   toggleExpand: (chatId: string | null) => void;
+  refreshUnread: () => Promise<void>;
 }
 
 const FloatingChatContext = createContext<FloatingChatContextType | undefined>(undefined);
@@ -28,6 +31,78 @@ const FloatingChatContext = createContext<FloatingChatContextType | undefined>(u
 export function FloatingChatProvider({ children }: { children: React.ReactNode }) {
   const [floatingBubbles, setFloatingBubbles] = useState<Chat[]>([]);
   const [expandedChannelId, setExpandedChannelId] = useState<string | null>(null);
+  const [totalUnreadCount, setTotalUnreadCount] = useState(0);
+  
+  const supabase = createClient();
+
+  const fetchUnreadData = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setTotalUnreadCount(0);
+        return;
+      }
+
+      // Fetch unread counts and mute states concurrently
+      const [unreadRes, muteRes] = await Promise.all([
+        supabase.rpc("get_chat_unread_counts"),
+        supabase.rpc("get_chat_mute_states")
+      ]);
+
+      if (unreadRes.error) throw unreadRes.error;
+      
+      const unreadData = (unreadRes.data || []) as any[];
+      const muteData = (muteRes.data || []) as any[];
+
+      // Calculate total excluding muted channels
+      const total = unreadData.reduce((acc: number, curr: any) => {
+        const isMuted = muteData.some((m: any) => 
+          m.channel_id === curr.channel_id && 
+          m.is_muted && 
+          (!m.muted_until || new Date(m.muted_until) > new Date())
+        );
+        
+        if (isMuted) return acc;
+        return acc + (curr.unread_count || 0);
+      }, 0);
+
+      setTotalUnreadCount(total);
+    } catch (err) {
+      console.error("[FloatingChat] Error syncing unread counts:", err);
+    }
+  }, [supabase]);
+
+  useEffect(() => {
+    fetchUnreadData();
+
+    // Listen for events that affect unread status
+    const channel = supabase
+      .channel('chat_global_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => {
+        fetchUnreadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_channel_read_states' }, () => {
+        fetchUnreadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_channel_mutes' }, () => {
+        fetchUnreadData();
+      })
+      .subscribe();
+
+    // Auth state listener to clear counts on logout
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setTotalUnreadCount(0);
+      } else {
+        fetchUnreadData();
+      }
+    });
+
+    return () => {
+      supabase.removeChannel(channel);
+      subscription.unsubscribe();
+    };
+  }, [supabase, fetchUnreadData]);
 
   const addBubble = useCallback((chat: Chat) => {
     setFloatingBubbles(prev => {
@@ -50,9 +125,11 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     <FloatingChatContext.Provider value={{
       floatingBubbles,
       expandedChannelId,
+      totalUnreadCount,
       addBubble,
       removeBubble,
-      toggleExpand
+      toggleExpand,
+      refreshUnread: fetchUnreadData
     }}>
       {children}
     </FloatingChatContext.Provider>
