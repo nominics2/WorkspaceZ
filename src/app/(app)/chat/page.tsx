@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { 
   Send, 
   Search, 
@@ -13,7 +13,10 @@ import {
   MessageSquare,
   CheckCheck,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  UserPlus,
+  User,
+  Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +26,15 @@ import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 
 interface Chat {
   id: string;
@@ -46,18 +58,14 @@ interface Message {
   } | null;
 }
 
-function serializeSupabaseError(error: any) {
-  if (!error) return null;
-  return {
-    name: error.name ?? null,
-    message: error.message ?? "Unknown error",
-    details: error.details ?? null,
-    hint: error.hint ?? null,
-    code: error.code ?? null,
-    status: error.status ?? null,
-    statusText: error.statusText ?? null,
-    raw: String(error)
-  };
+interface WorkspaceMemberProfile {
+  id: string;
+  full_name: string;
+  username: string;
+  avatar_url: string;
+  avatar_preset: string;
+  email: string;
+  role?: string;
 }
 
 export default function ChatPage() {
@@ -74,31 +82,37 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // New Chat Modal State
+  const [isNewChatOpen, setIsNewChatOpen] = useState(false);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMemberProfile[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [memberSearchQuery, setMemberSearchQuery] = useState("");
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
   const { toast } = useToast();
 
-  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior });
-  };
+  }, []);
 
   const isAtBottom = () => {
     const viewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
     if (!viewport) return true;
     const { scrollTop, scrollHeight, clientHeight } = viewport;
-    return scrollHeight - scrollTop <= clientHeight + 100;
+    return scrollHeight - scrollTop <= clientHeight + 150;
   };
 
-  // Scroll on messages load or change
   useEffect(() => {
     if (messages.length > 0) {
       scrollToBottom(loadingMessages ? "auto" : "smooth");
     }
-  }, [messages, loadingMessages]);
+  }, [messages, loadingMessages, scrollToBottom]);
 
   const fetchChats = useCallback(async () => {
-    if (!activeWorkspace || !userProfile) return;
+    if (!userProfile) return;
     
     setLoadingChats(true);
     setError(null);
@@ -150,18 +164,17 @@ export default function ChatPage() {
           last_message_at: lastMsg?.created_at
         };
       }).sort((a, b) => {
-        const isAGeneral = a.name.toLowerCase() === 'general' && a.workspace_id === activeWorkspace.id;
-        const isBGeneral = b.name.toLowerCase() === 'general' && b.workspace_id === activeWorkspace.id;
+        const isAGeneral = a.name.toLowerCase() === 'general' && (activeWorkspace ? a.workspace_id === activeWorkspace.id : true);
+        const isBGeneral = b.name.toLowerCase() === 'general' && (activeWorkspace ? b.workspace_id === activeWorkspace.id : true);
         if (isAGeneral) return -1;
         if (isBGeneral) return 1;
-        const timeA = new Date(a.last_message_at || a.last_message_at || 0).getTime();
-        const timeB = new Date(b.last_message_at || b.last_message_at || 0).getTime();
+        const timeA = new Date(a.last_message_at || a.created_at || 0).getTime();
+        const timeB = new Date(b.last_message_at || b.created_at || 0).getTime();
         return timeB - timeA;
       });
 
       setChats(formattedChats);
       
-      // Auto-select first chat on desktop if none selected
       if (!selectedChatId && formattedChats.length > 0 && typeof window !== 'undefined' && window.innerWidth >= 768) {
         setSelectedChatId(formattedChats[0].id);
       }
@@ -170,7 +183,7 @@ export default function ChatPage() {
     } finally {
       setLoadingChats(false);
     }
-  }, [activeWorkspace, userProfile, supabase, selectedChatId]);
+  }, [userProfile, supabase, selectedChatId, activeWorkspace]);
 
   const fetchMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true);
@@ -209,6 +222,46 @@ export default function ChatPage() {
     }
   }, [supabase, toast]);
 
+  const fetchMembers = useCallback(async () => {
+    if (!activeWorkspace || !userProfile) return;
+    setLoadingMembers(true);
+    try {
+      const { data: memberData, error: memberError } = await supabase
+        .from('workspace_members')
+        .select('user_id, role, status')
+        .eq('workspace_id', activeWorkspace.id)
+        .eq('status', 'active');
+
+      if (memberError) throw memberError;
+
+      if (memberData && memberData.length > 0) {
+        // Exclude current user from the list
+        const uids = memberData.map(m => m.user_id).filter(id => id !== userProfile.id);
+        
+        if (uids.length > 0) {
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('id, full_name, username, avatar_url, avatar_preset, email')
+            .in('id', uids);
+
+          if (profileError) throw profileError;
+
+          const enriched = profileData.map(p => ({
+            ...p,
+            role: memberData.find(m => m.user_id === p.id)?.role
+          }));
+          setWorkspaceMembers(enriched);
+        } else {
+          setWorkspaceMembers([]);
+        }
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: "Unable to load workspace members." });
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [activeWorkspace, userProfile, supabase, toast]);
+
   useEffect(() => {
     fetchChats();
   }, [fetchChats]);
@@ -220,6 +273,14 @@ export default function ChatPage() {
       setMessages([]);
     }
   }, [selectedChatId, fetchMessages]);
+
+  useEffect(() => {
+    if (isNewChatOpen) {
+      fetchMembers();
+      setSelectedMemberId(null);
+      setMemberSearchQuery("");
+    }
+  }, [isNewChatOpen, fetchMembers]);
 
   // Realtime Subscription
   useEffect(() => {
@@ -236,7 +297,7 @@ export default function ChatPage() {
           filter: `channel_id=eq.${selectedChatId}`,
         },
         async (payload) => {
-          const newMessage = payload.new as Message;
+          const newMessage = payload.new as any;
           const wasAtBottom = isAtBottom();
 
           setMessages((prev) => {
@@ -244,7 +305,6 @@ export default function ChatPage() {
             return [...prev, { ...newMessage, profiles: null }];
           });
 
-          // Fetch sender profile
           try {
             const { data: profileData } = await supabase
               .from('profiles')
@@ -257,7 +317,6 @@ export default function ChatPage() {
                 .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
             );
 
-            // Auto-scroll if user is already at bottom or it's their own message
             if (wasAtBottom || newMessage.sender_id === userProfile?.id) {
               setTimeout(() => scrollToBottom(), 100);
             }
@@ -288,7 +347,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedChatId, supabase, userProfile?.id]);
+  }, [selectedChatId, supabase, userProfile?.id, scrollToBottom]);
 
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
@@ -314,7 +373,8 @@ export default function ChatPage() {
 
       if (sendError) throw sendError;
       setMessageInput("");
-      // Realtime listener handles append
+      await fetchMessages(selectedChat.id);
+      setTimeout(() => scrollToBottom(), 100);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Send Failed", description: "Your message could not be delivered." });
     } finally {
@@ -324,6 +384,12 @@ export default function ChatPage() {
 
   const filteredChats = chats.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredMembers = workspaceMembers.filter(m => 
+    m.full_name?.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+    m.username?.toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+    m.email?.toLowerCase().includes(memberSearchQuery.toLowerCase())
   );
 
   return (
@@ -337,7 +403,12 @@ export default function ChatPage() {
         <div className="p-6 space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Chat</h1>
-            <Button size="icon" variant="ghost" className="rounded-xl text-primary hover:bg-primary/5">
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              className="rounded-xl text-primary hover:bg-primary/5"
+              onClick={() => setIsNewChatOpen(true)}
+            >
               <Plus className="w-5 h-5" />
             </Button>
           </div>
@@ -554,6 +625,103 @@ export default function ChatPage() {
           </div>
         )}
       </div>
+
+      {/* New Chat Modal */}
+      <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 dark:border-slate-800 rounded-[2rem]">
+          <div className="p-6 pb-0">
+            <DialogHeader>
+              <div className="flex items-center gap-2 mb-1">
+                <Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Messenger</Badge>
+              </div>
+              <DialogTitle className="text-2xl font-bold dark:text-slate-100">New Chat</DialogTitle>
+              <DialogDescription className="dark:text-slate-400">Select a team member to start a private conversation.</DialogDescription>
+            </DialogHeader>
+            <div className="relative mt-6">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input 
+                placeholder="Search members" 
+                className="pl-10 h-12 bg-slate-50 dark:bg-slate-900 border-none rounded-2xl focus-visible:ring-2 focus-visible:ring-primary/20"
+                value={memberSearchQuery}
+                onChange={(e) => setMemberSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="p-6">
+            <ScrollArea className="h-72">
+              <div className="space-y-2">
+                {loadingMembers ? (
+                  <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <p className="text-xs font-medium">Loading workspace roster...</p>
+                  </div>
+                ) : filteredMembers.length === 0 ? (
+                  <div className="text-center py-10 opacity-50">
+                    <UserPlus className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                    <p className="text-sm font-medium">No members found</p>
+                  </div>
+                ) : (
+                  filteredMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      onClick={() => setSelectedMemberId(member.id)}
+                      className={cn(
+                        "w-full flex items-center gap-4 p-3 rounded-2xl transition-all group text-left relative",
+                        selectedMemberId === member.id 
+                          ? "bg-primary/10 ring-1 ring-primary/20 shadow-sm" 
+                          : "hover:bg-slate-50 dark:hover:bg-slate-900"
+                      )}
+                    >
+                      <Avatar className="w-10 h-10 border dark:border-slate-800 shrink-0">
+                        <AvatarImage src={member.avatar_preset ? `/avatars/${member.avatar_preset}.png` : member.avatar_url} />
+                        <AvatarFallback className="bg-primary/5 text-primary font-bold">{member.full_name[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="font-bold text-sm truncate dark:text-slate-100">{member.full_name}</p>
+                          <Badge variant="outline" className="text-[8px] py-0 h-3.5 uppercase dark:border-slate-800 dark:text-slate-500">{member.role}</Badge>
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate italic">@{member.username || member.email.split('@')[0]}</p>
+                      </div>
+                      {selectedMemberId === member.id && (
+                        <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md animate-in zoom-in">
+                          <Check className="w-3 h-3 text-white" />
+                        </div>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter className="p-6 pt-0 bg-slate-50 dark:bg-slate-900/40 border-t dark:border-slate-800">
+            <div className="flex w-full gap-3">
+              <Button 
+                variant="ghost" 
+                className="flex-1 rounded-xl h-11 dark:text-slate-300"
+                onClick={() => setIsNewChatOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button 
+                className="flex-1 rounded-xl h-11 shadow-lg shadow-primary/20"
+                disabled={!selectedMemberId || loadingMembers}
+                onClick={() => {
+                  toast({ 
+                    title: "Success", 
+                    description: "Private chat creation will be enabled in the next step." 
+                  });
+                  setIsNewChatOpen(false);
+                }}
+              >
+                Start Chat
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
