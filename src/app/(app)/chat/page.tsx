@@ -1,57 +1,154 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { 
   Send, 
   Search, 
   Plus, 
   ChevronLeft, 
-  User, 
-  Users, 
   Hash, 
   MoreVertical, 
   Paperclip, 
   Smile,
   MessageSquare,
   CheckCheck,
-  Check
+  Loader2,
+  AlertCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { createClient } from "@/lib/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
-// --- MOCK DATA ---
-const MOCK_CHATS = [
-  { id: "1", name: "General", type: "group", lastMessage: "Let's review the new design docs tomorrow.", time: "10:45 AM", unreadCount: 5 },
-  { id: "2", name: "Engineering Team", type: "group", lastMessage: "Backend deployment was successful.", time: "9:12 AM", unreadCount: 0 },
-  { id: "3", name: "Alex Johnson", type: "dm", lastMessage: "Can you send the API keys?", time: "Yesterday", unreadCount: 1, avatar: "https://picsum.photos/seed/alex/100/100" },
-  { id: "4", name: "Sarah Miller", type: "dm", lastMessage: "I'll be OOO on Friday.", time: "Tuesday", unreadCount: 0, avatar: "https://picsum.photos/seed/sarah/100/100" },
-  { id: "5", name: "Project Aurora", type: "group", lastMessage: "Milestone 2 reached!", time: "Monday", unreadCount: 0 },
-  { id: "6", name: "DevOps", type: "group", lastMessage: "Check the firewall logs please.", time: "Dec 12", unreadCount: 0 },
-];
+interface Chat {
+  id: string;
+  name: string;
+  type: string;
+  last_message?: string;
+  last_message_at?: string;
+  workspace_id: string;
+}
 
-const MOCK_MESSAGES: Record<string, any[]> = {
-  "1": [
-    { id: "m1", sender: "Alex Johnson", text: "Morning team! How is the progress on the dashboard?", time: "9:00 AM", isMe: false, avatar: "https://picsum.photos/seed/alex/100/100" },
-    { id: "m2", sender: "You", text: "Working on the responsive layout fixes right now.", time: "9:05 AM", isMe: true },
-    { id: "m3", sender: "Sarah Miller", text: "The new colors look great in dark mode btw.", time: "9:10 AM", isMe: false, avatar: "https://picsum.photos/seed/sarah/100/100" },
-    { id: "m4", sender: "You", text: "Glad you like them! Let's review the new design docs tomorrow.", time: "10:45 AM", isMe: true },
-  ]
-};
+interface Message {
+  id: string;
+  chat_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  profiles: {
+    full_name: string;
+    avatar_url: string;
+    avatar_preset: string;
+  } | null;
+}
 
 export default function ChatPage() {
+  const { activeWorkspace, userProfile } = useWorkspace();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [showConversation, setShowConversation] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [messageInput, setMessageInput] = useState("");
+  
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loadingChats, setLoadingChats] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const selectedChat = MOCK_CHATS.find(c => c.id === selectedChatId);
-  const messages = selectedChatId ? (MOCK_MESSAGES[selectedChatId] || []) : [];
+  const supabase = createClient();
+  const { toast } = useToast();
+
+  // Fetch Chats
+  const fetchChats = useCallback(async () => {
+    if (!activeWorkspace || !userProfile) return;
+    
+    setLoadingChats(true);
+    setError(null);
+    try {
+      const { data, error: chatsError } = await supabase
+        .from('chat_members')
+        .select(`
+          chat_id,
+          chats!inner (
+            id,
+            name,
+            type,
+            workspace_id
+          )
+        `)
+        .eq('user_id', userProfile.id)
+        .eq('chats.workspace_id', activeWorkspace.id);
+
+      if (chatsError) throw chatsError;
+
+      const formattedChats = (data || []).map((item: any) => ({
+        id: item.chats.id,
+        name: item.chats.name,
+        type: item.chats.type,
+        workspace_id: item.chats.workspace_id
+      }));
+
+      setChats(formattedChats);
+    } catch (err: any) {
+      console.error("Error fetching chats:", err);
+      setError("Failed to load conversations.");
+    } finally {
+      setLoadingChats(false);
+    }
+  }, [activeWorkspace, userProfile, supabase]);
+
+  // Fetch Messages
+  const fetchMessages = useCallback(async (chatId: string) => {
+    setLoadingMessages(true);
+    try {
+      const { data, error: msgError } = await supabase
+        .from('messages')
+        .select(`
+          id,
+          chat_id,
+          user_id,
+          content,
+          created_at,
+          profiles:user_id (
+            full_name,
+            avatar_url,
+            avatar_preset
+          )
+        `)
+        .eq('chat_id', chatId)
+        .order('created_at', { ascending: true });
+
+      if (msgError) throw msgError;
+      setMessages(data as any[] || []);
+    } catch (err: any) {
+      console.error("Error fetching messages:", err);
+      toast({ 
+        variant: "destructive", 
+        title: "Error", 
+        description: "Failed to load message history." 
+      });
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, [supabase, toast]);
+
+  useEffect(() => {
+    fetchChats();
+  }, [fetchChats]);
+
+  useEffect(() => {
+    if (selectedChatId) {
+      fetchMessages(selectedChatId);
+    } else {
+      setMessages([]);
+    }
+  }, [selectedChatId, fetchMessages]);
 
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
@@ -62,7 +159,8 @@ export default function ChatPage() {
     setShowConversation(false);
   };
 
-  const filteredChats = MOCK_CHATS.filter(c => 
+  const selectedChat = chats.find(c => c.id === selectedChatId);
+  const filteredChats = chats.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -95,61 +193,57 @@ export default function ChatPage() {
 
         <ScrollArea className="flex-1 px-3">
           <div className="space-y-1 pb-6">
-            {filteredChats.map((chat) => (
-              <button
-                key={chat.id}
-                onClick={() => handleSelectChat(chat.id)}
-                className={cn(
-                  "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50",
-                  selectedChatId === chat.id ? "bg-primary/10 dark:bg-primary/10" : ""
-                )}
-              >
-                <div className="relative">
-                  <Avatar className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm">
-                    {chat.avatar ? (
-                      <AvatarImage src={chat.avatar} />
-                    ) : (
+            {loadingChats ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <p className="text-xs font-medium">Loading conversations...</p>
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-rose-500 gap-2">
+                <AlertCircle className="w-6 h-6" />
+                <p className="text-xs font-medium">{error}</p>
+                <Button variant="ghost" size="sm" onClick={fetchChats} className="text-[10px] uppercase font-bold tracking-wider">Retry</Button>
+              </div>
+            ) : filteredChats.length === 0 ? (
+              <div className="text-center py-10 opacity-50">
+                <p className="text-sm font-medium">No chats found</p>
+              </div>
+            ) : (
+              filteredChats.map((chat) => (
+                <button
+                  key={chat.id}
+                  onClick={() => handleSelectChat(chat.id)}
+                  className={cn(
+                    "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                    selectedChatId === chat.id ? "bg-primary/10 dark:bg-primary/10" : ""
+                  )}
+                >
+                  <div className="relative">
+                    <Avatar className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm">
                       <AvatarFallback className={cn(
                         "bg-primary/10 text-primary font-bold",
                         selectedChatId === chat.id ? "bg-primary text-white" : ""
                       )}>
-                        {chat.type === 'group' ? <Hash className="w-5 h-5" /> : chat.name[0]}
+                        {chat.type === 'group' || chat.type === 'channel' ? <Hash className="w-5 h-5" /> : chat.name[0]}
                       </AvatarFallback>
-                    )}
-                  </Avatar>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full" />
-                </div>
-                
-                <div className="flex-1 min-w-0 text-left">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className={cn(
-                      "font-bold text-sm truncate",
-                      selectedChatId === chat.id ? "text-primary dark:text-primary" : "text-slate-900 dark:text-white"
-                    )}>
-                      {chat.name}
-                    </span>
-                    <span className="text-[10px] font-medium text-slate-400 uppercase tracking-tighter">
-                      {chat.time}
-                    </span>
+                    </Avatar>
                   </div>
-                  <div className="flex items-center justify-between gap-2">
+                  
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className={cn(
+                        "font-bold text-sm truncate",
+                        selectedChatId === chat.id ? "text-primary dark:text-primary" : "text-slate-900 dark:text-white"
+                      )}>
+                        {chat.name}
+                      </span>
+                    </div>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate line-clamp-1">
-                      {chat.lastMessage}
+                      {chat.type === 'channel' ? 'Shared workspace channel' : 'Direct conversation'}
                     </p>
-                    {chat.unreadCount > 0 && (
-                      <Badge className="h-5 min-w-[20px] px-1.5 flex items-center justify-center rounded-full bg-primary text-white font-bold text-[10px] border-none">
-                        {chat.unreadCount}
-                      </Badge>
-                    )}
                   </div>
-                </div>
-              </button>
-            ))}
-            
-            {filteredChats.length === 0 && (
-              <div className="text-center py-10 opacity-50">
-                <p className="text-sm font-medium">No chats found</p>
-              </div>
+                </button>
+              ))
             )}
           </div>
         </ScrollArea>
@@ -175,13 +269,9 @@ export default function ChatPage() {
                 </Button>
                 
                 <Avatar className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
-                  {selectedChat.avatar ? (
-                    <AvatarImage src={selectedChat.avatar} />
-                  ) : (
-                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                      {selectedChat.type === 'group' ? <Hash className="w-4 h-4" /> : selectedChat.name[0]}
-                    </AvatarFallback>
-                  )}
+                  <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                    {selectedChat.type === 'channel' ? <Hash className="w-4 h-4" /> : selectedChat.name[0]}
+                  </AvatarFallback>
                 </Avatar>
                 
                 <div className="min-w-0">
@@ -190,7 +280,7 @@ export default function ChatPage() {
                   </p>
                   <p className="text-[10px] md:text-xs text-muted-foreground flex items-center gap-1.5 font-medium">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    {selectedChat.type === 'group' ? '12 members online' : 'Active now'}
+                    {selectedChat.type === 'channel' ? 'Channel active' : 'Online'}
                   </p>
                 </div>
               </div>
@@ -208,52 +298,62 @@ export default function ChatPage() {
             {/* Messages Area */}
             <ScrollArea className="flex-1 px-4 md:px-8">
               <div className="py-8 space-y-6">
-                {messages.length === 0 ? (
+                {loadingMessages ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                    <p className="text-sm font-medium">Syncing history...</p>
+                  </div>
+                ) : messages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
                     <MessageSquare className="w-12 h-12 mb-4 text-slate-300" />
                     <p className="font-bold text-lg">No messages here yet</p>
                     <p className="text-sm">Say hello to start the conversation!</p>
                   </div>
                 ) : (
-                  messages.map((msg, idx) => (
-                    <div key={msg.id} className={cn(
-                      "flex gap-3 max-w-[85%] md:max-w-[70%]",
-                      msg.isMe ? "ml-auto flex-row-reverse" : "mr-auto"
-                    )}>
-                      {!msg.isMe && (
-                        <Avatar className="w-8 h-8 shrink-0 shadow-sm mt-1">
-                          <AvatarImage src={msg.avatar} />
-                          <AvatarFallback className="text-[10px] bg-slate-100 font-bold">{msg.sender[0]}</AvatarFallback>
-                        </Avatar>
-                      )}
-                      
-                      <div className={cn(
-                        "flex flex-col",
-                        msg.isMe ? "items-end" : "items-start"
+                  messages.map((msg) => {
+                    const isMe = msg.user_id === userProfile?.id;
+                    const avatarSrc = msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url;
+                    
+                    return (
+                      <div key={msg.id} className={cn(
+                        "flex gap-3 max-w-[85%] md:max-w-[70%]",
+                        isMe ? "ml-auto flex-row-reverse" : "mr-auto"
                       )}>
-                        {!msg.isMe && (
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mb-1 ml-1">
-                            {msg.sender}
-                          </span>
+                        {!isMe && (
+                          <Avatar className="w-8 h-8 shrink-0 shadow-sm mt-1">
+                            <AvatarImage src={avatarSrc} />
+                            <AvatarFallback className="text-[10px] bg-slate-100 font-bold">{msg.profiles?.full_name?.[0] || '?'}</AvatarFallback>
+                          </Avatar>
                         )}
+                        
                         <div className={cn(
-                          "px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed relative group",
-                          msg.isMe 
-                            ? "bg-primary text-white rounded-tr-none" 
-                            : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
+                          "flex flex-col",
+                          isMe ? "items-end" : "items-start"
                         )}>
-                          {msg.text}
+                          {!isMe && (
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mb-1 ml-1">
+                              {msg.profiles?.full_name}
+                            </span>
+                          )}
                           <div className={cn(
-                            "flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold",
-                            msg.isMe ? "text-white/80" : "text-slate-400"
+                            "px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed relative group",
+                            isMe 
+                              ? "bg-primary text-white rounded-tr-none" 
+                              : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
                           )}>
-                            <span>{msg.time}</span>
-                            {msg.isMe && <CheckCheck className="w-3 h-3" />}
+                            {msg.content}
+                            <div className={cn(
+                              "flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold",
+                              isMe ? "text-white/80" : "text-slate-400"
+                            )}>
+                              <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              {isMe && <CheckCheck className="w-3 h-3" />}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </ScrollArea>
@@ -269,12 +369,7 @@ export default function ChatPage() {
                   placeholder="Message..." 
                   value={messageInput}
                   onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      setMessageInput("");
-                    }
-                  }}
+                  disabled={loadingMessages}
                 />
                 <Button variant="ghost" size="icon" className="text-slate-400 hover:text-primary rounded-xl shrink-0 hidden sm:flex">
                   <Smile className="w-5 h-5" />
@@ -283,15 +378,15 @@ export default function ChatPage() {
                   size="icon" 
                   className={cn(
                     "rounded-xl shadow-lg transition-all active:scale-95 shrink-0",
-                    messageInput.trim() ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
+                    messageInput.trim() && !loadingMessages ? "bg-primary" : "bg-slate-300 dark:bg-slate-700 cursor-not-allowed"
                   )}
-                  disabled={!messageInput.trim()}
+                  disabled={!messageInput.trim() || loadingMessages}
                 >
                   <Send className="w-5 h-5" />
                 </Button>
               </div>
               <p className="mt-2 text-[9px] text-slate-400 font-bold uppercase tracking-widest text-center hidden md:block">
-                Press Enter to send message
+                Select a chat and type to start collaborating
               </p>
             </div>
           </>
