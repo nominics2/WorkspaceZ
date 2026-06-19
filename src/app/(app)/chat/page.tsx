@@ -243,6 +243,86 @@ export default function ChatPage() {
     }
   }, [selectedChatId, fetchMessages]);
 
+  // Realtime Subscription
+  useEffect(() => {
+    if (!selectedChatId) return;
+
+    console.log(`[Chat Debug] Subscribing to realtime messages for channel: ${selectedChatId}`);
+
+    const channel = supabase
+      .channel(`chat_messages:${selectedChatId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `channel_id=eq.${selectedChatId}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as Message;
+          console.log("[Chat Debug] Realtime INSERT received:", newMessage.id);
+
+          // Prevent duplication if the message was already added via optimistic UI or manual refetch
+          setMessages((prev) => {
+            const exists = prev.some(m => m.id === newMessage.id);
+            if (exists) {
+              console.log("[Chat Debug] Realtime message ignored because duplicate:", newMessage.id);
+              return prev;
+            }
+            
+            // We'll append the message temporarily while we fetch the profile
+            return [...prev, { ...newMessage, profiles: null }];
+          });
+
+          // Fetch sender profile for the new message
+          try {
+            const { data: profileData } = await supabase
+              .from('profiles')
+              .select('id, full_name, avatar_url, avatar_preset')
+              .eq('id', newMessage.sender_id)
+              .single();
+            
+            setMessages((prev) => 
+              prev.map(m => m.id === newMessage.id ? { ...m, profiles: profileData || null } : m)
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+            );
+          } catch (profileErr) {
+            console.error("[Chat Debug] Error fetching profile for realtime message:", profileErr);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `channel_id=eq.${selectedChatId}`,
+        },
+        (payload) => {
+          const updatedMessage = payload.new as any;
+          if (updatedMessage.is_deleted) {
+            setMessages((prev) => prev.filter(m => m.id !== updatedMessage.id));
+          } else {
+            setMessages((prev) => prev.map(m => m.id === updatedMessage.id ? { ...m, ...updatedMessage } : m));
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`[Chat Debug] Realtime subscription active for ${selectedChatId}`);
+        } else {
+          console.log(`[Chat Debug] Realtime subscription status for ${selectedChatId}:`, status);
+        }
+      });
+
+    return () => {
+      console.log(`[Chat Debug] Unsubscribing from realtime messages for channel: ${selectedChatId}`);
+      supabase.removeChannel(channel);
+    };
+  }, [selectedChatId, supabase]);
+
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
     setShowConversation(true);
@@ -270,8 +350,7 @@ export default function ChatPage() {
         toast({ variant: "destructive", title: "Failed to send message", description: "Please try again." });
       } else {
         setMessageInput("");
-        // Optimistic UI could be added here, but refetching is safer for demo
-        await fetchMessages(selectedChat.id);
+        // Note: Realtime listener will handle appending the message to the UI
       }
     } catch (err: any) {
       console.error("[Chat Debug] Fatal Send Error:", err);
