@@ -90,6 +90,8 @@ interface Message {
     avatar_preset: string;
   } | null;
   attachments?: Attachment[];
+  // Transient field for global search context
+  channel_display_name?: string;
 }
 
 interface WorkspaceMemberProfile {
@@ -116,12 +118,17 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Search in Chat state
+  // Search in Chat state (Contextual)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [inChatSearchQuery, setInChatSearchQuery] = useState("");
   const [inChatSearchResults, setInChatSearchResults] = useState<Message[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
+  // Global Message Search state (Sidebar)
+  const [globalSearchResults, setGlobalSearchResults] = useState<Message[]>([]);
+  const [isGlobalSearching, setIsGlobalSearching] = useState(false);
+  const [pendingJumpMessageId, setPendingHighlightMessageId] = useState<string | null>(null);
 
   // Attachment State
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -341,14 +348,28 @@ export default function ChatPage() {
       }));
 
       setMessages(enrichedMessages);
-      setTimeout(() => scrollToBottom("auto"), 50);
+      
+      // Auto-scroll logic with a small delay for DOM layout
+      setTimeout(() => {
+        scrollToBottom("auto");
+        // If we have a pending highlight from a global search jump
+        if (pendingJumpMessageId) {
+          const element = document.getElementById(`message-${pendingJumpMessageId}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setHighlightedMessageId(pendingJumpMessageId);
+            setTimeout(() => setHighlightedMessageId(null), 3000);
+          }
+          setPendingHighlightMessageId(null);
+        }
+      }, 100);
     } catch (err: any) {
       console.error("[Chat] Message Load Error:", serializeSupabaseError(err));
       toast({ variant: "destructive", title: "Sync Error", description: err.message });
     } finally {
       setLoadingMessages(false);
     }
-  }, [supabase, toast, scrollToBottom]);
+  }, [supabase, toast, scrollToBottom, pendingJumpMessageId]);
 
   const fetchMembers = useCallback(async () => {
     if (!activeWorkspace || !userProfile) return;
@@ -465,6 +486,54 @@ export default function ChatPage() {
     }
   }, [selectedChatId, supabase, toast]);
 
+  const performGlobalSearch = useCallback(async (query: string) => {
+    if (query.length < 2 || chats.length === 0) {
+      setGlobalSearchResults([]);
+      return;
+    }
+
+    setIsGlobalSearching(true);
+    try {
+      const channelIds = chats.map(c => c.id);
+
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at')
+        .in('channel_id', channelIds)
+        .eq('is_deleted', false)
+        .ilike('message', `%${query}%`)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const senderIds = Array.from(new Set(data.map(m => m.sender_id)));
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url, avatar_preset')
+          .in('id', senderIds);
+
+        const enriched = data.map(m => {
+          const channel = chats.find(c => c.id === m.channel_id);
+          return {
+            ...m,
+            profiles: profilesData?.find(p => p.id === m.sender_id) || null,
+            channel_display_name: channel?.display_name || 'Archived Channel'
+          };
+        });
+        setGlobalSearchResults(enriched);
+      } else {
+        setGlobalSearchResults([]);
+      }
+    } catch (err: any) {
+      console.error("[Chat] Global Search Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Search Failed", description: err.message });
+    } finally {
+      setIsGlobalSearching(false);
+    }
+  }, [supabase, chats, toast]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       if (inChatSearchQuery) {
@@ -475,6 +544,17 @@ export default function ChatPage() {
   }, [inChatSearchQuery, performInChatSearch]);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery) {
+        performGlobalSearch(searchQuery);
+      } else {
+        setGlobalSearchResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, performGlobalSearch]);
+
+  useEffect(() => {
     fetchChats();
   }, [fetchChats]);
 
@@ -482,7 +562,7 @@ export default function ChatPage() {
     if (selectedChatId) {
       fetchMessages(selectedChatId);
       setSelectedFile(null); // Clear file on channel change
-      setIsSearchOpen(false); // Close search on channel change
+      setIsSearchOpen(false); // Close contextual search on channel change
       setInChatSearchQuery("");
       setInChatSearchResults([]);
     } else {
@@ -564,8 +644,29 @@ export default function ChatPage() {
     setShowConversation(true);
   };
 
-  const handleSearchResultClick = (msgId: string) => {
-    // Check if message is in current list
+  const handleJumpToMessage = (channelId: string, msgId: string) => {
+    if (selectedChatId === channelId) {
+      const element = document.getElementById(`message-${msgId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedMessageId(msgId);
+        setTimeout(() => setHighlightedMessageId(null), 3000);
+      } else {
+        // If not in current DOM list, we would need pagination/offset loading
+        // For MVP, just show toast
+        toast({ title: "Message found", description: "Scrolling to location..." });
+      }
+    } else {
+      setPendingHighlightMessageId(msgId);
+      handleSelectChat(channelId);
+    }
+
+    if (window.innerWidth < 768) {
+      setShowConversation(true);
+    }
+  };
+
+  const handleInChatResultClick = (msgId: string) => {
     const found = messages.find(m => m.id === msgId);
     if (found) {
       const element = document.getElementById(`message-${msgId}`);
@@ -575,11 +676,9 @@ export default function ChatPage() {
         setTimeout(() => setHighlightedMessageId(null), 3000);
       }
     } else {
-      // For MVP, we assume all messages are loaded for the channel
-      // If we had pagination, we would refetch with proper offset here
-      toast({ title: "Message found", description: "Scrolling to message location..." });
+      toast({ title: "Message found", description: "Fetching historical context..." });
     }
-    // Optionally close search on mobile
+    
     if (window.innerWidth < 768) {
       setIsSearchOpen(false);
     }
@@ -611,7 +710,6 @@ export default function ChatPage() {
     setIsSending(true);
     let messageId: string | null = null;
     try {
-      // 1. Create the message first
       const { data: msgData, error: sendError } = await supabase
         .from('chat_messages')
         .insert({
@@ -626,7 +724,6 @@ export default function ChatPage() {
       if (sendError) throw sendError;
       messageId = msgData.id;
 
-      // 2. Handle Upload if file is present
       if (selectedFile) {
         const safeName = sanitizeFileName(selectedFile.name);
         const storagePath = `${selectedChat.workspace_id}/${selectedChat.id}/${messageId}/${safeName}`;
@@ -643,7 +740,6 @@ export default function ChatPage() {
           throw uploadError;
         }
 
-        // 3. Create attachment record
         const { error: attachError } = await supabase
           .from('chat_message_attachments')
           .insert({
@@ -666,7 +762,6 @@ export default function ChatPage() {
       
       setMessageInput("");
       setSelectedFile(null);
-      // Explicitly refetch to get the signed URL for the new attachment
       await fetchMessages(selectedChat.id);
     } catch (err: any) {
       console.error("[Chat] Send Error:", serializeSupabaseError(err));
@@ -775,83 +870,132 @@ export default function ChatPage() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <Input 
-              placeholder="Search chats" 
+              placeholder="Search chats and messages" 
               className="pl-10 h-11 bg-slate-100 dark:bg-slate-800 border-none rounded-xl focus-visible:ring-2 focus-visible:ring-primary/20"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            {searchQuery && (
+              <button 
+                className="absolute right-3 top-1/2 -translate-y-1/2"
+                onClick={() => { setSearchQuery(""); setGlobalSearchResults([]); }}
+              >
+                <X className="w-4 h-4 text-slate-400 hover:text-slate-600" />
+              </button>
+            )}
           </div>
         </div>
 
         <ScrollArea className="flex-1 px-3">
-          <div className="space-y-1 pb-6">
-            {loadingChats ? (
-              <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
-                <Loader2 className="w-6 h-6 animate-spin" />
-                <p className="text-xs font-medium">Syncing channels...</p>
-              </div>
-            ) : error ? (
-              <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-rose-500 gap-2">
-                <AlertCircle className="w-8 h-8 opacity-50" />
-                <p className="text-sm font-bold">Failed to load</p>
-                <Button variant="outline" size="sm" onClick={fetchChats} className="mt-4 h-8 text-[10px] uppercase font-bold tracking-wider">Retry</Button>
-              </div>
-            ) : filteredChats.length === 0 ? (
-              <div className="text-center py-10 opacity-50">
-                <p className="text-sm font-medium">No channels found</p>
-              </div>
-            ) : (
-              filteredChats.map((chat) => {
-                const isActive = selectedChatId === chat.id;
-                const avatarSrc = chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar;
-
-                return (
-                  <button
-                    key={chat.id}
-                    onClick={() => handleSelectChat(chat.id)}
-                    className={cn(
-                      "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50",
-                      isActive ? "bg-primary/10 dark:bg-primary/10" : ""
-                    )}
-                  >
-                    <Avatar className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
-                      {avatarSrc ? (
-                        <AvatarImage src={avatarSrc} />
-                      ) : (
-                        <AvatarFallback className={cn(
-                          "bg-primary/10 text-primary font-bold",
-                          isActive ? "bg-primary text-white" : ""
-                        )}>
-                          {chat.name.toLowerCase() === 'general' ? <Hash className="w-5 h-5" /> : 
-                           chat.type === 'group' ? <Users className="w-5 h-5" /> :
-                           (chat.display_name?.[0] || 'C').toUpperCase()}
-                        </AvatarFallback>
-                      )}
-                    </Avatar>
-                    <div className="flex-1 min-w-0 text-left">
-                      <div className="flex justify-between items-baseline mb-0.5">
-                        <p className={cn(
-                          "font-bold text-sm truncate",
-                          isActive ? "text-primary" : "text-slate-900 dark:text-white"
-                        )}>{chat.display_name}</p>
-                        {chat.last_message_at && (
-                          <span className="text-[10px] text-slate-400 font-medium ml-2 shrink-0">
-                            {new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        )}
+          <div className="space-y-6 pb-6">
+            {/* Global Search Message Results */}
+            {searchQuery.length >= 2 && (
+              <div className="space-y-1 px-1">
+                <div className="flex items-center justify-between px-2 mb-2">
+                   <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Message Results</p>
+                   {isGlobalSearching && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
+                </div>
+                {globalSearchResults.length === 0 && !isGlobalSearching ? (
+                  <p className="text-[10px] text-center text-slate-400 py-4 italic">No matching messages found</p>
+                ) : (
+                  globalSearchResults.map((res) => (
+                    <button
+                      key={`global-${res.id}`}
+                      onClick={() => handleJumpToMessage(res.channel_id, res.id)}
+                      className="w-full text-left p-3 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all group flex gap-3"
+                    >
+                      <Avatar className="w-8 h-8 shrink-0 border dark:border-slate-800">
+                        <AvatarImage src={res.profiles?.avatar_preset ? `/avatars/${res.profiles.avatar_preset}.png` : res.profiles?.avatar_url} />
+                        <AvatarFallback className="text-[10px] font-bold bg-primary/5 text-primary">{res.profiles?.full_name?.[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                         <div className="flex justify-between items-baseline mb-0.5">
+                           <p className="text-xs font-bold truncate group-hover:text-primary transition-colors">{res.channel_display_name}</p>
+                           <span className="text-[9px] text-slate-400 shrink-0 ml-1">{new Date(res.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</span>
+                         </div>
+                         <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 leading-relaxed">
+                           <span className="font-bold text-slate-700 dark:text-slate-300 mr-1">{res.profiles?.full_name?.split(' ')[0]}:</span>
+                           {res.message}
+                         </p>
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                        {chat.last_message || (
-                          chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
-                          chat.type === 'direct' ? 'Direct Message' : 
-                          chat.type === 'group' ? 'Group Chat' : 'Channel'
-                        )}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })
+                    </button>
+                  ))
+                )}
+                <Separator className="my-4 opacity-50" />
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-2 mb-2">Channels</p>
+              </div>
             )}
+
+            {/* Chat Channels List */}
+            <div className="space-y-1">
+              {loadingChats ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3 text-slate-400">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <p className="text-xs font-medium">Syncing channels...</p>
+                </div>
+              ) : error ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-rose-500 gap-2">
+                  <AlertCircle className="w-8 h-8 opacity-50" />
+                  <p className="text-sm font-bold">Failed to load</p>
+                  <Button variant="outline" size="sm" onClick={fetchChats} className="mt-4 h-8 text-[10px] uppercase font-bold tracking-wider">Retry</Button>
+                </div>
+              ) : filteredChats.length === 0 ? (
+                <div className="text-center py-10 opacity-50">
+                  <p className="text-sm font-medium">No channels found</p>
+                </div>
+              ) : (
+                filteredChats.map((chat) => {
+                  const isActive = selectedChatId === chat.id;
+                  const avatarSrc = chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar;
+
+                  return (
+                    <button
+                      key={chat.id}
+                      onClick={() => handleSelectChat(chat.id)}
+                      className={cn(
+                        "w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all group hover:bg-slate-50 dark:hover:bg-slate-800/50",
+                        isActive ? "bg-primary/10 dark:bg-primary/10" : ""
+                      )}
+                    >
+                      <Avatar className="w-12 h-12 border-2 border-white dark:border-slate-800 shadow-sm shrink-0">
+                        {avatarSrc ? (
+                          <AvatarImage src={avatarSrc} />
+                        ) : (
+                          <AvatarFallback className={cn(
+                            "bg-primary/10 text-primary font-bold",
+                            isActive ? "bg-primary text-white" : ""
+                          )}>
+                            {chat.name.toLowerCase() === 'general' ? <Hash className="w-5 h-5" /> : 
+                             chat.type === 'group' ? <Users className="w-5 h-5" /> :
+                             (chat.display_name?.[0] || 'C').toUpperCase()}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
+                      <div className="flex-1 min-w-0 text-left">
+                        <div className="flex justify-between items-baseline mb-0.5">
+                          <p className={cn(
+                            "font-bold text-sm truncate",
+                            isActive ? "text-primary" : "text-slate-900 dark:text-white"
+                          )}>{chat.display_name}</p>
+                          {chat.last_message_at && (
+                            <span className="text-[10px] text-slate-400 font-medium ml-2 shrink-0">
+                              {new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                          {chat.last_message || (
+                            chat.name.toLowerCase() === 'general' ? 'Workspace Channel' : 
+                            chat.type === 'direct' ? 'Direct Message' : 
+                            chat.type === 'group' ? 'Group Chat' : 'Channel'
+                          )}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
         </ScrollArea>
       </div>
@@ -873,7 +1017,7 @@ export default function ChatPage() {
                    <div className="relative flex-1">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                       <Input 
-                        placeholder="Search in chat..."
+                        placeholder="Search in this chat..."
                         className="pl-10 h-10 bg-slate-100 dark:bg-slate-800 border-none rounded-xl"
                         value={inChatSearchQuery}
                         onChange={(e) => setInChatSearchQuery(e.target.value)}
@@ -934,7 +1078,7 @@ export default function ChatPage() {
               )}
             </div>
 
-            {/* In-Chat Search Results Overlay */}
+            {/* Contextual In-Chat Search Results Overlay */}
             {isSearchOpen && inChatSearchQuery.length >= 2 && (
               <div className="absolute top-20 left-4 right-4 md:left-[350px] z-[40] pointer-events-none">
                  <div className="max-w-xl mx-auto w-full pointer-events-auto bg-white dark:bg-slate-900 border dark:border-slate-800 shadow-2xl rounded-2xl overflow-hidden max-h-[60vh] flex flex-col animate-in fade-in slide-in-from-top-2 duration-300">
@@ -953,7 +1097,7 @@ export default function ChatPage() {
                               <button 
                                 key={res.id} 
                                 className="w-full text-left p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex gap-3 group"
-                                onClick={() => handleSearchResultClick(res.id)}
+                                onClick={() => handleInChatResultClick(res.id)}
                               >
                                  <Avatar className="w-8 h-8 shrink-0">
                                    <AvatarImage src={res.profiles?.avatar_preset ? `/avatars/${res.profiles.avatar_preset}.png` : res.profiles?.avatar_url} />
