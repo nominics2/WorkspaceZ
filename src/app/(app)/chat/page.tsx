@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -64,40 +63,73 @@ export default function ChatPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
-  // Fetch Chats
+  // Fetch Chats - Safer Approach
   const fetchChats = useCallback(async () => {
-    if (!activeWorkspace || !userProfile) return;
+    if (!activeWorkspace || !userProfile) {
+      console.log("[Chat Debug] Missing workspace or profile, skipping fetchChats.");
+      return;
+    }
     
     setLoadingChats(true);
     setError(null);
     try {
-      const { data, error: chatsError } = await supabase
+      console.log("[Chat Debug] Fetching for User:", userProfile.id, "Workspace:", activeWorkspace.id);
+
+      // Step 1: Get chat memberships
+      const { data: membershipData, error: membershipError } = await supabase
         .from('chat_members')
-        .select(`
-          chat_id,
-          chats!inner (
-            id,
-            name,
-            type,
-            workspace_id
-          )
-        `)
-        .eq('user_id', userProfile.id)
-        .eq('chats.workspace_id', activeWorkspace.id);
+        .select('chat_id')
+        .eq('user_id', userProfile.id);
 
-      if (chatsError) throw chatsError;
+      if (membershipError) {
+        console.error("[Chat Debug] membershipError:", {
+          message: membershipError.message,
+          details: membershipError.details,
+          hint: membershipError.hint,
+          code: membershipError.code
+        });
+        throw membershipError;
+      }
 
-      const formattedChats = (data || []).map((item: any) => ({
-        id: item.chats.id,
-        name: item.chats.name,
-        type: item.chats.type,
-        workspace_id: item.chats.workspace_id
+      console.log("[Chat Debug] Found memberships:", membershipData?.length || 0);
+
+      if (!membershipData || membershipData.length === 0) {
+        setChats([]);
+        return;
+      }
+
+      const chatIds = membershipData.map(m => m.chat_id);
+
+      // Step 2: Get chat details for those IDs in the current workspace
+      const { data: chatsData, error: chatsError } = await supabase
+        .from('chats')
+        .select('id, name, type, workspace_id')
+        .in('id', chatIds)
+        .eq('workspace_id', activeWorkspace.id);
+
+      if (chatsError) {
+        console.error("[Chat Debug] chatsError:", {
+          message: chatsError.message,
+          details: chatsError.details,
+          hint: chatsError.hint,
+          code: chatsError.code
+        });
+        throw chatsError;
+      }
+
+      console.log("[Chat Debug] Found chats in workspace:", chatsData?.length || 0);
+
+      const formattedChats = (chatsData || []).map((chat: any) => ({
+        id: chat.id,
+        name: chat.name,
+        type: chat.type,
+        workspace_id: chat.workspace_id
       }));
 
       setChats(formattedChats);
     } catch (err: any) {
-      console.error("Error fetching chats:", err);
-      setError("Failed to load conversations.");
+      console.error("[Chat Debug] Detailed Error:", err);
+      setError(err.message || "Failed to load conversations.");
     } finally {
       setLoadingChats(false);
     }
@@ -201,8 +233,9 @@ export default function ChatPage() {
             ) : error ? (
               <div className="flex flex-col items-center justify-center py-10 px-4 text-center text-rose-500 gap-2">
                 <AlertCircle className="w-6 h-6" />
-                <p className="text-xs font-medium">{error}</p>
-                <Button variant="ghost" size="sm" onClick={fetchChats} className="text-[10px] uppercase font-bold tracking-wider">Retry</Button>
+                <p className="text-xs font-medium">Something went wrong</p>
+                <p className="text-[10px] opacity-70 line-clamp-2">{error}</p>
+                <Button variant="ghost" size="sm" onClick={fetchChats} className="text-[10px] uppercase font-bold tracking-wider mt-2">Retry</Button>
               </div>
             ) : filteredChats.length === 0 ? (
               <div className="text-center py-10 opacity-50">
