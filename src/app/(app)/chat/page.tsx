@@ -107,8 +107,6 @@ export default function ChatPage() {
         throw new Error(`Unable to load your workspace membership (Code: ${memberError.code})`);
       }
 
-      console.log("[Chat Debug] Found active workspace memberships:", memberData?.length || 0);
-
       if (!memberData || memberData.length === 0) {
         console.log("[Chat Debug] User has no active workspace memberships.");
         setChats([]);
@@ -130,8 +128,6 @@ export default function ChatPage() {
         throw new Error(`Unable to load chat channels (Code: ${channelsError.code})`);
       }
 
-      console.log("[Chat Debug] Found chat_channels:", channelsData?.length || 0);
-
       if (!channelsData || channelsData.length === 0) {
         setChats([]);
         return;
@@ -151,6 +147,12 @@ export default function ChatPage() {
         console.warn("[Chat Debug] Last message fetch warning:", serializeSupabaseError(lastMsgError));
       }
 
+      // Step 4: Check for General channel duplicates in active workspace
+      const generalChannels = channelsData.filter(c => c.name === 'General' && c.workspace_id === activeWorkspace.id);
+      if (generalChannels.length > 1) {
+        console.warn("[Chat Debug] Multiple General channels found in workspace:", generalChannels.map(gc => gc.id));
+      }
+
       const formattedChats: Chat[] = channelsData.map(channel => {
         const lastMsg = lastMessages?.find(m => m.channel_id === channel.id);
         return {
@@ -161,6 +163,15 @@ export default function ChatPage() {
           last_message: lastMsg?.message,
           last_message_at: lastMsg?.created_at
         };
+      }).sort((a, b) => {
+        // Rule: General channel always at the top of the current workspace
+        if (a.name === 'General' && a.workspace_id === activeWorkspace.id) return -1;
+        if (b.name === 'General' && b.workspace_id === activeWorkspace.id) return 1;
+        
+        // Then sort by latest message time
+        const timeA = new Date(a.last_message_at || 0).getTime();
+        const timeB = new Date(b.last_message_at || 0).getTime();
+        return timeB - timeA;
       });
 
       setChats(formattedChats);
@@ -197,8 +208,6 @@ export default function ChatPage() {
 
       // Enrichment Step: Fetch Profiles for senders
       const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
-      console.log("[Chat Debug] Enriching profiles for senders:", senderIds);
-
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, avatar_preset')
@@ -215,8 +224,7 @@ export default function ChatPage() {
 
       setMessages(enrichedMessages);
     } catch (err: any) {
-      const serialized = serializeSupabaseError(err);
-      console.error("[Chat Debug] Fetch Messages Error:", serialized);
+      console.error("[Chat Debug] Fetch Messages Error:", serializeSupabaseError(err));
       toast({ 
         variant: "destructive", 
         title: "Error", 
@@ -309,7 +317,7 @@ export default function ChatPage() {
                       "bg-primary/10 text-primary font-bold",
                       selectedChatId === chat.id ? "bg-primary text-white" : ""
                     )}>
-                      {chat.type === 'channel' ? <Hash className="w-5 h-5" /> : chat.name[0]}
+                      {chat.type === 'channel' || chat.name === 'General' ? <Hash className="w-5 h-5" /> : chat.name[0]}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 text-left">
@@ -318,7 +326,7 @@ export default function ChatPage() {
                       selectedChatId === chat.id ? "text-primary" : "text-slate-900 dark:text-white"
                     )}>{chat.name}</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                      {chat.last_message || (chat.type === 'channel' ? 'Shared channel' : 'Direct Message')}
+                      {chat.last_message || (chat.name === 'General' ? 'Workspace Channel' : chat.type === 'group' ? 'Group Chat' : chat.type === 'channel' ? 'Public Channel' : 'Direct Message')}
                     </p>
                   </div>
                 </button>
@@ -348,14 +356,14 @@ export default function ChatPage() {
                 </Button>
                 <Avatar className="w-10 h-10 border-2 border-white dark:border-slate-800 shadow-sm">
                   <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                    {selectedChat.type === 'channel' ? <Hash className="w-4 h-4" /> : selectedChat.name[0]}
+                    {selectedChat.type === 'channel' || selectedChat.name === 'General' ? <Hash className="w-4 h-4" /> : selectedChat.name[0]}
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
                   <p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.name}</p>
                   <p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                    Channel
+                    {selectedChat.name === 'General' ? 'Workspace Channel' : selectedChat.type === 'group' ? 'Group Chat' : selectedChat.type === 'channel' ? 'Channel' : 'Direct Message'}
                   </p>
                 </div>
               </div>
