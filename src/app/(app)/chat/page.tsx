@@ -20,7 +20,9 @@ import {
   Users,
   X,
   FileIcon,
-  Download
+  Download,
+  Image as ImageIcon,
+  ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +50,7 @@ interface Attachment {
   file_type: string;
   file_size_bytes: number;
   message_id: string;
+  signed_url?: string;
 }
 
 interface Chat {
@@ -287,6 +290,21 @@ export default function ChatPage() {
         return;
       }
 
+      // Generate signed URLs for all attachments in bulk
+      let enrichedAttachments: Attachment[] = [...attachData];
+      if (attachData.length > 0) {
+        const { data: signedData, error: signedError } = await supabase.storage
+          .from('chat-attachments')
+          .createSignedUrls(attachData.map(a => a.file_path), 3600);
+        
+        if (!signedError && signedData) {
+          enrichedAttachments = attachData.map(a => {
+            const signedInfo = signedData.find(s => s.path === a.file_path);
+            return { ...a, signed_url: signedInfo?.signedUrl };
+          });
+        }
+      }
+
       const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
       const { data: profilesData } = await supabase
         .from('profiles')
@@ -296,7 +314,7 @@ export default function ChatPage() {
       const enrichedMessages: Message[] = msgData.map(m => ({
         ...m,
         profiles: profilesData?.find(p => p.id === m.sender_id) || null,
-        attachments: attachData.filter(a => a.message_id === m.id)
+        attachments: enrichedAttachments.filter(a => a.message_id === m.id)
       }));
 
       setMessages(enrichedMessages);
@@ -383,6 +401,9 @@ export default function ChatPage() {
             return [...prev, { ...newMessage, profiles: null, attachments: [] }];
           });
 
+          // Wait a brief moment to allow attachment insertion to complete, then refetch to get everything
+          setTimeout(() => fetchMessages(selectedChatId), 1000);
+
           try {
             const { data: profileData } = await supabase
               .from('profiles')
@@ -425,7 +446,7 @@ export default function ChatPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedChatId, supabase, userProfile?.id, scrollToBottom]);
+  }, [selectedChatId, supabase, userProfile?.id, scrollToBottom, fetchMessages]);
 
   const handleSelectChat = (id: string) => {
     setSelectedChatId(id);
@@ -458,14 +479,14 @@ export default function ChatPage() {
     setIsSending(true);
     let messageId: string | null = null;
     try {
-      // 1. Create the message first (required for attachment link)
+      // 1. Create the message first
       const { data: msgData, error: sendError } = await supabase
         .from('chat_messages')
         .insert({
           channel_id: selectedChat.id,
           workspace_id: selectedChat.workspace_id,
           sender_id: userProfile.id,
-          message: text || "" // Messages can be empty if there's an attachment
+          message: text || "" 
         })
         .select('id')
         .single();
@@ -486,7 +507,6 @@ export default function ChatPage() {
           });
 
         if (uploadError) {
-          // Cleanup message if upload fails to keep DB clean
           await supabase.from('chat_messages').delete().eq('id', messageId);
           throw uploadError;
         }
@@ -506,7 +526,6 @@ export default function ChatPage() {
           });
 
         if (attachError) {
-          // Rollback storage & message if DB record fails
           await supabase.storage.from('chat-attachments').remove([storagePath]);
           await supabase.from('chat_messages').delete().eq('id', messageId);
           throw attachError;
@@ -514,8 +533,9 @@ export default function ChatPage() {
       }
       
       setMessageInput("");
-      setSelectedFile(null); // Clear attachment on successful send
-      setTimeout(() => scrollToBottom(), 50);
+      setSelectedFile(null);
+      // Explicitly refetch to get the signed URL for the new attachment
+      await fetchMessages(selectedChat.id);
     } catch (err: any) {
       console.error("[Chat] Send Error:", serializeSupabaseError(err));
       toast({ 
@@ -786,19 +806,60 @@ export default function ChatPage() {
                           )}>
                             {msg.message}
                             
-                            {/* Attachments Placeholder (Detailed Display in 5C) */}
+                            {/* Attachments Section */}
                             {msg.attachments && msg.attachments.length > 0 && (
-                              <div className="mt-2 space-y-2">
-                                {msg.attachments.map(att => (
-                                  <div key={att.id} className={cn(
-                                    "flex items-center gap-3 p-2 rounded-lg border text-[11px]",
-                                    isMe ? "bg-white/10 border-white/20" : "bg-slate-100 dark:bg-slate-900 border-slate-200 dark:border-slate-800"
-                                  )}>
-                                    <FileIcon className="w-4 h-4 shrink-0" />
-                                    <span className="truncate font-medium">{att.file_name}</span>
-                                    <span className="opacity-60 ml-auto">{formatBytes(att.file_size_bytes)}</span>
-                                  </div>
-                                ))}
+                              <div className={cn("space-y-3", msg.message ? "mt-4" : "")}>
+                                {msg.attachments.map(att => {
+                                  const isImage = att.file_type?.startsWith('image/');
+                                  
+                                  return (
+                                    <div key={att.id} className="max-w-xs">
+                                      {isImage && att.signed_url ? (
+                                        <div className="relative group/image overflow-hidden rounded-xl border border-black/5 dark:border-white/5 bg-slate-100 dark:bg-slate-900">
+                                          <img 
+                                            src={att.signed_url} 
+                                            alt={att.file_name}
+                                            className="w-full h-auto max-h-[300px] object-cover hover:scale-105 transition-transform duration-500 cursor-pointer"
+                                            onClick={() => window.open(att.signed_url, '_blank')}
+                                          />
+                                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/image:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                             <Button variant="secondary" size="icon" className="h-10 w-10 rounded-full" onClick={() => window.open(att.signed_url, '_blank')}>
+                                               <ExternalLink className="w-5 h-5" />
+                                             </Button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className={cn(
+                                          "flex items-center gap-4 p-3 rounded-xl border transition-colors",
+                                          isMe 
+                                            ? "bg-white/10 border-white/20 hover:bg-white/20" 
+                                            : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                        )}>
+                                          <div className={cn(
+                                            "p-2.5 rounded-lg shrink-0",
+                                            isMe ? "bg-white/10" : "bg-primary/5"
+                                          )}>
+                                            {isImage ? <ImageIcon className="w-5 h-5" /> : <FileIcon className="w-5 h-5" />}
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-bold truncate leading-tight">{att.file_name}</p>
+                                            <p className="text-[10px] opacity-60 mt-0.5 font-bold uppercase tracking-widest">{formatBytes(att.file_size_bytes)}</p>
+                                          </div>
+                                          {att.signed_url && (
+                                            <Button 
+                                              variant="ghost" 
+                                              size="icon" 
+                                              className="h-8 w-8 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                                              onClick={() => window.open(att.signed_url, '_blank')}
+                                            >
+                                              <Download className="w-4 h-4" />
+                                            </Button>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
 
