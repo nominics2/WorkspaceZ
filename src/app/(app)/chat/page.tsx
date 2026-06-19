@@ -27,7 +27,12 @@ import {
   ArrowDown,
   BellOff,
   Bell,
-  MessageCircle
+  MessageCircle,
+  Info,
+  ShieldCheck,
+  Calendar,
+  LogOut,
+  Edit2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,6 +111,24 @@ interface WorkspaceMemberProfile {
   role?: string;
 }
 
+interface ChatChannelMember {
+  id: string;
+  channel_id: string;
+  user_id: string;
+  role: 'admin' | 'member';
+  created_at: string;
+}
+
+interface ChatMemberWithProfile extends ChatChannelMember {
+  profiles: {
+    full_name: string;
+    avatar_url: string;
+    avatar_preset: string;
+    email: string;
+    username: string;
+  } | null;
+}
+
 interface ChatUnreadCount {
   channel_id: string;
   unread_count: number;
@@ -155,6 +178,11 @@ export default function ChatPage() {
   const [isMediaSheetOpen, setIsMediaSheetOpen] = useState(false);
   const [allMedia, setAllMedia] = useState<Attachment[]>([]);
   const [loadingMedia, setLoadingMedia] = useState(false);
+
+  // Info State
+  const [isInfoSheetOpen, setIsInfoSheetOpen] = useState(false);
+  const [infoMembers, setInfoMembers] = useState<ChatMemberWithProfile[]>([]);
+  const [loadingInfo, setLoadingInfo] = useState(false);
 
   // New Chat Modal State
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
@@ -508,6 +536,46 @@ export default function ChatPage() {
       setLoadingMedia(false);
     }
   }, [selectedChatId, supabase, toast]);
+
+  const fetchInfoMembers = useCallback(async () => {
+    const chat = chats.find(c => c.id === selectedChatId);
+    if (!chat || chat.name.toLowerCase() === 'general') return;
+
+    setLoadingInfo(true);
+    try {
+      const { data: memberData, error: memberError } = await supabase
+        .from('chat_channel_members')
+        .select('*')
+        .eq('channel_id', chat.id)
+        .order('created_at', { ascending: true });
+
+      if (memberError) throw memberError;
+      if (!memberData || memberData.length === 0) {
+        setInfoMembers([]);
+        return;
+      }
+
+      const userIds = memberData.map(m => m.user_id);
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name, username, avatar_url, avatar_preset, email')
+        .in('id', userIds);
+
+      if (profileError) throw profileError;
+
+      const enriched: ChatMemberWithProfile[] = memberData.map(m => ({
+        ...m,
+        profiles: profileData?.find(p => p.id === m.user_id) || null
+      }));
+
+      setInfoMembers(enriched);
+    } catch (err: any) {
+      console.error("[Chat] Info Load Failed:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Roster Sync Failed", description: err.message });
+    } finally {
+      setLoadingInfo(false);
+    }
+  }, [selectedChatId, chats, supabase, toast]);
 
   /**
    * SEARCH LOGIC
@@ -995,8 +1063,9 @@ export default function ChatPage() {
                 <div className="flex items-center gap-3 w-full"><Button variant="ghost" size="icon" aria-label="Close Search" onClick={() => { setIsSearchOpen(false); setInChatSearchQuery(""); setInChatSearchResults([]); }}><ChevronLeft className="w-5 h-5" /></Button><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Filter this thread..." className="pl-10 h-10 bg-slate-100 dark:bg-slate-800 border-none rounded-xl" value={inChatSearchQuery} onChange={(e) => setInChatSearchQuery(e.target.value)} autoFocus />{inChatSearchQuery && <button className="absolute right-3 top-1/2 -translate-y-1/2" aria-label="Clear Query" onClick={() => { setInChatSearchQuery(""); setInChatSearchResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>}</div></div>
               ) : (
                 <>
-                  <div className="flex items-center gap-4 min-w-0"><Button variant="ghost" size="icon" aria-label="Back" className="md:hidden rounded-xl h-10 w-10" onClick={() => setShowConversation(false)}><ChevronLeft className="w-6 h-6" /></Button><Avatar className="w-10 h-10"><AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} /><AvatarFallback className="bg-primary/10 text-primary font-bold">{selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.type === 'group' ? <Users className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>{isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}</div><p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />{selectedChat.name.toLowerCase() === 'general' ? 'Workspace Hub' : selectedChat.type === 'direct' ? 'Private Discussion' : 'Group Workspace'}{isCurrentChatMuted && <span className="text-slate-400 ml-1 font-bold">• Silenced</span>}</p></div></div>
+                  <div className="flex items-center gap-4 min-w-0"><Button variant="ghost" size="icon" aria-label="Back" className="md:hidden rounded-xl h-10 w-10" onClick={() => setShowConversation(false)}><ChevronLeft className="w-6 h-6" /></Button><Avatar className="w-10 h-10 cursor-pointer" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}><AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} /><AvatarFallback className="bg-primary/10 text-primary font-bold">{selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.type === 'group' ? <Users className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>{isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}</div><p className="text-[10px] md:text-xs text-emerald-500 font-medium flex items-center gap-1.5"><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />{selectedChat.name.toLowerCase() === 'general' ? 'Workspace Hub' : selectedChat.type === 'direct' ? 'Private Discussion' : 'Group Workspace'}{isCurrentChatMuted && <span className="text-slate-400 ml-1 font-bold">• Silenced</span>}</p></div></div>
                   <div className="flex items-center gap-1">
+                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Chat Info" className="rounded-xl text-slate-400" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}><Info className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Conversation details</TooltipContent></Tooltip></TooltipProvider>
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Detach" className="rounded-xl text-slate-400 hover:text-primary" onClick={() => addBubble(selectedChat)}><MessageCircle className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Open as floating window</TooltipContent></Tooltip></TooltipProvider>
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Media & Files" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}><Files className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Shared assets</TooltipContent></Tooltip></TooltipProvider>
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Search" className="rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}><Search className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Search thread</TooltipContent></Tooltip></TooltipProvider>
@@ -1068,6 +1137,102 @@ export default function ChatPage() {
 
       <Sheet open={isMediaSheetOpen} onOpenChange={setIsMediaSheetOpen}>
         <SheetContent className="w-full sm:max-w-lg p-0 flex flex-col dark:bg-slate-950 overflow-hidden"><div className="p-6 pb-0"><SheetHeader><div className="flex items-center gap-2 mb-1"><Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Asset Manager</Badge></div><SheetTitle className="text-2xl font-bold">Media & Files</SheetTitle><SheetDescription>All attachments shared in {selectedChat?.display_name}.</SheetDescription></SheetHeader><Tabs defaultValue="media" className="mt-8 flex-1 flex flex-col"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900/50 mb-6"><TabsTrigger value="media" className="gap-2"><ImageIcon className="w-3.5 h-3.5" /> Gallery</TabsTrigger><TabsTrigger value="files" className="gap-2"><FileIcon className="w-3.5 h-3.5" /> Documents</TabsTrigger></TabsList><ScrollArea className="flex-1 -mx-6 px-6"><TabsContent value="media" className="m-0 pb-8">{loadingMedia ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin" /></div> : allMedia.filter(m => m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No images shared yet.</p> : <div className="grid grid-cols-2 gap-4">{allMedia.filter(m => m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">{item.signed_url && <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover" />}<div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"><Button size="icon" variant="secondary" aria-label="Download" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button></div></div>))}</div>}</TabsContent><TabsContent value="files" className="m-0 pb-8">{allMedia.filter(m => !m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No files shared yet.</p> : allMedia.filter(m => !m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 transition-colors group"><div className="p-2.5 bg-primary/10 rounded-xl"><FileIcon className="w-5 h-5 text-primary" /></div><div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div><Button size="icon" variant="ghost" aria-label="Download" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>))}</TabsContent></ScrollArea></Tabs></div></SheetContent>
+      </Sheet>
+
+      <Sheet open={isInfoSheetOpen} onOpenChange={setIsInfoSheetOpen}>
+        <SheetContent className="w-full sm:max-w-md p-0 flex flex-col dark:bg-slate-950 overflow-hidden">
+          <div className="p-8 pb-4">
+            <SheetHeader className="items-center text-center">
+              <Avatar className="w-20 h-20 mb-4 border-4 border-white dark:border-slate-800 shadow-xl">
+                <AvatarImage src={selectedChat?.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat?.display_avatar} />
+                <AvatarFallback className="bg-primary/10 text-primary text-3xl font-bold">
+                  {selectedChat?.name.toLowerCase() === 'general' ? <Hash className="w-10 h-10" /> : selectedChat?.type === 'group' ? <Users className="w-10 h-10" /> : selectedChat?.display_name?.[0]?.toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <SheetTitle className="text-2xl font-bold dark:text-white">{selectedChat?.display_name}</SheetTitle>
+              <SheetDescription className="text-sm font-medium text-emerald-500 uppercase tracking-widest">
+                {selectedChat?.name.toLowerCase() === 'general' ? 'Workspace Channel' : selectedChat?.type === 'direct' ? 'Direct Message' : 'Group Workspace'}
+              </SheetDescription>
+            </SheetHeader>
+          </div>
+
+          <ScrollArea className="flex-1 px-8 pb-8">
+             <div className="space-y-8 mt-4">
+                {selectedChat?.name.toLowerCase() === 'general' ? (
+                  <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-[1.5rem] border border-slate-100 dark:border-slate-800 text-center">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed italic">
+                      This is the primary workspace hub. Everyone in <strong>{activeWorkspace?.name}</strong> has automatic access to this conversation.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                       <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border dark:border-slate-800">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Participants</p>
+                          <p className="text-xl font-bold dark:text-white">{infoMembers.length}</p>
+                       </div>
+                       <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border dark:border-slate-800">
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Created</p>
+                          <p className="text-xs font-bold dark:text-white">{new Date(selectedChat?.created_at || '').toLocaleDateString()}</p>
+                       </div>
+                    </div>
+
+                    <div className="space-y-4">
+                       <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                             <Users className="w-3.5 h-3.5" /> Conversation Roster
+                          </h4>
+                          {loadingInfo && <Loader2 className="w-3 h-3 animate-spin text-primary" />}
+                       </div>
+                       
+                       <div className="space-y-3">
+                          {infoMembers.length === 0 && !loadingInfo ? (
+                             <p className="text-xs text-center text-slate-400 py-4 italic">No participants detected.</p>
+                          ) : infoMembers.map(member => (
+                             <div key={member.id} className="flex items-center justify-between group">
+                                <div className="flex items-center gap-3">
+                                   <Avatar className="w-9 h-9 border dark:border-slate-800">
+                                      <AvatarImage src={member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url} />
+                                      <AvatarFallback className="text-xs">{member.profiles?.full_name?.[0]}</AvatarFallback>
+                                   </Avatar>
+                                   <div className="min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                         <p className="text-sm font-bold truncate dark:text-slate-100">{member.profiles?.full_name}</p>
+                                         {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[8px] h-3.5 px-1 py-0 opacity-60">You</Badge>}
+                                      </div>
+                                      <p className="text-[10px] text-slate-500 truncate">@{member.profiles?.username || member.profiles?.email.split('@')[0]}</p>
+                                   </div>
+                                </div>
+                                <Badge variant="outline" className={cn(
+                                   "text-[8px] uppercase h-4 px-1.5",
+                                   member.role === 'admin' ? "border-primary text-primary" : "text-slate-400"
+                                )}>
+                                   {member.role}
+                                </Badge>
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="space-y-4 pt-4 border-t dark:border-slate-800">
+                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Management</h4>
+                   <div className="space-y-2">
+                      <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800 opacity-50 cursor-not-allowed" disabled>
+                         <Edit2 className="w-4 h-4" /> Rename Conversation
+                      </Button>
+                      <Button variant="outline" className="w-full justify-start gap-3 rounded-xl border-slate-100 dark:border-slate-800 opacity-50 cursor-not-allowed" disabled>
+                         <UserPlus className="w-4 h-4" /> Add Participants
+                      </Button>
+                      <Button variant="outline" className="w-full justify-start gap-3 rounded-xl text-rose-500 border-rose-50 dark:border-rose-900/20 hover:bg-rose-50 dark:hover:bg-rose-950/20 opacity-50 cursor-not-allowed" disabled>
+                         <LogOut className="w-4 h-4" /> Leave Conversation
+                      </Button>
+                   </div>
+                </div>
+             </div>
+          </ScrollArea>
+        </SheetContent>
       </Sheet>
     </div>
   );
