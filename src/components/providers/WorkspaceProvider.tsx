@@ -66,7 +66,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.user) {
-        if (pathname !== '/' && !pathname.startsWith('/onboarding') && pathname !== '/workspace-setup') {
+        if (pathname !== '/' && pathname !== '/setup' && pathname !== '/workspace-setup') {
           router.push('/');
         }
         setLoading(false);
@@ -145,14 +145,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           setPermissions(perms?.map(p => p.permission_key) || []);
         }
 
-        // Routing Logic: If already has a workspace AND has dismissed onboarding, skip onboarding page
-        if (pathname === '/onboarding' && onboarding?.dismissed) {
+        // Routing Logic: If already has a workspace AND has dismissed onboarding, skip setup page
+        if (pathname === '/setup' && onboarding?.dismissed) {
           router.push('/dashboard');
         }
       } else {
-        // No Workspace Logic: Redirect to onboarding if not already there
-        if (pathname !== '/onboarding' && pathname !== '/' && pathname !== '/workspace-setup') {
-          router.push('/onboarding');
+        // No Workspace Logic: Redirect to setup if not already there
+        if (pathname !== '/setup' && pathname !== '/' && pathname !== '/workspace-setup') {
+          router.push('/setup');
         }
       }
     } catch (err) {

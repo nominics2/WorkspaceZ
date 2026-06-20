@@ -78,7 +78,7 @@ export default function LoginPage() {
         }
 
         if (!memberData || memberData.length === 0) {
-          router.replace("/onboarding");
+          router.replace("/setup");
           return;
         }
 

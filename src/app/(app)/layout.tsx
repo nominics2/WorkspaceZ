@@ -26,7 +26,7 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
   const { loading } = useWorkspace();
   const pathname = usePathname();
   
-  const isOnboarding = pathname === '/onboarding';
+  const isSetupFlow = pathname === '/setup';
 
   useEffect(() => {
     setMounted(true);
@@ -52,20 +52,20 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950 text-foreground transition-colors duration-300">
-      {/* Desktop Sidebar - Hidden during onboarding */}
-      {!isOnboarding && (
+      {/* Desktop Sidebar - Hidden during setup */}
+      {!isSetupFlow && (
         <div className="hidden lg:block h-full shrink-0 z-30">
           <SidebarNav />
         </div>
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Global Announcement Banner - Hidden during onboarding */}
-        {!isOnboarding && <AppUpdateBanner />}
+        {/* Global Announcement Banner - Hidden during setup */}
+        {!isSetupFlow && <AppUpdateBanner />}
 
         <header className={cn(
           "h-16 border-b bg-white/80 dark:bg-slate-950/80 backdrop-blur-md dark:border-slate-800 flex items-center justify-between px-4 md:px-8 shrink-0 z-20 sticky top-0 safe-top shadow-sm",
-          isOnboarding && "hidden" // Fully hide header on onboarding
+          isSetupFlow && "hidden" // Fully hide header on setup
         )}>
           <div className="flex items-center gap-4 flex-1 min-w-0">
             {/* Mobile Sidebar Trigger */}
@@ -106,21 +106,21 @@ function AppLayoutContent({ children }: { children: React.ReactNode }) {
 
         <main className={cn(
           "flex-1 overflow-y-auto scroll-smooth",
-          isOnboarding && "flex items-center justify-center bg-white dark:bg-slate-950"
+          isSetupFlow && "flex items-center justify-center bg-white dark:bg-slate-950"
         )}>
-          {/* Contextual Installation Banner - Hidden during onboarding */}
-          {!isOnboarding && <PwaInstallBanner />}
+          {/* Contextual Installation Banner - Hidden during setup */}
+          {!isSetupFlow && <PwaInstallBanner />}
           
           <div className={cn(
             "p-4 md:p-8 lg:p-10 max-w-[1600px] mx-auto space-y-8 safe-bottom pb-24 lg:pb-10",
-            isOnboarding && "w-full max-w-none p-0 space-y-0 pb-0 lg:pb-0"
+            isSetupFlow && "w-full max-w-none p-0 space-y-0 pb-0 lg:pb-0"
           )}>
             {children}
           </div>
         </main>
       </div>
       
-      {!isOnboarding && <FloatingChatBubbles />}
+      {!isSetupFlow && <FloatingChatBubbles />}
     </div>
   );
 }
