@@ -17,7 +17,10 @@ import {
   ChevronRight,
   MoreVertical,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  CalendarDays,
+  Settings2,
+  ChevronDown
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
@@ -27,17 +30,31 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuCheckboxItem, DropdownMenuTrigger, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuLabel, 
+  DropdownMenuSeparator, 
+  DropdownMenuCheckboxItem, 
+  DropdownMenuTrigger, 
+  DropdownMenuItem 
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { 
   format, 
   startOfWeek, 
   addDays, 
   isSameDay, 
   isToday, 
-  startOfMonth, 
-  endOfMonth, 
   startOfDay,
-  parseISO
+  parseISO,
+  startOfMonth,
+  endOfMonth,
+  isWithinInterval
 } from "date-fns";
 
 export default function CalendarPage() {
@@ -61,22 +78,21 @@ export default function CalendarPage() {
   const supabase = createClient();
   const { toast } = useToast();
 
-  const forceUnlockUI = () => {
+  const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
       document.body.style.pointerEvents = "";
       document.body.style.overflow = "";
     }
-  };
+  }, []);
 
   useEffect(() => {
     return () => forceUnlockUI();
-  }, []);
+  }, [forceUnlockUI]);
 
   const fetchData = useCallback(async () => {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      // We query my_tasks_view and explicitly filter for active tasks with due dates
       const [tasksRes, teamsRes] = await Promise.all([
         supabase
           .from('my_tasks_view')
@@ -165,322 +181,276 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      {/* Header & Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Team Calendar</h1>
-          <p className="text-muted-foreground font-medium flex items-center gap-2">
-            <Clock className="w-4 h-4 text-primary" />
-            Deadlines and project timelines for the current period
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-sm border dark:border-slate-800">
-           <Select value={filters.teamId} onValueChange={v => setFilters(f => ({...f, teamId: v}))}>
-             <SelectTrigger className="w-[140px] border-none shadow-none focus:ring-0 bg-slate-50 dark:bg-slate-800 rounded-xl text-xs h-9">
-               <Layout className="w-3.5 h-3.5 mr-2 text-primary" />
-               <SelectValue placeholder="Team" />
-             </SelectTrigger>
-             <SelectContent className="dark:bg-slate-950">
-               <SelectItem value="all">All Teams</SelectItem>
-               <SelectItem value="none">No Team</SelectItem>
-               {subWorkspaces.map(team => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
-             </SelectContent>
-           </Select>
-
-           <Select value={filters.assignedTo} onValueChange={v => setFilters(f => ({...f, assignedTo: v}))}>
-             <SelectTrigger className="w-[140px] border-none shadow-none focus:ring-0 bg-slate-50 dark:bg-slate-800 rounded-xl text-xs h-9">
-               <User className="w-3.5 h-3.5 mr-2 text-primary" />
-               <SelectValue placeholder="Assignee" />
-             </SelectTrigger>
-             <SelectContent className="dark:bg-slate-950">
-               <SelectItem value="all">Everyone</SelectItem>
-               {members.map(m => <SelectItem key={m.user_id} value={m.user_id}>{(m.profiles as any)?.full_name}</SelectItem>)}
-             </SelectContent>
-           </Select>
-
-           <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
-             <DropdownMenuTrigger asChild>
-               <Button variant="outline" size="sm" className="h-9 text-xs gap-2 border-none bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700">
-                 <Filter className="w-3.5 h-3.5" /> Filters
-               </Button>
-             </DropdownMenuTrigger>
-             <DropdownMenuContent align="end" className="w-56 dark:bg-slate-950">
-               <DropdownMenuLabel>Status</DropdownMenuLabel>
-               {['to_do', 'in_progress', 'completed'].map(s => (
-                 <DropdownMenuCheckboxItem 
-                   key={s} 
-                   checked={filters.status.includes(s)} 
-                   onCheckedChange={c => setFilters(f => ({...f, status: c ? [...f.status, s] : f.status.filter(x => x !== s)}))}
-                   className="capitalize"
-                 >
-                   {s.replace('_', ' ')}
-                 </DropdownMenuCheckboxItem>
-               ))}
-               <DropdownMenuSeparator />
-               <DropdownMenuLabel>Priority</DropdownMenuLabel>
-               {['low', 'medium', 'high', 'urgent'].map(p => (
-                 <DropdownMenuCheckboxItem 
-                   key={p} 
-                   checked={filters.priority.includes(p)} 
-                   onCheckedChange={c => setFilters(f => ({...f, priority: c ? [...f.priority, p] : f.priority.filter(x => x !== p)}))}
-                   className="capitalize"
-                 >
-                   {p}
-                 </DropdownMenuCheckboxItem>
-               ))}
-               <DropdownMenuSeparator />
-               <DropdownMenuItem onClick={resetFilters} className="text-rose-500 gap-2 font-bold">
-                 <FilterX className="w-3.5 h-3.5" /> Reset All
-               </DropdownMenuItem>
-             </DropdownMenuContent>
-           </DropdownMenu>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-        {/* Main Schedule Board */}
-        <div className="xl:col-span-3 space-y-6">
-          <Card className="border-none shadow-xl bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
-            <CardHeader className="p-6 border-b dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md sticky top-0 z-10">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                    {format(currentDate, "MMMM yyyy")}
-                  </h2>
-                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setCurrentDate(prev => addDays(prev, -7))}>
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-8 text-[10px] font-bold uppercase tracking-widest px-3" onClick={() => setCurrentDate(new Date())}>
-                      Today
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setCurrentDate(prev => addDays(prev, 7))}>
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-bold">
-                  Weekly Schedule
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 overflow-x-auto no-scrollbar">
-              <div className="grid grid-cols-7 min-w-[1000px] border-collapse">
-                {weekDays.map((day) => {
-                  const dayTasks = filteredTasks.filter(t => isSameDay(parseISO(t.due_date), day));
-                  const isDayToday = isToday(day);
-                  const isDaySelected = selectedDate && isSameDay(day, selectedDate);
-
-                  return (
-                    <div 
-                      key={day.toISOString()} 
-                      className={cn(
-                        "min-h-[600px] border-r dark:border-slate-800 last:border-r-0 transition-colors",
-                        isDayToday ? "bg-primary/[0.02]" : "",
-                        isDaySelected ? "bg-primary/[0.04]" : ""
-                      )}
-                      onClick={() => setSelectedDate(day)}
-                    >
-                      <div className={cn(
-                        "p-4 sticky top-[73px] z-[5] text-center border-b dark:border-slate-800 transition-all",
-                        isDayToday ? "bg-primary text-white" : "bg-slate-50/80 dark:bg-slate-950/40 backdrop-blur-sm"
-                      )}>
-                        <p className={cn(
-                          "text-[10px] font-bold uppercase tracking-[0.2em] mb-1",
-                          isDayToday ? "text-white/80" : "text-slate-400"
-                        )}>
-                          {format(day, "EEE")}
-                        </p>
-                        <p className="text-xl font-extrabold">{format(day, "d")}</p>
-                      </div>
-
-                      <div className="p-3 space-y-3">
-                        {loading ? (
-                          <div className="flex justify-center py-10 opacity-20">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          </div>
-                        ) : dayTasks.length === 0 ? (
-                          <div className="py-20 flex flex-col items-center justify-center opacity-10">
-                            <Clock className="w-8 h-8" />
-                          </div>
-                        ) : (
-                          dayTasks.map(task => (
-                            <Card 
-                              key={task.id} 
-                              className={cn(
-                                "group cursor-pointer hover:shadow-lg transition-all border-l-4 hover:translate-y-[-2px] active:scale-95 overflow-hidden",
-                                getPriorityBg(task.priority),
-                                task.status === 'completed' && "opacity-60"
-                              )}
-                              style={{ borderLeftColor: `hsl(var(--primary))` }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedTask(task);
-                                setIsDetailOpen(true);
-                              }}
-                            >
-                              <CardContent className="p-3 space-y-2">
-                                <div className="flex justify-between items-start gap-2">
-                                  <h4 className={cn(
-                                    "text-xs font-bold leading-tight line-clamp-2",
-                                    task.status === 'completed' && "line-through text-muted-foreground"
-                                  )}>
-                                    {task.title}
-                                  </h4>
-                                  <Badge className={cn("text-[8px] h-4 py-0 uppercase shrink-0", getPriorityColor(task.priority))}>
-                                    {task.priority[0]}
-                                  </Badge>
-                                </div>
-                                <div className="flex items-center justify-between pt-1">
-                                  <div className="flex -space-x-1">
-                                    <Badge variant="outline" className="text-[8px] h-4 border-none bg-black/5 dark:bg-white/5 font-medium">
-                                      {format(parseISO(task.due_date), "HH:mm")}
-                                    </Badge>
-                                  </div>
-                                  <span className="text-[9px] font-bold text-slate-400 truncate max-w-[60px]">
-                                    {task.assigned_to_name?.split(' ')[0] || 'Unassigned'}
-                                  </span>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar Controls */}
-        <div className="space-y-6">
-          <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
-            <CardContent className="p-4">
-              <Calendar 
-                mode="single" 
-                selected={selectedDate} 
-                onSelect={setSelectedDate} 
-                className="w-full"
-                classNames={{
-                  months: "w-full",
-                  month: "w-full space-y-4",
-                  table: "w-full border-collapse space-y-1",
-                  head_row: "flex justify-around",
-                  row: "flex w-full mt-2 justify-around",
-                  day: "h-10 w-10 p-0 font-medium rounded-xl hover:bg-primary/10 transition-all flex items-center justify-center dark:text-slate-300",
-                  day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-                  day_today: "bg-accent text-accent-foreground font-bold",
-                }}
-              />
-            </CardContent>
-          </Card>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2 px-2">
-              <Clock className="w-4 h-4" />
-              {selectedDate ? format(selectedDate, "MMM d, yyyy") : 'Deadlines'}
-            </h3>
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
-              {loading ? (
-                <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-              ) : filteredTasks.filter(t => selectedDate && isSameDay(parseISO(t.due_date), selectedDate)).length === 0 ? (
-                <div className="text-center py-10 bg-slate-50/50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed dark:border-slate-800">
-                  <p className="text-xs font-medium text-slate-400">No tasks due today.</p>
-                </div>
-              ) : (
-                filteredTasks
-                  .filter(t => selectedDate && isSameDay(parseISO(t.due_date), selectedDate))
-                  .map(task => (
-                    <Card 
-                      key={task.id} 
-                      className="border-none shadow-sm hover:shadow-md transition-all cursor-pointer group bg-white dark:bg-slate-900 rounded-2xl overflow-hidden"
-                      onClick={() => {
-                        setSelectedTask(task);
-                        setIsDetailOpen(true);
-                      }}
-                    >
-                      <CardContent className="p-4 flex items-center gap-4">
-                        <div className={cn("w-1 h-10 rounded-full shrink-0", getPriorityColor(task.priority))} />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-bold text-sm truncate dark:text-white group-hover:text-primary transition-colors">
-                            {task.title}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className={cn(
-                              "text-[10px] font-bold uppercase",
-                              task.is_overdue ? "text-rose-500" : "text-slate-400"
-                            )}>
-                              {task.is_overdue ? "Overdue" : task.status.replace('_', ' ')}
-                            </span>
-                            {task.sub_workspace_name && (
-                              <Badge variant="secondary" className="text-[8px] h-3.5 px-1 bg-violet-500/10 text-violet-500 border-none">
-                                {task.sub_workspace_name}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <MoreVertical className="w-4 h-4" />
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))
-              )}
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20 max-w-[1600px] mx-auto">
+      {/* Dynamic Header */}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 bg-white dark:bg-slate-900 p-6 rounded-[2rem] shadow-sm border dark:border-slate-800">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-primary/10 rounded-2xl">
+            <CalendarIcon className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+              {format(currentDate, "MMMM yyyy")}
+            </h1>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-400 dark:border-slate-800">
+                Weekly Schedule
+              </Badge>
+              <span className="w-1 h-1 bg-slate-300 rounded-full" />
+              <p className="text-xs text-muted-foreground font-medium">
+                {format(weekDays[0], "MMM d")} - {format(weekDays[6], "MMM d, yyyy")}
+              </p>
             </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Week Navigation */}
+          <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 shrink-0">
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setCurrentDate(prev => addDays(prev, -7))}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            
+            <Popover onOpenChange={(open) => !open && forceUnlockUI()}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 text-[10px] font-bold uppercase tracking-widest px-3 gap-2">
+                  <CalendarDays className="w-3.5 h-3.5" />
+                  Jump to
+                  <ChevronDown className="w-3 h-3 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0 border-none shadow-2xl" align="center">
+                <Calendar 
+                  mode="single" 
+                  selected={currentDate} 
+                  onSelect={(d) => d && setCurrentDate(d)} 
+                  className="rounded-xl border dark:border-slate-800 bg-white dark:bg-slate-950"
+                />
+              </PopoverContent>
+            </Popover>
+
+            <Button variant="ghost" size="sm" className="h-8 text-[10px] font-bold uppercase tracking-widest px-3" onClick={() => setCurrentDate(new Date())}>
+              Today
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg" onClick={() => setCurrentDate(prev => addDays(prev, 7))}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+
+          <Separator orientation="vertical" className="h-8 mx-2 hidden xl:block" />
+
+          {/* Quick Filters */}
+          <div className="flex items-center gap-2">
+            <Select value={filters.teamId} onValueChange={v => setFilters(f => ({...f, teamId: v}))}>
+              <SelectTrigger className="w-[140px] h-9 rounded-xl border dark:border-slate-800 text-xs font-bold bg-white dark:bg-slate-950 shadow-none">
+                <Layout className="w-3.5 h-3.5 mr-2 text-primary" />
+                <SelectValue placeholder="Team" />
+              </SelectTrigger>
+              <SelectContent className="dark:bg-slate-950">
+                <SelectItem value="all">All Teams</SelectItem>
+                <SelectItem value="none">General</SelectItem>
+                {subWorkspaces.map(team => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 text-xs gap-2 rounded-xl dark:border-slate-800 bg-white dark:bg-slate-950 shadow-none">
+                  <Filter className="w-3.5 h-3.5" /> Filters
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 dark:bg-slate-950 rounded-xl">
+                <DropdownMenuLabel>Status</DropdownMenuLabel>
+                {['to_do', 'in_progress', 'completed'].map(s => (
+                  <DropdownMenuCheckboxItem 
+                    key={s} 
+                    checked={filters.status.includes(s)} 
+                    onCheckedChange={c => setFilters(f => ({...f, status: c ? [...f.status, s] : f.status.filter(x => x !== s)}))}
+                    className="capitalize"
+                  >
+                    {s.replace('_', ' ')}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Priority</DropdownMenuLabel>
+                {['low', 'medium', 'high', 'urgent'].map(p => (
+                  <DropdownMenuCheckboxItem 
+                    key={p} 
+                    checked={filters.priority.includes(p)} 
+                    onCheckedChange={c => setFilters(f => ({...f, priority: c ? [...f.priority, p] : f.priority.filter(x => x !== p)}))}
+                    className="capitalize"
+                  >
+                    {p}
+                  </DropdownMenuCheckboxItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={resetFilters} className="text-rose-500 gap-2 font-bold">
+                  <FilterX className="w-3.5 h-3.5" /> Reset All
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
 
+      {/* Main Grid View */}
+      <Card className="border-none shadow-xl bg-white dark:bg-slate-900 rounded-[2.5rem] overflow-hidden">
+        <CardContent className="p-0 overflow-x-auto no-scrollbar">
+          <div className="grid grid-cols-7 min-w-[1200px] divide-x dark:divide-slate-800">
+            {weekDays.map((day) => {
+              const dayTasks = filteredTasks.filter(t => isSameDay(parseISO(t.due_date), day));
+              const isDayToday = isToday(day);
+              const isDaySelected = selectedDate && isSameDay(day, selectedDate);
+
+              return (
+                <div 
+                  key={day.toISOString()} 
+                  className={cn(
+                    "min-h-[700px] transition-colors flex flex-col group/day",
+                    isDayToday ? "bg-primary/[0.02]" : "bg-white dark:bg-slate-900"
+                  )}
+                  onClick={() => setSelectedDate(day)}
+                >
+                  <div className={cn(
+                    "p-6 text-center border-b dark:border-slate-800 transition-all sticky top-0 z-20 backdrop-blur-md",
+                    isDayToday ? "bg-primary text-white" : "bg-slate-50/80 dark:bg-slate-950/80"
+                  )}>
+                    <p className={cn(
+                      "text-[10px] font-bold uppercase tracking-[0.2em] mb-1",
+                      isDayToday ? "text-white/80" : "text-slate-400"
+                    )}>
+                      {format(day, "EEEE")}
+                    </p>
+                    <p className="text-3xl font-extrabold">{format(day, "d")}</p>
+                  </div>
+
+                  <div className="p-4 space-y-4 flex-1">
+                    {loading ? (
+                      <div className="flex justify-center py-20 opacity-20">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      </div>
+                    ) : dayTasks.length === 0 ? (
+                      <div className="py-20 flex flex-col items-center justify-center opacity-0 group-hover/day:opacity-5 transition-opacity">
+                        <Clock className="w-12 h-12" />
+                      </div>
+                    ) : (
+                      dayTasks.map(task => (
+                        <Card 
+                          key={task.id} 
+                          className={cn(
+                            "group cursor-pointer hover:shadow-xl transition-all border-l-4 hover:translate-y-[-4px] active:scale-95 overflow-hidden rounded-2xl",
+                            getPriorityBg(task.priority),
+                            task.status === 'completed' && "opacity-60 grayscale-[0.5]"
+                          )}
+                          style={{ borderLeftColor: `hsl(var(--primary))` }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedTask(task);
+                            setIsDetailOpen(true);
+                          }}
+                        >
+                          <CardContent className="p-4 space-y-3">
+                            <div className="flex justify-between items-start gap-2">
+                              <h4 className={cn(
+                                "text-xs font-bold leading-tight line-clamp-3 dark:text-slate-100",
+                                task.status === 'completed' && "line-through text-muted-foreground"
+                              )}>
+                                {task.title}
+                              </h4>
+                            </div>
+                            
+                            <div className="flex items-center justify-between pt-2 border-t border-black/5 dark:border-white/5">
+                              <div className="flex items-center gap-1.5">
+                                <Badge variant="outline" className="text-[9px] h-4 py-0 border-none bg-black/5 dark:bg-white/10 font-bold uppercase tracking-tighter">
+                                  {format(parseISO(task.due_date), "HH:mm")}
+                                </Badge>
+                                {task.priority === 'urgent' && <AlertCircle className="w-3 h-3 text-rose-500 animate-pulse" />}
+                              </div>
+                              <span className="text-[10px] font-bold text-slate-400 truncate max-w-[80px]">
+                                {task.assigned_to_name?.split(' ')[0] || 'Unassigned'}
+                              </span>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Mobile/Floating Detail Sheet */}
       <Sheet open={isDetailOpen} onOpenChange={(open) => { setIsDetailOpen(open); if (!open) forceUnlockUI(); }}>
-        <SheetContent className="w-full sm:max-w-xl overflow-y-auto dark:bg-slate-950 dark:border-slate-800">
+        <SheetContent className="w-full sm:max-w-xl overflow-y-auto dark:bg-slate-950 dark:border-slate-800 p-0">
           {selectedTask && (
-            <div className="space-y-8 pt-6">
-              <SheetHeader>
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <Badge variant="outline" className="capitalize dark:border-slate-800 dark:text-slate-400">{selectedTask.priority}</Badge>
-                  <Badge variant="secondary" className="capitalize dark:bg-slate-900 dark:text-slate-300">{selectedTask.status?.replace('_', ' ')}</Badge>
-                </div>
-                <SheetTitle className="text-2xl font-bold dark:text-slate-100">{selectedTask.title}</SheetTitle>
-                <SheetDescription className="dark:text-slate-400">{selectedTask.description || 'No description provided.'}</SheetDescription>
-              </SheetHeader>
-              
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800">
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Due Date</p>
-                    <p className="text-sm font-medium flex items-center gap-2 dark:text-slate-300">
-                      <CalendarIcon className="w-3.5 h-3.5" />
-                      {format(parseISO(selectedTask.due_date), "PPP p")}
-                    </p>
+            <div className="flex flex-col h-full">
+              <div className={cn("h-2 w-full", getPriorityColor(selectedTask.priority))} />
+              <div className="p-8 space-y-8">
+                <SheetHeader>
+                  <div className="flex items-center gap-2 mb-4 flex-wrap">
+                    <Badge variant="outline" className="capitalize dark:border-slate-800 dark:text-slate-400 font-bold">{selectedTask.priority}</Badge>
+                    <Badge variant="secondary" className="capitalize dark:bg-slate-900 dark:text-slate-300 font-bold">{selectedTask.status?.replace('_', ' ')}</Badge>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Assigned To</p>
-                    <p className="text-sm font-medium flex items-center gap-2 dark:text-slate-300">
-                      <User className="w-3.5 h-3.5" />
-                      {selectedTask.assigned_to_name || 'Unassigned'}
-                    </p>
+                  <SheetTitle className="text-3xl font-extrabold dark:text-slate-100 tracking-tight leading-tight">
+                    {selectedTask.title}
+                  </SheetTitle>
+                  <SheetDescription className="text-base text-slate-500 dark:text-slate-400 pt-2 leading-relaxed">
+                    {selectedTask.description || 'No description provided.'}
+                  </SheetDescription>
+                </SheetHeader>
+                
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-[1.5rem] border border-slate-100 dark:border-slate-800 space-y-1.5">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Deadline</p>
+                      <p className="text-sm font-bold flex items-center gap-2 dark:text-slate-100">
+                        <CalendarIcon className="w-4 h-4 text-primary" />
+                        {format(parseISO(selectedTask.due_date), "PPP p")}
+                      </p>
+                    </div>
+                    <div className="p-5 bg-slate-50 dark:bg-slate-900 rounded-[1.5rem] border border-slate-100 dark:border-slate-800 space-y-1.5">
+                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Owner</p>
+                      <p className="text-sm font-bold flex items-center gap-2 dark:text-slate-100">
+                        <User className="w-4 h-4 text-primary" />
+                        {selectedTask.assigned_to_name || 'Unassigned'}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-bold dark:text-slate-100">Progress ({selectedTask.progress_mode})</span>
-                    <span className="text-xs font-bold text-primary">
-                      {Math.round(selectedTask.progress_mode === 'manual' ? (selectedTask.manual_progress || 0) : (selectedTask.calculated_progress || 0))}%
-                    </span>
+                  <div className="p-6 bg-slate-50 dark:bg-slate-900 rounded-[1.5rem] border border-slate-100 dark:border-slate-800 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-bold dark:text-slate-100 flex items-center gap-2">
+                        <Settings2 className="w-4 h-4 text-primary" />
+                        Execution Progress
+                      </span>
+                      <span className="text-xs font-extrabold text-primary">
+                        {Math.round(selectedTask.progress_mode === 'manual' ? (selectedTask.manual_progress || 0) : (selectedTask.calculated_progress || 0))}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={selectedTask.progress_mode === 'manual' ? (selectedTask.manual_progress || 0) : (selectedTask.calculated_progress || 0)} 
+                      className="h-2 bg-slate-200 dark:bg-slate-800" 
+                    />
                   </div>
-                  <Progress 
-                    value={selectedTask.progress_mode === 'manual' ? (selectedTask.manual_progress || 0) : (selectedTask.calculated_progress || 0)} 
-                    className="h-2" 
-                  />
-                </div>
 
-                <div className="pt-6 flex justify-end">
-                  <Button variant="outline" className="rounded-xl" onClick={() => setIsDetailOpen(false)}>Close Panel</Button>
+                  <div className="pt-10 flex flex-col gap-3">
+                    <Button 
+                      className="w-full h-12 rounded-2xl font-bold shadow-lg shadow-primary/20" 
+                      onClick={() => setIsDetailOpen(false)}
+                    >
+                      Return to Calendar
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      className="w-full h-12 rounded-2xl text-slate-400 hover:text-slate-900 font-bold"
+                      onClick={() => window.location.href = `/tasks?taskId=${selectedTask.id}`}
+                    >
+                      Open Task Details
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -490,3 +460,4 @@ export default function CalendarPage() {
     </div>
   );
 }
+
