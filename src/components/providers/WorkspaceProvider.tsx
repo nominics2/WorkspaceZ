@@ -89,29 +89,37 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         applyTheme(profile.theme_preference as ThemePreference);
       }
 
-      // Fetch Workspace Memberships
-      const { data: members, error } = await supabase
-        .from('workspace_members')
-        .select(`
-          workspace_id,
-          role,
-          is_verified,
-          workspaces (
-            id,
-            name,
-            join_code,
-            icon_preset
-          )
-        `)
-        .eq('user_id', user.id)
-        .eq('status', 'active');
+      // Parallel fetch for Onboarding state and Workspace memberships
+      const [onboardingRes, membersRes] = await Promise.all([
+        supabase.rpc('get_my_onboarding'),
+        supabase
+          .from('workspace_members')
+          .select(`
+            workspace_id,
+            role,
+            is_verified,
+            workspaces (
+              id,
+              name,
+              join_code,
+              icon_preset
+            )
+          `)
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+      ]);
 
-      if (error) throw error;
-
+      const onboarding = onboardingRes.data;
+      const members = membersRes.data || [];
       const wsList = (members as any[]).map(m => m.workspaces).filter(Boolean);
       setWorkspaces(wsList);
 
       if (wsList.length > 0) {
+        // Core Logic: If user has a workspace, onboarding is technically advanced
+        if (onboarding && !onboarding.workspace_completed) {
+          await supabase.rpc('update_my_onboarding', { p_workspace_completed: true });
+        }
+
         const currentWsId = typeof window !== 'undefined' ? localStorage.getItem('last_workspace_id') : null;
         const currentWs = (currentWsId ? wsList.find(w => w.id === currentWsId) : wsList[0]) || wsList[0];
         
@@ -136,8 +144,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           
           setPermissions(perms?.map(p => p.permission_key) || []);
         }
-      } else if (pathname !== '/workspace-setup' && !pathname.startsWith('/onboarding') && pathname !== '/') {
-        router.push('/workspace-setup');
+
+        // Routing Logic: If already has a workspace, skip onboarding page
+        if (pathname === '/onboarding') {
+          router.push('/dashboard');
+        }
+      } else {
+        // No Workspace Logic: Redirect to onboarding if not already there
+        if (pathname !== '/onboarding' && pathname !== '/' && pathname !== '/workspace-setup') {
+          router.push('/onboarding');
+        }
       }
     } catch (err) {
       console.error('Error fetching workspace data:', err);
