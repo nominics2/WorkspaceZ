@@ -57,6 +57,8 @@ interface FloatingChatContextType {
 
 const FloatingChatContext = createContext<FloatingChatContextType | undefined>(undefined);
 
+const BUBBLE_STORAGE_KEY = 'workspacez_floating_chat_bubbles';
+
 export function FloatingChatProvider({ children }: { children: React.ReactNode }) {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [floatingBubbles, setFloatingBubbles] = useState<Chat[]>([]);
@@ -67,6 +69,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
   const [muteStates, setMuteStates] = useState<Record<string, { is_muted: boolean, muted_until: string | null }>>({});
   
   const lastSoundPlayRef = useRef<number>(0);
+  const isHydratedRef = useRef<boolean>(false);
   const supabase = createClient();
 
   const fetchNotificationPrefs = useCallback(async () => {
@@ -146,31 +149,52 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     }
   }, [supabase]);
 
-  /**
-   * PLAY NOTIFICATION SOUND
-   * Respects cooldown to avoid spam.
-   */
   const playNotificationSound = useCallback(() => {
     if (!notificationPrefs?.sound_enabled) return;
 
     const now = Date.now();
-    // Cooldown of 2 seconds
     if (now - lastSoundPlayRef.current < 2000) return;
 
     lastSoundPlayRef.current = now;
 
     try {
-      // TODO: Ensure public/sounds/chat-notification.mp3 exists for production
       const audio = new Audio('/sounds/chat-notification.mp3');
       audio.volume = 0.4;
       audio.play().catch(e => {
-        // Autoplay restrictions or missing asset - log and ignore
         console.log('[Notification Sound] Playback blocked or asset missing:', e.message);
       });
     } catch (err) {
-      // Audio API not supported or unexpected error
+      // Audio API not supported
     }
   }, [notificationPrefs]);
+
+  // PERSISTENCE: Hydrate from localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined' || !userProfile) return;
+
+    try {
+      const saved = localStorage.getItem(BUBBLE_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Basic validation to ignore malformed data
+          const validBubbles = parsed.filter(b => b && b.id && b.workspace_id);
+          setFloatingBubbles(validBubbles);
+        }
+      }
+    } catch (err) {
+      console.error("[FloatingChat] Persistence hydration failed:", err);
+    } finally {
+      isHydratedRef.current = true;
+    }
+  }, [userProfile]);
+
+  // PERSISTENCE: Sync changes to localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined' || !userProfile || !isHydratedRef.current) return;
+    
+    localStorage.setItem(BUBBLE_STORAGE_KEY, JSON.stringify(floatingBubbles));
+  }, [floatingBubbles, userProfile]);
 
   // Presence logic
   useEffect(() => {
@@ -245,6 +269,9 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
         setOnlineUsers({});
         setNotificationPrefs(null);
         setMuteStates({});
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem(BUBBLE_STORAGE_KEY);
+        }
       } else {
         fetchUnreadData();
         fetchNotificationPrefs();
