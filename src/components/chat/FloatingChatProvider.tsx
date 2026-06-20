@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useWorkspace } from '@/components/providers/WorkspaceProvider';
 
 export interface Chat {
   id: string;
@@ -14,14 +15,24 @@ export interface Chat {
   display_name?: string;
   display_avatar?: string;
   display_avatar_preset?: string;
+  other_user_id?: string; // Added to track the other person in direct chats
   archived_at?: string | null;
   archived_by?: string | null;
+}
+
+export interface PresenceUser {
+  user_id: string;
+  full_name: string;
+  avatar_url: string;
+  avatar_preset: string;
+  online_at: string;
 }
 
 interface FloatingChatContextType {
   floatingBubbles: Chat[];
   expandedChannelId: string | null;
   totalUnreadCount: number;
+  onlineUsers: Record<string, PresenceUser>;
   addBubble: (chat: Chat) => void;
   removeBubble: (chatId: string) => void;
   toggleExpand: (chatId: string | null) => void;
@@ -31,9 +42,11 @@ interface FloatingChatContextType {
 const FloatingChatContext = createContext<FloatingChatContextType | undefined>(undefined);
 
 export function FloatingChatProvider({ children }: { children: React.ReactNode }) {
+  const { activeWorkspace, userProfile } = useWorkspace();
   const [floatingBubbles, setFloatingBubbles] = useState<Chat[]>([]);
   const [expandedChannelId, setExpandedChannelId] = useState<string | null>(null);
   const [totalUnreadCount, setTotalUnreadCount] = useState(0);
+  const [onlineUsers, setOnlineUsers] = useState<Record<string, PresenceUser>>({});
   
   const supabase = createClient();
 
@@ -72,6 +85,54 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     }
   }, [supabase]);
 
+  // Presence logic
+  useEffect(() => {
+    if (!activeWorkspace || !userProfile) {
+      setOnlineUsers({});
+      return;
+    }
+
+    const channelId = `workspace-presence:${activeWorkspace.id}`;
+    const channel = supabase.channel(channelId);
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const newState = channel.presenceState();
+        const users: Record<string, PresenceUser> = {};
+        
+        Object.keys(newState).forEach((key) => {
+          const userPresences = newState[key] as any[];
+          userPresences.forEach((p) => {
+            if (p.user_id) {
+              users[p.user_id] = {
+                user_id: p.user_id,
+                full_name: p.full_name,
+                avatar_url: p.avatar_url,
+                avatar_preset: p.avatar_preset,
+                online_at: p.online_at
+              };
+            }
+          });
+        });
+        setOnlineUsers(users);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: userProfile.id,
+            full_name: userProfile.full_name,
+            avatar_url: userProfile.avatar_url,
+            avatar_preset: userProfile.avatar_preset,
+            online_at: new Date().toISOString(),
+          });
+        }
+      });
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [supabase, activeWorkspace, userProfile]);
+
   useEffect(() => {
     fetchUnreadData();
 
@@ -93,6 +154,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
         setTotalUnreadCount(0);
         setFloatingBubbles([]);
         setExpandedChannelId(null);
+        setOnlineUsers({});
       } else {
         fetchUnreadData();
       }
@@ -126,6 +188,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       floatingBubbles,
       expandedChannelId,
       totalUnreadCount,
+      onlineUsers,
       addBubble,
       removeBubble,
       toggleExpand,

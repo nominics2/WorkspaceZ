@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { 
   Send, 
   X, 
@@ -79,7 +79,7 @@ export function FloatingChatWindow({
   isMuted?: boolean;
 }) {
   const { userProfile, userRole } = useWorkspace();
-  const { refreshUnread } = useFloatingChat();
+  const { refreshUnread, onlineUsers } = useFloatingChat();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState("");
@@ -299,22 +299,34 @@ export function FloatingChatWindow({
     }
   };
 
+  const isUserOnline = useMemo(() => {
+    if (chat.type !== 'direct' || !chat.other_user_id) return false;
+    return !!onlineUsers[chat.other_user_id];
+  }, [chat, onlineUsers]);
+
   return (
     <div className="w-[calc(100vw-2rem)] sm:w-[350px] h-[450px] sm:h-[500px] bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto">
       <div className="p-4 border-b dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <Avatar className="w-8 h-8">
-            <AvatarImage src={chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar} />
-            <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">
-              {chat.display_name?.[0]?.toUpperCase() || 'C'}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className="w-8 h-8">
+              <AvatarImage src={chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar} />
+              <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-bold">
+                {chat.display_name?.[0]?.toUpperCase() || 'C'}
+              </AvatarFallback>
+            </Avatar>
+            {isUserOnline && (
+              <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white dark:border-slate-900 rounded-full" />
+            )}
+          </div>
           <div className="min-w-0">
             <p className="text-sm font-bold truncate dark:text-white flex items-center gap-1.5">
               {chat.display_name}
               {isMuted && <BellOff className="w-3 h-3 text-slate-400" />}
             </p>
-            <p className="text-[10px] text-emerald-500 font-medium">Ready</p>
+            <p className={cn("text-[10px] font-medium", isUserOnline ? "text-emerald-500" : "text-slate-400")}>
+              {chat.type === 'direct' ? (isUserOnline ? "Online" : "Offline") : "Ready"}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
