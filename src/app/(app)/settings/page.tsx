@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { usePushNotifications } from "@/components/providers/PushNotificationProvider";
+import { usePwaInstall } from "@/components/providers/PwaInstallProvider";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,7 +59,9 @@ const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`
 
 export default function SettingsPage() {
   const { activeWorkspace, userProfile, refreshWorkspaces, themePreference, setThemePreference } = useWorkspace();
-  const { isSupported, isConfigured, isSubscribed, permissionState, isIOS, isStandalone, isLoading: pushLoading, enablePush, disablePush } = usePushNotifications();
+  const { isSupported, isConfigured, isSubscribed, permissionState, isLoading: pushLoading, enablePush, disablePush } = usePushNotifications();
+  const { installAvailable, isStandalone, isIOS, promptInstall } = usePwaInstall();
+  
   const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 1024 * 1024 * 1024 }); 
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -66,8 +69,6 @@ export default function SettingsPage() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-
   const [profileForm, setProfileForm] = useState({
     full_name: "",
     username: "",
@@ -90,19 +91,6 @@ export default function SettingsPage() {
       });
     }
   }, [userProfile]);
-
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    };
-  }, []);
 
   const fetchStorageUsage = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -224,15 +212,6 @@ export default function SettingsPage() {
       toast({ title: "Notification moved to trash" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
-    }
-  };
-
-  const handleInstallApp = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
     }
   };
 
@@ -424,24 +403,24 @@ export default function SettingsPage() {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
                         <Label htmlFor="full_name" className="text-slate-950 dark:text-slate-100">Full Name</Label>
-                        <Input 
+                        <input
                           id="full_name" 
                           value={profileForm.full_name ?? ""} 
                           onChange={(e) => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
                           placeholder="Your real name"
                           disabled={savingProfile}
-                          className="dark:bg-slate-900 dark:border-slate-800"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:border-slate-800"
                         />
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="username" className="text-slate-950 dark:text-slate-100">Username</Label>
-                        <Input 
+                        <input 
                           id="username" 
                           value={profileForm.username ?? ""} 
                           onChange={(e) => setProfileForm(f => ({ ...f, username: e.target.value }))}
                           placeholder="unique_handle"
                           disabled={savingProfile}
-                          className="dark:bg-slate-900 dark:border-slate-800"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:border-slate-800"
                         />
                         <p className="text-[10px] text-muted-foreground">3-20 characters, lowercase, numbers, or underscores.</p>
                       </div>
@@ -449,7 +428,7 @@ export default function SettingsPage() {
 
                     <div className="space-y-2">
                       <Label className="text-slate-950 dark:text-slate-100">Email Address</Label>
-                      <Input value={userProfile?.email ?? ""} disabled className="bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed dark:border-slate-700" />
+                      <input value={userProfile?.email ?? ""} disabled className="flex h-10 w-full rounded-md border border-input bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed px-3 py-2 text-sm dark:border-slate-700" />
                       <p className="text-[10px] text-muted-foreground italic">Email change is managed by workspace administrators.</p>
                     </div>
 
@@ -817,20 +796,23 @@ export default function SettingsPage() {
                         </h3>
                         <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border dark:border-slate-800 flex flex-col items-center gap-4 text-center">
                           <div className="p-4 bg-primary/10 rounded-full mb-2">
-                            <Download className="w-8 h-8 text-primary animate-bounce" />
+                            <Download className="w-8 h-8 text-primary" />
                           </div>
                           <div className="space-y-1">
                             <p className="font-bold text-lg text-slate-950 dark:text-slate-100">Add to your device</p>
                             <p className="text-sm text-muted-foreground max-w-xs">
-                              {deferredPrompt 
+                              {installAvailable 
                                 ? "One click to install Workspace Z on your desktop or mobile device." 
                                 : "Install instructions are available below for your specific platform."}
                             </p>
                           </div>
-                          {deferredPrompt && (
-                            <Button onClick={handleInstallApp} className="w-full sm:w-auto px-12 h-12 rounded-xl shadow-lg shadow-primary/20 gap-2 text-lg">
+                          {installAvailable && (
+                            <Button onClick={promptInstall} className="w-full sm:w-auto px-12 h-12 rounded-xl shadow-lg shadow-primary/20 gap-2 text-lg">
                               Install Workspace Z
                             </Button>
+                          )}
+                          {!installAvailable && !isIOS && (
+                            <p className="text-xs text-muted-foreground italic">Install prompt is not available in this browser.</p>
                           )}
                         </div>
                       </div>
