@@ -109,7 +109,6 @@ export function NotificationBell() {
               if (isMuted) return;
 
               // Check if user is currently looking at this chat
-              // This is a heuristic: if on /chat page with same channel, or bubble expanded
               const isReading = (pathname === '/chat' && expandedChannelId === null) || (expandedChannelId === channelId);
 
               if (inAppEnabled && !isReading) {
@@ -217,7 +216,9 @@ export function NotificationBell() {
       }
     }
 
-    if (notification.related_task_id) {
+    if (notification.type === 'app_update' && notification.related_app_update_id) {
+      router.push(`/app-updates?id=${notification.related_app_update_id}`);
+    } else if (notification.related_task_id) {
       router.push(`/tasks?taskId=${notification.related_task_id}`);
     } else if (notification.related_note_id) {
       router.push(`/notes?noteId=${notification.related_note_id}`);
@@ -303,15 +304,15 @@ export function NotificationBell() {
                     </p>
                     <div className="flex items-center gap-2 mt-2">
                       {notification.type && (
-                        <Badge variant="outline" className="text-[8px] h-4 py-0 px-1 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
-                          {notification.type}
+                        <Badge variant="outline" className="text-[8px] h-4 py-0 px-1.5 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
+                          {notification.type.replace('_', ' ')}
                         </Badge>
                       )}
                     </div>
                   </div>
                   {!notification.is_read && (
                     <button 
-                      onClick={(e) => handleMarkAsRead(e, notification.id)}
+                      onClick={(e) => { e.stopPropagation(); handleMarkAsRead(e, notification.id); }}
                       className="opacity-0 group-hover:opacity-100 transition-opacity text-primary p-1 hover:bg-primary/10 rounded-lg shrink-0 h-fit"
                       title="Mark as read"
                     >

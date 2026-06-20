@@ -23,7 +23,8 @@ import {
   Check,
   X,
   ChevronRight,
-  Globe
+  Globe,
+  BellRing
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -54,6 +55,17 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function AppUpdatesAdminPage() {
   const { userProfile } = useWorkspace();
@@ -64,6 +76,7 @@ export default function AppUpdatesAdminPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [pushingId, setPushingId] = useState<string | null>(null);
   
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState<any>(null);
@@ -111,7 +124,7 @@ export default function AppUpdatesAdminPage() {
         supabase.from('app_updates').select('*').order('published_at', { ascending: false }),
         supabase.from('app_features').select('*').order('category', { ascending: true }).order('sort_order', { ascending: true }),
         supabase.from('workspaces').select('id, name').order('name', { ascending: true }),
-        supabase.from('profiles').select('id, full_name, email, avatar_url, avatar_preset').order('full_name', { ascending: true }).limit(100)
+        supabase.from('profiles').select('id, full_name, username, avatar_url, avatar_preset').order('full_name', { ascending: true }).limit(100)
       ]);
 
       setUpdates(updatesRes.data || []);
@@ -188,6 +201,32 @@ export default function AppUpdatesAdminPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handlePushToNotifications = async (id: string) => {
+    setPushingId(id);
+    try {
+      const { data: count, error } = await supabase.rpc("push_app_update_to_notifications", {
+        p_update_id: id
+      });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Success", 
+        description: `Update pushed to ${count} users successfully.` 
+      });
+      fetchData();
+    } catch (err: any) {
+      console.error("[Push] Failed:", err);
+      toast({ 
+        variant: "destructive", 
+        title: "Push Failed", 
+        description: err.message || "An error occurred while pushing notifications." 
+      });
+    } finally {
+      setPushingId(null);
     }
   };
 
@@ -270,7 +309,7 @@ export default function AppUpdatesAdminPage() {
               updates.map((up) => (
                 <Card key={up.id} className="border-none shadow-sm dark:bg-slate-900 overflow-hidden">
                   <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                    <div className="flex items-start gap-4">
+                    <div className="flex items-start gap-4 flex-1 min-w-0">
                       <div className={cn("p-2.5 rounded-xl shrink-0", 
                         up.update_type === 'feature' ? "bg-amber-50 dark:bg-amber-500/10 text-amber-500" :
                         up.update_type === 'maintenance' ? "bg-slate-100 dark:bg-slate-800 text-slate-500" :
@@ -297,6 +336,30 @@ export default function AppUpdatesAdminPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0 border-t md:border-none pt-3 md:pt-0">
+                      {up.status === 'published' && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="h-8 rounded-lg border-primary/20 hover:bg-primary/5 text-primary" disabled={pushingId === up.id}>
+                              {pushingId === up.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <BellRing className="w-3.5 h-3.5 mr-1.5" />}
+                              Push
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle className="dark:text-white">Push update to users?</AlertDialogTitle>
+                              <AlertDialogDescription className="dark:text-slate-400">
+                                This will generate workspace notifications for all targeted users. This action is immediate and cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => handlePushToNotifications(up.id)} className="bg-primary hover:bg-primary/90 text-white">
+                                Confirm & Push
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                       <Button variant="ghost" size="sm" className="h-8 rounded-lg" onClick={() => { setEditingUpdate(up); setUpdateForm({...up, target_ids: []}); setIsUpdateModalOpen(true); }}>
                         <Edit2 className="w-4 h-4 mr-2" /> Edit
                       </Button>

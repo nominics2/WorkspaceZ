@@ -20,7 +20,8 @@ import {
   Sun,
   Moon,
   Monitor,
-  Palette
+  Palette,
+  Sparkles
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -40,6 +41,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useRouter } from "next/navigation";
 
 type TabType = 'profile' | 'appearance' | 'notifications';
 
@@ -65,6 +67,7 @@ export default function SettingsPage() {
 
   const supabase = createClient();
   const { toast } = useToast();
+  const router = useRouter();
 
   useEffect(() => {
     if (userProfile) {
@@ -196,6 +199,27 @@ export default function SettingsPage() {
       toast({ title: "Notification moved to trash" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleNotificationClick = (n: any) => {
+    if (n.type === 'app_update' && n.related_app_update_id) {
+      router.push(`/app-updates?id=${n.related_app_update_id}`);
+      return;
+    }
+    
+    if (n.related_task_id) {
+      router.push(`/tasks?taskId=${n.related_task_id}`);
+    } else if (n.related_note_id) {
+      router.push(`/notes?noteId=${n.related_note_id}`);
+    } else if (n.related_message_id) {
+      router.push(`/chat`);
+    } else if (n.related_reminder_id || n.related_leave_request_id) {
+      router.push(`/dashboard`);
+    }
+
+    if (!n.is_read) {
+      handleMarkRead(n.id);
     }
   };
 
@@ -582,16 +606,20 @@ export default function SettingsPage() {
               ) : (
                 <div className="space-y-3">
                   {filteredNotifications.map((n) => (
-                    <Card key={n.id} className={cn(
-                      "border-none shadow-sm hover:shadow-md transition-all group overflow-hidden",
-                      !n.is_read ? "bg-primary/[0.02] ring-1 ring-primary/10" : "bg-white dark:bg-slate-900 dark:border dark:border-slate-800"
-                    )}>
+                    <Card 
+                      key={n.id} 
+                      className={cn(
+                        "border-none shadow-sm hover:shadow-md transition-all group overflow-hidden cursor-pointer",
+                        !n.is_read ? "bg-primary/[0.02] ring-1 ring-primary/10" : "bg-white dark:bg-slate-900 dark:border dark:border-slate-800"
+                      )}
+                      onClick={() => handleNotificationClick(n)}
+                    >
                       <CardContent className="p-4 flex items-start gap-4">
                         <div className={cn(
                           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
                           !n.is_read ? "bg-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
                         )}>
-                          {n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                          {n.type === 'app_update' ? <Sparkles className="w-5 h-5" /> : n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
                         </div>
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-2">
@@ -606,7 +634,7 @@ export default function SettingsPage() {
                           <div className="flex items-center gap-3 pt-1">
                             {n.type && (
                               <Badge variant="secondary" className="text-[9px] h-4 py-0 px-1.5 uppercase font-bold tracking-wider dark:bg-slate-800 dark:text-slate-400">
-                                {n.type}
+                                {n.type.replace('_', ' ')}
                               </Badge>
                             )}
                             {n.read_at && (
@@ -622,7 +650,7 @@ export default function SettingsPage() {
                               variant="ghost" 
                               size="icon" 
                               className="h-8 w-8 text-primary hover:bg-primary/5"
-                              onClick={() => handleMarkRead(n.id)}
+                              onClick={(e) => { e.stopPropagation(); handleMarkRead(n.id); }}
                               title="Mark as read"
                             >
                               <CheckCircle2 className="w-4 h-4" />
@@ -632,7 +660,7 @@ export default function SettingsPage() {
                             variant="ghost" 
                             size="icon" 
                             className="h-8 w-8 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                            onClick={() => handleMoveToTrash(n.id)}
+                            onClick={(e) => { e.stopPropagation(); handleMoveToTrash(n.id); }}
                             title="Move to trash"
                           >
                             <Trash2 className="w-4 h-4" />

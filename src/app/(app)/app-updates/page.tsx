@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   Sparkles, 
   RefreshCw, 
@@ -29,6 +29,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { useSearchParams } from "next/navigation";
 
 const typeConfig: Record<string, { label: string; icon: any; color: string; bg: string }> = {
   update: { label: "System Update", icon: RefreshCw, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-500/10" },
@@ -40,11 +41,14 @@ const typeConfig: Record<string, { label: string; icon: any; color: string; bg: 
 
 export default function AppUpdatesPage() {
   const { userProfile } = useWorkspace();
+  const searchParams = useSearchParams();
+  const highlightId = searchParams.get("id");
   const [updates, setUpdates] = useState<any[]>([]);
   const [features, setFeatures] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isDeveloper, setIsDeveloper] = useState(false);
   const supabase = createClient();
+  const highlightedRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -80,6 +84,17 @@ export default function AppUpdatesPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!loading && highlightId && updates.length > 0) {
+      setTimeout(() => {
+        const el = document.getElementById(`update-${highlightId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [loading, highlightId, updates]);
 
   const groupedFeatures = features.reduce((acc: any, feature) => {
     const cat = feature.category || "General";
@@ -123,8 +138,16 @@ export default function AppUpdatesPage() {
             <div className="space-y-6">
               {updates.map((update) => {
                 const config = typeConfig[update.update_type] || typeConfig.update;
+                const isHighlighted = highlightId === update.id;
                 return (
-                  <Card key={update.id} className="border-none shadow-md overflow-hidden bg-white dark:bg-slate-900 hover:shadow-xl transition-all group">
+                  <Card 
+                    key={update.id} 
+                    id={`update-${update.id}`}
+                    className={cn(
+                      "border-none shadow-md overflow-hidden bg-white dark:bg-slate-900 hover:shadow-xl transition-all group",
+                      isHighlighted && "ring-2 ring-primary ring-offset-4 dark:ring-offset-slate-950 scale-[1.01]"
+                    )}
+                  >
                     <CardHeader className="p-6 pb-2">
                       <div className="flex items-center justify-between mb-4">
                         <Badge className={cn("rounded-lg px-2.5 py-0.5 border-none font-bold uppercase text-[10px] tracking-widest", config.bg, config.color)}>
