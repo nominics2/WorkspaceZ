@@ -37,7 +37,8 @@ import {
   UserMinus,
   Shield,
   Trash2,
-  Copy
+  Copy,
+  CheckSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,6 +89,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
  * PRODUCTION TYPES
@@ -109,6 +111,7 @@ interface Message {
   sender_id: string;
   message: string;
   created_at: string;
+  updated_at?: string;
   profiles?: {
     full_name: string;
     avatar_url: string;
@@ -175,6 +178,11 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Message Editing State
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editMessageInput, setEditMessageInput] = useState("");
+  const [isEditingLoading, setIsEditingLoading] = useState(false);
 
   // Search in Chat state (Contextual)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -447,7 +455,7 @@ export default function ChatPage() {
       const [msgDataRes, attachDataRes] = await Promise.all([
         supabase
           .from('chat_messages')
-          .select('id, channel_id, workspace_id, sender_id, message, created_at, is_deleted')
+          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted')
           .eq('channel_id', channelId)
           .eq('is_deleted', false)
           .order('created_at', { ascending: true }),
@@ -933,6 +941,43 @@ export default function ChatPage() {
   };
 
   /**
+   * MESSAGE ACTIONS
+   */
+  const handleUpdateMessage = async () => {
+    const text = editMessageInput.trim();
+    if (!editingMessageId || !text || isEditingLoading) return;
+    
+    const original = messages.find(m => m.id === editingMessageId);
+    if (original?.message === text) {
+      setEditingMessageId(null);
+      return;
+    }
+
+    setIsEditingLoading(true);
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({
+          message: text,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingMessageId)
+        .eq('sender_id', userProfile?.id);
+
+      if (error) throw error;
+
+      setMessages(prev => prev.map(m => m.id === editingMessageId ? { ...m, message: text, updated_at: new Date().toISOString() } : m));
+      setEditingMessageId(null);
+      setEditMessageInput("");
+      toast({ title: "Message updated" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Edit failed", description: err.message });
+    } finally {
+      setIsEditingLoading(false);
+    }
+  };
+
+  /**
    * EFFECTS
    */
   useEffect(() => {
@@ -963,6 +1008,7 @@ export default function ChatPage() {
       setInChatSearchQuery("");
       setInChatSearchResults([]);
       setIsRenamingGroup(false);
+      setEditingMessageId(null);
     } else {
       setMessages([]);
     }
@@ -1304,54 +1350,93 @@ export default function ChatPage() {
                 {loadingMessages ? <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-3"><Loader2 className="w-8 h-8 animate-spin" /><p className="text-sm font-medium">Synchronizing history...</p></div> : messages.length === 0 ? <p className="text-center text-sm text-slate-400 py-20 italic">No messages yet. Start the conversation!</p> : messages.map((msg) => {
                   const isMe = msg.sender_id === userProfile?.id;
                   const isHighlighted = highlightedMessageId === msg.id;
+                  const isEditing = editingMessageId === msg.id;
+                  const wasEdited = msg.updated_at && new Date(msg.updated_at).getTime() - new Date(msg.created_at).getTime() > 1000;
+
                   return (
                     <div key={msg.id} id={`message-${msg.id}`} className={cn("group flex gap-3 max-w-[85%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
                       {!isMe && <Avatar className="w-8 h-8 shrink-0 mt-1"><AvatarImage src={msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url} /><AvatarFallback className="text-[10px]">{msg.profiles?.full_name?.[0]}</AvatarFallback></Avatar>}
-                      <div className={cn("flex flex-col relative", isMe ? "items-end" : "items-start")}>
+                      <div className={cn("flex flex-col relative", isMe ? "items-end" : "items-start", isEditing && "w-full")}>
                         {!isMe && <span className="text-[10px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
-                        <div className={cn("px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed border-2 border-transparent transition-all", isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700", isHighlighted && "border-primary ring-4 ring-primary/20")}>
-                          {msg.message}
-                          {msg.attachments && msg.attachments.length > 0 && (
-                            <div className="space-y-3 mt-4">
-                              {msg.attachments.map(att => {
-                                const isImage = att.file_type?.startsWith('image/');
-                                return (
-                                  <div key={att.id} className="max-w-xs">
-                                    {isImage && att.signed_url ? <img src={att.signed_url} alt={att.file_name} className="w-full rounded-xl cursor-pointer" onClick={() => window.open(att.signed_url, '_blank')} /> : <div className="flex items-center gap-4 p-3 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900"><FileIcon className="w-5 h-5" /><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{att.file_name}</p><p className="text-[10px] opacity-60 uppercase">{formatBytes(att.file_size_bytes)}</p></div><Button variant="ghost" size="icon" aria-label="Download" className="h-8 w-8" onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>}
-                                  </div>
-                                );
-                              })}
+                        
+                        {isEditing ? (
+                          <div className="w-full bg-slate-100 dark:bg-slate-800 p-3 rounded-2xl border-2 border-primary/20 space-y-2">
+                             <p className="text-[9px] font-bold text-primary uppercase tracking-widest px-1">Editing Message</p>
+                             <Textarea 
+                               value={editMessageInput}
+                               onChange={e => setEditMessageInput(e.target.value)}
+                               className="min-h-[80px] bg-white dark:bg-slate-950 border-none shadow-none focus-visible:ring-1 focus-visible:ring-primary/40 text-sm"
+                               autoFocus
+                               onKeyDown={e => {
+                                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleUpdateMessage(); }
+                                 if (e.key === 'Escape') setEditingMessageId(null);
+                               }}
+                             />
+                             <div className="flex justify-end gap-2">
+                                <Button size="sm" variant="ghost" className="h-7 text-[10px] font-bold uppercase" onClick={() => setEditingMessageId(null)} disabled={isEditingLoading}>Cancel</Button>
+                                <Button size="sm" className="h-7 text-[10px] font-bold uppercase" onClick={handleUpdateMessage} disabled={isEditingLoading || !editMessageInput.trim()}>
+                                  {isEditingLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save Changes'}
+                                </Button>
+                             </div>
+                          </div>
+                        ) : (
+                          <div className={cn("px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed border-2 border-transparent transition-all relative", isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700", isHighlighted && "border-primary ring-4 ring-primary/20")}>
+                            {msg.message}
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="space-y-3 mt-4">
+                                {msg.attachments.map(att => {
+                                  const isImage = att.file_type?.startsWith('image/');
+                                  return (
+                                    <div key={att.id} className="max-w-xs">
+                                      {isImage && att.signed_url ? <img src={att.signed_url} alt={att.file_name} className="w-full rounded-xl cursor-pointer" onClick={() => window.open(att.signed_url, '_blank')} /> : <div className="flex items-center gap-4 p-3 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900"><FileIcon className="w-5 h-5" /><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{att.file_name}</p><p className="text-[10px] opacity-60 uppercase">{formatBytes(att.file_size_bytes)}</p></div><Button variant="ghost" size="icon" aria-label="Download" className="h-8 w-8" onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <div className={cn("flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold", isMe ? "text-white/80" : "text-slate-400")}>
+                              {wasEdited && <span className="italic mr-1">(edited)</span>}
+                              <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                              {isMe && <CheckCheck className="w-3 h-3" />}
                             </div>
-                          )}
-                          <div className={cn("flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold", isMe ? "text-white/80" : "text-slate-400")}><span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>{isMe && <CheckCheck className="w-3 h-3" />}</div>
-                        </div>
 
-                        {/* Message Action Menu */}
-                        <div className={cn(
-                          "absolute top-0 opacity-0 md:group-hover:opacity-100 transition-opacity",
-                          isMe ? "-left-10" : "-right-10"
-                        )}>
-                          <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" aria-label="Message actions" className="h-8 w-8 rounded-full dark:text-slate-400 dark:hover:text-white">
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align={isMe ? "end" : "start"} className="w-48 dark:bg-slate-900 dark:border-slate-800">
-                               <DropdownMenuItem 
-                                 onClick={() => handleCopyMessage(msg.message)}
-                                 disabled={!msg.message || msg.message.trim().length === 0}
-                                 className="gap-2"
-                               >
-                                 <Copy className="h-4 w-4" /> Copy Message
-                               </DropdownMenuItem>
-                               <DropdownMenuSeparator className="dark:bg-slate-800" />
-                               <DropdownMenuItem disabled className="gap-2"><Edit2 className="h-4 w-4" /> Edit Message</DropdownMenuItem>
-                               <DropdownMenuItem disabled className="gap-2"><CheckSquare className="h-4 w-4" /> Create Task</DropdownMenuItem>
-                               <DropdownMenuItem disabled className="gap-2 text-rose-500"><Trash2 className="h-4 w-4" /> Delete</DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
+                            {/* Message Action Menu */}
+                            {!isEditing && (
+                              <div className={cn(
+                                "absolute top-0 opacity-0 md:group-hover:opacity-100 transition-opacity",
+                                isMe ? "-left-10" : "-right-10"
+                              )}>
+                                <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" aria-label="Message actions" className="h-8 w-8 rounded-full dark:text-slate-400 dark:hover:text-white">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align={isMe ? "end" : "start"} className="w-48 dark:bg-slate-900 dark:border-slate-800">
+                                     <DropdownMenuItem 
+                                       onClick={() => handleCopyMessage(msg.message)}
+                                       disabled={!msg.message || msg.message.trim().length === 0}
+                                       className="gap-2"
+                                     >
+                                       <Copy className="h-4 w-4" /> Copy Message
+                                     </DropdownMenuItem>
+                                     {isMe && msg.message && (
+                                       <DropdownMenuItem 
+                                         onClick={() => { setEditingMessageId(msg.id); setEditMessageInput(msg.message); }}
+                                         className="gap-2"
+                                       >
+                                         <Edit2 className="h-4 w-4" /> Edit Message
+                                       </DropdownMenuItem>
+                                     )}
+                                     <DropdownMenuSeparator className="dark:bg-slate-800" />
+                                     <DropdownMenuItem disabled className="gap-2"><CheckSquare className="h-4 w-4" /> Create Task</DropdownMenuItem>
+                                     <DropdownMenuItem disabled className="gap-2 text-rose-500"><Trash2 className="h-4 w-4" /> Delete</DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

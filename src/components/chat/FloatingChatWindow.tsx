@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Message {
   id: string;
@@ -25,6 +26,7 @@ interface Message {
   sender_id: string;
   message: string;
   created_at: string;
+  updated_at?: string;
   profiles?: {
     full_name: string;
     avatar_url: string;
@@ -54,12 +56,17 @@ export function FloatingChatWindow({
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Editing state
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [isEditingLoading, setIsEditingLoading] = useState(false);
+
   const fetchMessages = useCallback(async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('chat_messages')
-        .select('id, channel_id, workspace_id, sender_id, message, created_at, is_deleted')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted')
         .eq('channel_id', chat.id)
         .eq('is_deleted', false)
         .order('created_at', { ascending: true });
@@ -119,6 +126,14 @@ export function FloatingChatWindow({
           setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
         } catch (err) {}
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages', filter: `channel_id=eq.${chat.id}` }, (payload) => {
+        const updated = payload.new as any;
+        if (updated.is_deleted) {
+          setMessages(prev => prev.filter(m => m.id !== updated.id));
+        } else {
+          setMessages(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m));
+        }
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -145,13 +160,45 @@ export function FloatingChatWindow({
     }
   };
 
+  const handleUpdateMessage = async () => {
+    const text = editValue.trim();
+    if (!editingMessageId || !text || isEditingLoading) return;
+    
+    const original = messages.find(m => m.id === editingMessageId);
+    if (original?.message === text) {
+      setEditingMessageId(null);
+      return;
+    }
+
+    setIsEditingLoading(true);
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({
+          message: text,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', editingMessageId)
+        .eq('sender_id', userProfile?.id);
+
+      if (error) throw error;
+      setEditingMessageId(null);
+      setEditValue("");
+      toast({ title: "Updated" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update failed", description: err.message });
+    } finally {
+      setIsEditingLoading(false);
+    }
+  };
+
   const handleCopyMessage = (text: string) => {
     if (!text || text.trim().length === 0) return;
     navigator.clipboard.writeText(text).then(() => {
-      toast({ title: "Message copied" });
+      toast({ title: "Copied" });
     }).catch((err) => {
       console.error("[Floating Chat] Clipboard Error:", err);
-      toast({ variant: "destructive", title: "Unable to copy message" });
+      toast({ variant: "destructive", title: "Unable to copy" });
     });
   };
 
@@ -192,41 +239,80 @@ export function FloatingChatWindow({
           ) : (
             messages.map((msg) => {
               const isMe = msg.sender_id === userProfile?.id;
-              return (
-                <div key={msg.id} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start")}>
-                  {!isMe && <span className="text-[9px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
-                  <div className={cn(
-                    "px-3 py-2 rounded-xl text-xs shadow-sm relative",
-                    isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
-                  )}>
-                    {msg.message}
+              const isEditing = editingMessageId === msg.id;
+              const wasEdited = msg.updated_at && new Date(msg.updated_at).getTime() - new Date(msg.created_at).getTime() > 1000;
 
-                    {/* Action Menu */}
-                    <div className={cn(
-                      "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity",
-                      isMe ? "-left-8" : "-right-8"
-                    )}>
-                      <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full dark:text-slate-400">
-                            <MoreVertical className="h-3 w-3" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align={isMe ? "end" : "start"} className="w-40 dark:bg-slate-900 dark:border-slate-800">
-                           <DropdownMenuItem 
-                             onClick={() => handleCopyMessage(msg.message)}
-                             disabled={!msg.message || msg.message.trim().length === 0}
-                             className="text-xs gap-2"
-                           >
-                             <Copy className="h-3 w-3" /> Copy
-                           </DropdownMenuItem>
-                           <DropdownMenuSeparator className="dark:bg-slate-800" />
-                           <DropdownMenuItem disabled className="text-xs gap-2"><Edit2 className="h-3 w-3" /> Edit</DropdownMenuItem>
-                           <DropdownMenuItem disabled className="text-xs gap-2 text-rose-500"><Trash2 className="h-3 w-3" /> Delete</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+              return (
+                <div key={msg.id} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start", isEditing && "w-full")}>
+                  {!isMe && <span className="text-[9px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
+                  
+                  {isEditing ? (
+                    <div className="w-full bg-slate-100 dark:bg-slate-800 p-2 rounded-xl border space-y-2">
+                       <Textarea 
+                         value={editValue}
+                         onChange={e => setEditValue(e.target.value)}
+                         className="min-h-[60px] text-xs bg-white dark:bg-slate-950 border-none shadow-none focus-visible:ring-1 focus-visible:ring-primary/40"
+                         autoFocus
+                         onKeyDown={e => {
+                           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); handleUpdateMessage(); }
+                           if (e.key === 'Escape') setEditingMessageId(null);
+                         }}
+                       />
+                       <div className="flex justify-end gap-1">
+                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingMessageId(null)} disabled={isEditingLoading}><X className="h-3 w-3" /></Button>
+                         <Button size="icon" className="h-6 w-6" onClick={handleUpdateMessage} disabled={isEditingLoading || !editValue.trim()}>
+                           {isEditingLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                         </Button>
+                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className={cn(
+                      "px-3 py-2 rounded-xl text-xs shadow-sm relative",
+                      isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
+                    )}>
+                      {msg.message}
+
+                      <div className="flex items-center gap-1.5 mt-1 justify-end opacity-70 text-[8px] font-bold">
+                        {wasEdited && <span className="italic mr-0.5">(edited)</span>}
+                        <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+
+                      {/* Action Menu */}
+                      {!isEditing && (
+                        <div className={cn(
+                          "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity",
+                          isMe ? "-left-8" : "-right-8"
+                        )}>
+                          <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full dark:text-slate-400">
+                                <MoreVertical className="h-3 w-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align={isMe ? "end" : "start"} className="w-40 dark:bg-slate-900 dark:border-slate-800">
+                               <DropdownMenuItem 
+                                 onClick={() => handleCopyMessage(msg.message)}
+                                 disabled={!msg.message || msg.message.trim().length === 0}
+                                 className="text-xs gap-2"
+                               >
+                                 <Copy className="h-3 w-3" /> Copy
+                               </DropdownMenuItem>
+                               {isMe && msg.message && (
+                                 <DropdownMenuItem 
+                                   onClick={() => { setEditingMessageId(msg.id); setEditValue(msg.message); }}
+                                   className="text-xs gap-2"
+                                 >
+                                   <Edit2 className="h-3 w-3" /> Edit
+                                 </DropdownMenuItem>
+                               )}
+                               <DropdownMenuSeparator className="dark:bg-slate-800" />
+                               <DropdownMenuItem disabled className="text-xs gap-2 text-rose-500"><Trash2 className="h-3 w-3" /> Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })
