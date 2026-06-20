@@ -95,6 +95,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 import { useRouter } from "next/navigation";
 
 /**
@@ -201,6 +202,11 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Upload Progress State
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingFileName, setUploadingFileName] = useState("");
+  const [uploadingFileIndex, setUploadingFileIndex] = useState(0);
 
   // Typing State
   const [typingUsers, setTypingUsers] = useState<Record<string, TypingUser>>({});
@@ -1462,6 +1468,9 @@ export default function ChatPage() {
       fetchMessages(selectedChatId);
       markAsRead(selectedChatId);
       setSelectedFiles([]);
+      setUploadProgress(0);
+      setUploadingFileIndex(0);
+      setUploadingFileName("");
       setIsSearchOpen(false);
       setInChatSearchQuery("");
       setInChatSearchResults([]);
@@ -1565,6 +1574,7 @@ export default function ChatPage() {
     if (!chatObj || !userProfile || (!text && selectedFiles.length === 0) || isSending) return;
 
     setIsSending(true);
+    setUploadProgress(0);
     sendTypingStatus(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     
@@ -1586,9 +1596,15 @@ export default function ChatPage() {
 
       if (sendError) throw sendError;
       messageId = msgData.id;
+      setUploadProgress(5); // Initial mark for message creation
 
       if (selectedFiles.length > 0) {
-        for (const file of selectedFiles) {
+        const totalFiles = selectedFiles.length;
+        for (let i = 0; i < totalFiles; i++) {
+          const file = selectedFiles[i];
+          setUploadingFileIndex(i + 1);
+          setUploadingFileName(file.name);
+          
           const safeName = sanitizeFileName(file.name);
           const storagePath = `${chatObj.workspace_id}/${chatObj.id}/${messageId}/${safeName}`;
           
@@ -1628,16 +1644,29 @@ export default function ChatPage() {
             await supabase.from('chat_messages').delete().eq('id', messageId);
             throw attachError;
           }
+          
+          // Increment progress step-by-step
+          const stepProgress = 5 + ((i + 1) / totalFiles) * 95;
+          setUploadProgress(Math.min(stepProgress, 100));
         }
+      } else {
+        setUploadProgress(100);
       }
       
       setMessageInput("");
       setSelectedFiles([]);
       setReplyingToMessage(null);
+      setUploadProgress(0);
+      setUploadingFileIndex(0);
+      setUploadingFileName("");
+      
       await fetchMessages(chatObj.id);
       fetchUnreadCounts();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Transmission Failed", description: err.message });
+      setUploadProgress(0);
+      setUploadingFileIndex(0);
+      setUploadingFileName("");
     } finally {
       setIsSending(false);
     }
@@ -2034,7 +2063,7 @@ export default function ChatPage() {
             </ScrollArea>
 
             {/* Drag and Drop Overlay */}
-            {isDragging && (
+            {isDragging && !isSending && (
               <div 
                 className="absolute inset-0 z-[100] bg-primary/10 backdrop-blur-[2px] flex items-center justify-center pointer-events-none border-4 border-dashed border-primary m-4 rounded-[2rem] animate-in fade-in zoom-in duration-200"
               >
@@ -2065,8 +2094,31 @@ export default function ChatPage() {
                 </div>
               )}
 
+              {/* Upload Progress Bar */}
+              {isSending && uploadProgress > 0 && (
+                <div className="absolute bottom-full left-0 right-0 bg-white dark:bg-slate-900 border-t dark:border-slate-800 p-3 px-6 animate-in slide-in-from-bottom-2 duration-200 z-50 shadow-lg">
+                  <div className="max-w-4xl mx-auto space-y-2">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                            {uploadingFileIndex > 0 ? `Uploading ${uploadingFileIndex} of ${selectedFiles.length}` : 'Starting Transfer...'}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                            {uploadingFileName || 'Preparing message...'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-bold text-primary">{Math.round(uploadProgress)}%</span>
+                    </div>
+                    <Progress value={uploadProgress} className="h-1.5" />
+                  </div>
+                </div>
+              )}
+
               {/* Reply Preview Bar */}
-              {replyingToMessage && (
+              {replyingToMessage && !isSending && (
                 <div className="absolute bottom-full left-0 right-0 bg-slate-50 dark:bg-slate-950 border-t dark:border-slate-800 p-3 px-6 animate-in slide-in-from-bottom-2 duration-200">
                   <div className="flex items-center justify-between gap-4 max-w-4xl mx-auto">
                     <div className="flex items-center gap-3 overflow-hidden">
@@ -2100,6 +2152,7 @@ export default function ChatPage() {
                         aria-label="Remove Attachment" 
                         className="h-7 w-7 rounded-full hover:bg-rose-500/10 hover:text-rose-500" 
                         onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
+                        disabled={isSending}
                       >
                         <X className="w-3.5 h-3.5" />
                       </Button>
@@ -2111,7 +2164,7 @@ export default function ChatPage() {
               <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} multiple />
                 <Button variant="ghost" size="icon" aria-label="Attach File" className="text-slate-400 hover:text-primary rounded-xl shrink-0" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip className="w-5 h-5" /></Button>
-                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder="Compose message..." value={messageInput} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
+                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder={isSending ? "Uploading files..." : "Compose message..."} value={messageInput} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} disabled={isSending} />
                 <Button size="icon" aria-label="Send" onClick={handleSendMessage} className={cn("rounded-xl transition-all", (messageInput.trim() || selectedFiles.length > 0) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && selectedFiles.length === 0) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
               </div>
             </div>
@@ -2661,4 +2714,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
