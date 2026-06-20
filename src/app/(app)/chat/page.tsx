@@ -219,6 +219,11 @@ export default function ChatPage() {
   const [isSearchingTasks, setIsSearchingTasks] = useState(false);
   const [isLinkingTask, setIsLinkingTask] = useState(false);
 
+  // Task Unlinking State
+  const [isUnlinkConfirmOpen, setIsUnlinkConfirmOpen] = useState(false);
+  const [messageIdToUnlink, setMessageIdToUnlink] = useState<string | null>(null);
+  const [isUnlinking, setIsUnlinking] = useState(false);
+
   // Search in Chat state (Contextual)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [inChatSearchQuery, setInChatSearchQuery] = useState("");
@@ -1149,6 +1154,28 @@ export default function ChatPage() {
     }
   };
 
+  const handleUnlinkTask = async () => {
+    if (!messageIdToUnlink || isUnlinking) return;
+
+    setIsUnlinking(true);
+    try {
+      const { error } = await supabase.rpc("unlink_chat_message_from_task", {
+        p_message_id: messageIdToUnlink,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Task Unlinked", description: "The association between this message and the task has been removed." });
+      setMessages(prev => prev.map(m => m.id === messageIdToUnlink ? { ...m, created_task_id: null } : m));
+      setIsUnlinkConfirmOpen(false);
+      setMessageIdToUnlink(null);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Unlink Failed", description: err.message });
+    } finally {
+      setIsUnlinking(false);
+    }
+  };
+
   /**
    * EFFECTS
    */
@@ -1648,13 +1675,21 @@ export default function ChatPage() {
                                      )}
                                      <DropdownMenuSeparator className="dark:bg-slate-800" />
                                      {msg.created_task_id ? (
-                                       <DropdownMenuItem 
-                                         disabled={isTaskDeleted || isTaskUnavailable}
-                                         onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
-                                         className="gap-2"
-                                       >
-                                         <ExternalLink className="h-4 w-4" /> View Task
-                                       </DropdownMenuItem>
+                                       <>
+                                         <DropdownMenuItem 
+                                           disabled={isTaskDeleted || isTaskUnavailable}
+                                           onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
+                                           className="gap-2"
+                                         >
+                                           <ExternalLink className="h-4 w-4" /> View Task
+                                         </DropdownMenuItem>
+                                         <DropdownMenuItem 
+                                           onClick={() => { setMessageIdToUnlink(msg.id); setIsUnlinkConfirmOpen(true); }}
+                                           className="gap-2 text-rose-500"
+                                         >
+                                           <X className="h-4 w-4" /> Unlink Task
+                                         </DropdownMenuItem>
+                                       </>
                                      ) : (
                                        <>
                                          <DropdownMenuItem 
@@ -1985,6 +2020,28 @@ export default function ChatPage() {
               className="bg-rose-500 hover:bg-rose-600 text-white"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isUnlinkConfirmOpen} onOpenChange={setIsUnlinkConfirmOpen}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-white">Unlink task?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              This will remove the task link from this message. The task itself will not be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleUnlinkTask} 
+              className="bg-rose-500 hover:bg-rose-600 text-white"
+              disabled={isUnlinking}
+            >
+              {isUnlinking ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirm Unlink
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
