@@ -10,6 +10,24 @@ import { PlusCircle, Users, Loader2, ArrowLeft, Clock, LogOut } from "lucide-rea
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
+/**
+ * Normalizes the join status returned from the Supabase RPC.
+ * The RPC might return a string or an object containing status keys.
+ */
+function normalizeJoinStatus(result: unknown): string | null {
+  if (typeof result === "string") return result;
+  
+  if (result && typeof result === "object") {
+    const value = result as Record<string, unknown>;
+    // Check various common result keys
+    if (typeof value.status === "string") return value.status;
+    if (typeof value.join_status === "string") return value.join_status;
+    if (typeof value.member_status === "string") return value.member_status;
+  }
+  
+  return null;
+}
+
 export default function WorkspaceSetupPage() {
   const [mode, setMode] = useState<"choice" | "create" | "join" | "pending">("choice");
   const [workspaceName, setWorkspaceName] = useState("");
@@ -81,16 +99,34 @@ export default function WorkspaceSetupPage() {
         p_join_code: joinCode
       });
 
-      if (error) throw error;
+      // Debugging logs to identify response shape
+      console.log("[Join Workspace] result data:", data);
+      console.log("[Join Workspace] result type:", typeof data);
       
-      if (data === 'active') {
+      if (error) {
+        console.error("[Join Workspace] Supabase error:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+
+      const joinStatus = normalizeJoinStatus(data);
+
+      if (joinStatus === 'active' || joinStatus === 'joined' || joinStatus === 'approved' || joinStatus === 'already_member') {
         toast({ title: "Welcome!", description: "You have joined the workspace." });
         router.replace("/dashboard");
-      } else if (data === 'pending') {
+      } else if (joinStatus === 'pending' || joinStatus === 'pending_approval') {
         setMode("pending");
         toast({ title: "Request Sent", description: "Your join request is pending approval." });
+      } else if (joinStatus === 'invalid_code' || joinStatus === 'not_found') {
+        throw new Error("Invalid workspace code.");
       } else {
-        throw new Error("Unexpected join status: " + data);
+        // Fallback for unexpected shapes without showing [object Object]
+        console.error("[Join Workspace] Unexpected normalized status:", joinStatus, "from data:", data);
+        throw new Error("Unable to join workspace. Please check the code and try again.");
       }
     } catch (err: any) {
       toast({ 
