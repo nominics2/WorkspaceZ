@@ -48,7 +48,9 @@ import {
   Presentation,
   Maximize2,
   Settings,
-  Volume2
+  Volume2,
+  Globe,
+  Eye
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
