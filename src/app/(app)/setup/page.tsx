@@ -81,6 +81,7 @@ export default function OnboardingPage() {
   
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [hasSynced, setHasSynced] = useState(false);
   const router = useRouter();
   const supabase = createClient();
   const { toast } = useToast();
@@ -112,6 +113,37 @@ export default function OnboardingPage() {
     }
   }, [userProfile]);
 
+  // Initial Sync with DB state to prevent "reset to Welcome" on re-renders
+  useEffect(() => {
+    if (!userProfile || hasSynced) return;
+    
+    async function syncOnboarding() {
+      try {
+        const { data, error } = await supabase.rpc('get_my_onboarding');
+        if (error) throw error;
+        
+        if (data && data.current_step) {
+          const stepIdx = ONBOARDING_STEPS.findIndex(s => {
+            if (data.current_step === 'workspace_choice') return s.id === 'workspace';
+            if (data.current_step === 'install_app') return s.id === 'install';
+            if (data.current_step === 'features_intro') return s.id === 'features';
+            if (data.current_step === 'first_action') return s.id === 'finish';
+            return s.id === data.current_step;
+          });
+          
+          if (stepIdx !== -1) {
+            setCurrentStepIndex(stepIdx);
+          }
+        }
+        setHasSynced(true);
+      } catch (err) {
+        setHasSynced(true);
+      }
+    }
+    
+    syncOnboarding();
+  }, [userProfile, hasSynced, supabase]);
+
   const currentStep = ONBOARDING_STEPS[currentStepIndex];
   const progress = ((currentStepIndex + 1) / ONBOARDING_STEPS.length) * 100;
 
@@ -139,16 +171,30 @@ export default function OnboardingPage() {
     try {
       const isValid = await validateProfile();
       if (!isValid) return;
+      
       const { error: profileError } = await supabase.from('profiles').update({
         full_name: profileForm.full_name.trim(),
         username: profileForm.username.toLowerCase().trim(),
         avatar_preset: profileForm.avatar_preset,
         updated_at: new Date().toISOString()
       }).eq('id', userProfile.id);
+      
       if (profileError) throw profileError;
-      await supabase.rpc('update_my_onboarding', { p_current_step: 'workspace_choice', p_profile_completed: true });
+      
+      const { error: onboardingError } = await supabase.rpc('update_my_onboarding', { 
+        p_current_step: 'workspace_choice', 
+        p_profile_completed: true 
+      });
+      
+      if (onboardingError) throw onboardingError;
+      
+      // Update local state first to ensure UI moves forward immediately
+      const workspaceIdx = ONBOARDING_STEPS.findIndex(s => s.id === 'workspace');
+      if (workspaceIdx !== -1) {
+        setCurrentStepIndex(workspaceIdx);
+      }
+      
       await refreshWorkspaces();
-      setCurrentStepIndex(currentStepIndex + 1);
     } catch (err: any) {
       toast({ variant: "destructive", title: "Setup Failed", description: err.message });
     } finally {
@@ -314,7 +360,7 @@ export default function OnboardingPage() {
     if (currentStepIndex > 0) setCurrentStepIndex(currentStepIndex - 1);
   };
 
-  if (loading) return (<div className="flex flex-col items-center justify-center min-h-[60vh] gap-4"><Loader2 className="w-10 h-10 animate-spin text-primary" /><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Syncing Journey...</p></div>);
+  if (loading && !hasSynced) return (<div className="flex flex-col items-center justify-center min-h-[60vh] gap-4"><Loader2 className="w-10 h-10 animate-spin text-primary" /><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Syncing Journey...</p></div>);
 
   const StepIcon = currentStep.icon;
 
@@ -343,7 +389,55 @@ export default function OnboardingPage() {
             <CardHeader className="p-8 sm:p-12 pb-4 sm:pb-6 relative z-10"><div className="flex items-center gap-4 mb-4"><div className="p-3 sm:p-4 bg-primary/10 rounded-2xl shadow-sm"><StepIcon className="w-8 h-8 sm:w-10 sm:h-10 text-primary" /></div><Badge variant="secondary" className="bg-primary/5 text-primary border-none uppercase text-[10px] px-4 py-1 font-bold tracking-[0.2em]">Step {currentStepIndex + 1}</Badge></div><CardTitle className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 dark:text-white leading-tight">{currentStep.title}</CardTitle><CardDescription className="text-lg sm:text-xl font-medium text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">{currentStep.description}</CardDescription></CardHeader>
             <CardContent className="p-8 sm:p-12 pt-6 sm:pt-8 flex-1 flex flex-col relative z-10">
               {currentStep.id === 'welcome' && (<div className="flex flex-col items-center justify-center text-center"><div className="p-12 sm:p-16 rounded-[4rem] bg-slate-50 dark:bg-slate-800/40 mb-8 sm:mb-12 border dark:border-slate-800 shadow-inner group-hover:scale-105 transition-transform duration-700"><Sparkles className="w-20 h-20 sm:w-24 sm:h-24 text-primary animate-pulse" /></div><div className="max-w-md space-y-6"><h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">Welcome to WorkspaceZ</h2><p className="text-slate-500 dark:text-slate-400 leading-relaxed text-base sm:text-lg">Let's customize your experience. This setup will only take a moment and ensures your team stays organized from day one.</p></div></div>)}
-              {currentStep.id === 'profile' && (<div className="space-y-8 animate-in slide-in-from-right-4 duration-500"><div className="space-y-6"><div className="space-y-2"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Full Name</Label><Input placeholder="Alex Johnson" value={profileForm.full_name} onChange={e => setProfileForm(f => ({ ...f, full_name: e.target.value }))} className={cn("h-12 text-lg rounded-xl border-none bg-slate-50 dark:bg-slate-800 transition-all", errors.full_name && "ring-2 ring-rose-500")} disabled={saving} />{errors.full_name && <p className="text-xs text-rose-500 font-medium flex items-center gap-1 ml-1"><AlertCircle className="w-3 h-3" /> {errors.full_name}</p>}</div><div className="space-y-2"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Username</Label><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">@</span><Input placeholder="unique_handle" value={profileForm.username} onChange={e => setProfileForm(f => ({ ...f, username: e.target.value }))} className={cn("h-12 pl-9 text-lg rounded-xl border-none bg-slate-50 dark:bg-slate-800 transition-all", errors.username && "ring-2 ring-rose-500")} disabled={saving} /></div>{errors.username ? <p className="text-xs text-rose-500 font-medium flex items-center gap-1 ml-1"><AlertCircle className="w-3 h-3" /> {errors.username}</p> : <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight ml-1">Teammates will mention you using this handle</p>}</div><div className="space-y-4"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Identity Icon</Label><div className="grid grid-cols-6 sm:grid-cols-11 gap-3"><button type="button" onClick={() => setProfileForm(f => ({ ...f, avatar_preset: null }))} className={cn("aspect-square rounded-xl border-2 flex items-center justify-center transition-all hover:scale-105 shadow-sm", profileForm.avatar_preset === null ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950")}><UserCircle className={cn("w-6 h-6", profileForm.avatar_preset === null ? "text-primary" : "text-slate-400")} /></button>{AVATAR_PRESETS.map((preset) => (<button key={preset} type="button" onClick={() => setProfileForm(f => ({ ...f, avatar_preset: preset }))} className={cn("aspect-square rounded-xl border-2 overflow-hidden transition-all hover:scale-105 shadow-sm", profileForm.avatar_preset === preset ? "border-primary ring-2 ring-primary/20" : "border-slate-100 dark:border-slate-800")}><img src={`/avatars/${preset}.png`} alt={preset} className="w-full h-full object-cover" /></button>))}</div></div></div></div>)}
+              {currentStep.id === 'profile' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="flex flex-col items-center gap-4 mb-6">
+                    <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl bg-slate-50 dark:bg-slate-800 border-4 border-white dark:border-slate-700 shadow-xl overflow-hidden flex items-center justify-center relative transition-all duration-300 hover:scale-105 group/preview">
+                      {profileForm.avatar_preset ? (
+                        <img 
+                          src={`/avatars/${profileForm.avatar_preset}.png`} 
+                          alt="Preview" 
+                          className="w-full h-full object-cover animate-in fade-in zoom-in-95 duration-500" 
+                        />
+                      ) : (
+                        <UserCircle className="w-16 h-16 sm:w-20 sm:h-20 text-slate-300 dark:text-slate-600" />
+                      )}
+                      <div className="absolute inset-0 bg-black/5 opacity-0 group-hover/preview:opacity-100 transition-opacity" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">Profile Preview</p>
+                      <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">Identity selected</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Full Name</Label>
+                      <Input placeholder="Alex Johnson" value={profileForm.full_name} onChange={e => setProfileForm(f => ({ ...f, full_name: e.target.value }))} className={cn("h-12 text-lg rounded-xl border-none bg-slate-50 dark:bg-slate-800 transition-all", errors.full_name && "ring-2 ring-rose-500")} disabled={saving} />
+                      {errors.full_name && <p className="text-xs text-rose-500 font-medium flex items-center gap-1 ml-1"><AlertCircle className="w-3 h-3" /> {errors.full_name}</p>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Username</Label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">@</span>
+                        <Input placeholder="unique_handle" value={profileForm.username} onChange={e => setProfileForm(f => ({ ...f, username: e.target.value }))} className={cn("h-12 pl-9 text-lg rounded-xl border-none bg-slate-50 dark:bg-slate-800 transition-all", errors.username && "ring-2 ring-rose-500")} disabled={saving} />
+                      </div>
+                      {errors.username ? <p className="text-xs text-rose-500 font-medium flex items-center gap-1 ml-1"><AlertCircle className="w-3 h-3" /> {errors.username}</p> : <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight ml-1">Teammates will mention you using this handle</p>}
+                    </div>
+                    <div className="space-y-4">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Identity Icon</Label>
+                      <div className="grid grid-cols-6 sm:grid-cols-11 gap-3">
+                        <button type="button" onClick={() => setProfileForm(f => ({ ...f, avatar_preset: null }))} className={cn("aspect-square rounded-xl border-2 flex items-center justify-center transition-all hover:scale-105 shadow-sm", profileForm.avatar_preset === null ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-950")}><UserCircle className={cn("w-6 h-6", profileForm.avatar_preset === null ? "text-primary" : "text-slate-400")} /></button>
+                        {AVATAR_PRESETS.map((preset) => (
+                          <button key={preset} type="button" onClick={() => setProfileForm(f => ({ ...f, avatar_preset: preset }))} className={cn("aspect-square rounded-xl border-2 overflow-hidden transition-all hover:scale-105 shadow-sm", profileForm.avatar_preset === preset ? "border-primary ring-2 ring-primary/20" : "border-slate-100 dark:border-slate-800")}>
+                            <img src={`/avatars/${preset}.png`} alt={preset} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {currentStep.id === 'workspace' && (<div className="space-y-8 animate-in slide-in-from-right-4 duration-500">{workspaceMode === 'choice' && (<div className="grid grid-cols-1 sm:grid-cols-2 gap-6"><button onClick={() => setWorkspaceMode('create')} className="p-8 rounded-[2.5rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-primary transition-all flex flex-col items-center text-center gap-6 group/choice shadow-xl"><div className="p-6 bg-primary/10 rounded-[2rem] group-hover/choice:bg-primary group-hover/choice:text-white transition-all"><PlusCircle className="w-12 h-12" /></div><div className="space-y-2"><h3 className="text-xl font-bold dark:text-white">Create New</h3><p className="text-sm text-slate-500 leading-relaxed">Establish a dedicated space for your team projects.</p></div></button><button onClick={() => setWorkspaceMode('join')} className="p-8 rounded-[2.5rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-accent transition-all flex flex-col items-center text-center gap-6 group/choice shadow-xl"><div className="p-6 bg-accent/10 rounded-[2rem] group-hover/choice:bg-accent group-hover/choice:text-white transition-all"><Users className="w-12 h-12" /></div><div className="space-y-2"><h3 className="text-xl font-bold dark:text-white">Join Existing</h3><p className="text-sm text-slate-500 leading-relaxed">Enter a workspace code provided by your administrator.</p></div></button></div>)}{workspaceMode === 'create' && (<div className="space-y-8 animate-in slide-in-from-right-4"><div className="space-y-6"><div className="space-y-2"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Workspace Name</Label><Input placeholder="e.g. Acme Creative Agency" value={workspaceForm.name} onChange={e => setWorkspaceForm(f => ({ ...f, name: e.target.value }))} className="h-12 text-lg rounded-xl border-none bg-slate-50 dark:bg-slate-800" disabled={saving} /></div><div className="space-y-4"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Workspace Identity</Label><div className="grid grid-cols-5 gap-4">{WORKSPACE_ICON_PRESETS.map((preset) => (<button key={preset.id} type="button" onClick={() => setWorkspaceForm(f => ({ ...f, icon_preset: preset.id }))} className={cn("aspect-square rounded-2xl overflow-hidden border-4 transition-all hover:scale-105 relative bg-white", workspaceForm.icon_preset === preset.id ? "border-primary ring-4 ring-primary/20 shadow-xl scale-105" : "border-slate-100 dark:border-slate-800 opacity-60 grayscale-[0.5]")}><img src={preset.src} alt={preset.label} className="w-full h-full object-cover" />{workspaceForm.icon_preset === preset.id && (<div className="absolute inset-0 bg-primary/10 flex items-center justify-center"><Check className="w-6 h-6 text-primary" /></div>)}</button>))}</div></div></div></div>)}{workspaceMode === 'join' && (<div className="space-y-8 animate-in slide-in-from-right-4"><div className="space-y-6"><div className="space-y-2 text-center max-w-sm mx-auto"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 block mb-4">Workspace Code</Label><Input placeholder="ABC-12345" value={workspaceForm.join_code} onChange={e => setWorkspaceForm(f => ({ ...f, join_code: e.target.value }))} className="h-16 text-2xl font-mono text-center tracking-widest rounded-2xl border-none bg-slate-50 dark:bg-slate-800 uppercase" disabled={saving} maxLength={10} /><p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight mt-3">Enter the unique code shared by your admin</p></div><div className="p-6 bg-amber-50 dark:bg-amber-950/20 rounded-[2rem] border border-amber-100 dark:border-amber-900/30 flex gap-4 max-w-md mx-auto"><Info className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" /><div className="space-y-1"><p className="text-sm font-bold text-amber-900 dark:text-amber-400">Join Request Status</p><p className="text-xs text-amber-700 dark:text-amber-500 leading-relaxed">You will join the workspace immediately. Some features may be restricted until an admin verifies your account.</p></div></div></div></div>)}</div>)}
               {currentStep.id === 'teams' && (<div className="space-y-8 animate-in slide-in-from-right-4 duration-500"><div className="space-y-6"><div className="space-y-2"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Team Suggestions</Label><div className="flex flex-wrap gap-2">{SUGGESTED_TEAMS.map(team => (<Button key={team} variant="outline" size="sm" onClick={() => setSelectedTeams(prev => prev.includes(team) ? prev.filter(t => t !== team) : [...prev, team])} className={cn("rounded-full px-4 border-slate-200 dark:border-slate-800 transition-all", selectedTeams.includes(team) ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "hover:bg-slate-50 dark:hover:bg-slate-800")}>{selectedTeams.includes(team) && <Check className="w-3 h-3 mr-1.5" />}{team}</Button>))}</div></div><div className="space-y-2"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Add Custom Team</Label><div className="flex gap-2"><Input placeholder="e.g. Engineering" value={customTeamName} onChange={e => setCustomTeamName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (customTeamName.trim() && !selectedTeams.includes(customTeamName.trim())) { setSelectedTeams(prev => [...prev, customTeamName.trim()]); setCustomTeamName(""); } } }} className="h-11 rounded-xl border-none bg-slate-50 dark:bg-slate-800" /><Button type="button" variant="secondary" onClick={() => { if (customTeamName.trim() && !selectedTeams.includes(customTeamName.trim())) { setSelectedTeams(prev => [...prev, customTeamName.trim()]); setCustomTeamName(""); } }} className="h-11 rounded-xl px-6">Add</Button></div></div>{selectedTeams.length > 0 && (<div className="space-y-2"><Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Your Selection ({selectedTeams.length})</Label><div className="flex flex-wrap gap-2 p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border-2 border-dashed dark:border-slate-800">{selectedTeams.map(team => (<Badge key={team} className="h-8 pl-3 pr-1 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border dark:border-slate-800 rounded-lg group">{team}<button onClick={() => setSelectedTeams(prev => prev.filter(t => t !== team))} className="ml-2 p-1 hover:bg-rose-50 hover:text-rose-500 rounded-md transition-colors"><X className="w-3 h-3" /></button></Badge>))}</div></div>)}</div></div>)}
               {currentStep.id === 'invite' && (<div className="space-y-8 animate-in slide-in-from-right-4 duration-500"><div className="flex flex-col items-center justify-center text-center space-y-8"><div className="p-8 bg-slate-50 dark:bg-slate-800/40 rounded-[2.5rem] border dark:border-slate-800 shadow-inner w-full max-w-sm"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-4">Workspace Code</p><h2 className="text-5xl font-black text-primary tracking-tighter mb-6">{activeWorkspace?.join_code || '---'}</h2><Button onClick={handleCopyInviteCode} className="w-full h-14 rounded-2xl gap-3 text-lg shadow-xl shadow-primary/20"><Copy className="w-5 h-5" />Copy Invite Code</Button></div><div className="p-6 bg-amber-50 dark:bg-amber-950/20 rounded-[2rem] border border-amber-100 dark:border-amber-900/30 flex gap-4 max-w-md"><div className="p-3 bg-amber-100 dark:bg-amber-900/40 rounded-xl h-fit"><Info className="w-6 h-6 text-amber-600 dark:text-amber-500" /></div><div className="text-left space-y-1"><p className="text-sm font-bold text-amber-900 dark:text-amber-400">Membership Policy</p><p className="text-xs text-amber-700 dark:text-amber-500 leading-relaxed">Members will join immediately using this code. To protect your data, they will remain unverified until you confirm their identity in the Admin Panel.</p></div></div></div></div>)}
