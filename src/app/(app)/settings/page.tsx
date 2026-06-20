@@ -54,7 +54,7 @@ const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`
 
 export default function SettingsPage() {
   const { activeWorkspace, userProfile, refreshWorkspaces, themePreference, setThemePreference } = useWorkspace();
-  const { isSupported, isSubscribed, permissionState, isIOS, isStandalone, isLoading: pushLoading, enablePush, disablePush } = usePushNotifications();
+  const { isSupported, isConfigured, isSubscribed, permissionState, isIOS, isStandalone, isLoading: pushLoading, enablePush, disablePush } = usePushNotifications();
   const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 1024 * 1024 * 1024 }); 
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -567,7 +567,17 @@ export default function SettingsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {!isSupported ? (
+                  {!isConfigured ? (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 flex gap-3">
+                      <Info className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-slate-900 dark:text-slate-400">Not Configured</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-500 leading-relaxed">
+                          Push notifications are not configured on this server yet. Please contact the administrator.
+                        </p>
+                      </div>
+                    </div>
+                  ) : !isSupported ? (
                     <div className="p-4 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-900/30 flex gap-3">
                       <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                       <div className="space-y-1">
@@ -685,7 +695,7 @@ export default function SettingsPage() {
                               <Clock className="w-3 h-3" /> {new Date(n.created_at).toLocaleDateString()}
                             </span>
                           </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">{n.message}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed line-clamp-2">{n.message}</p>
                           <div className="flex items-center gap-3 pt-1">
                             {n.type && (
                               <Badge variant="secondary" className="text-[9px] h-4 py-0 px-1.5 uppercase font-bold tracking-wider dark:bg-slate-800 dark:text-slate-400">

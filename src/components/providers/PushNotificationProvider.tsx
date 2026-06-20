@@ -8,6 +8,7 @@ import { urlBase64ToUint8Array, getPlatformInfo } from '@/lib/push-utils';
 
 interface PushNotificationContextType {
   isSupported: boolean;
+  isConfigured: boolean;
   isSubscribed: boolean;
   permissionState: NotificationPermission | 'unsupported';
   isIOS: boolean;
@@ -22,6 +23,7 @@ const PushNotificationContext = createContext<PushNotificationContextType | unde
 export function PushNotificationProvider({ children }: { children: React.ReactNode }) {
   const { activeWorkspace, userProfile } = useWorkspace();
   const [isSupported, setIsSupported] = useState(false);
+  const [isConfigured, setIsConfigured] = useState(true);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [permissionState, setPermissionState] = useState<NotificationPermission | 'unsupported'>('default');
   const [isIOS, setIsIOS] = useState(false);
@@ -33,6 +35,13 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
 
   const checkSupport = useCallback(async () => {
     if (typeof window === 'undefined') return;
+
+    // Check Configuration
+    const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    if (!publicKey) {
+      console.warn("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY. Push notifications will be unavailable. Add it to .env.local and restart the dev server.");
+      setIsConfigured(false);
+    }
 
     const hasSW = 'serviceWorker' in navigator;
     const hasPush = 'PushManager' in window;
@@ -77,6 +86,15 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
         description: isIOS && !isStandalone 
           ? "Please install Workspace Z to your Home Screen to enable notifications." 
           : "Push notifications are not supported on this browser." 
+      });
+      return;
+    }
+
+    if (!isConfigured) {
+      toast({ 
+        variant: "destructive", 
+        title: "Configuration Missing", 
+        description: "Push notifications are not configured on the server yet." 
       });
       return;
     }
@@ -163,6 +181,7 @@ export function PushNotificationProvider({ children }: { children: React.ReactNo
   return (
     <PushNotificationContext.Provider value={{
       isSupported,
+      isConfigured,
       isSubscribed,
       permissionState,
       isIOS,
