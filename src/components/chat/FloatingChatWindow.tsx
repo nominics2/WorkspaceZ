@@ -14,7 +14,8 @@ import {
   CheckSquare, 
   Check,
   ExternalLink,
-  AlertTriangle
+  AlertTriangle,
+  Reply
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +54,7 @@ interface Message {
   created_at: string;
   updated_at?: string;
   created_task_id?: string | null;
+  reply_to_message_id?: string | null;
   is_deleted?: boolean;
   profiles?: {
     full_name: string;
@@ -62,6 +64,7 @@ interface Message {
   tasks?: {
     is_deleted: boolean;
   } | null;
+  reply_to?: Message | null;
 }
 
 export function FloatingChatWindow({ 
@@ -92,6 +95,7 @@ export function FloatingChatWindow({
   const [isEditingLoading, setIsEditingLoading] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
 
   const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
 
@@ -100,7 +104,7 @@ export function FloatingChatWindow({
     try {
       const { data, error } = await supabase
         .from('chat_messages')
-        .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, tasks(is_deleted)')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, reply_to_message_id, tasks(is_deleted)')
         .eq('channel_id', chat.id)
         .eq('is_deleted', false)
         .order('created_at', { ascending: true });
@@ -113,9 +117,34 @@ export function FloatingChatWindow({
         .select('id, full_name, avatar_url, avatar_preset')
         .in('id', senderIds);
 
+      // Enrichment: Load missing original messages for replies
+      const missingReplyIds = Array.from(new Set(
+        (data || [])
+          .map(m => m.reply_to_message_id)
+          .filter((id): id is string => !!id && !data?.some(existing => existing.id === id))
+      ));
+
+      let extraMessages: Message[] = [];
+      if (missingReplyIds.length > 0) {
+        const { data: extras } = await supabase
+          .from('chat_messages')
+          .select('id, sender_id, message, created_at, is_deleted, profiles(full_name, avatar_url, avatar_preset)')
+          .in('id', missingReplyIds);
+        
+        if (extras) {
+          extraMessages = (extras as any[]).map(e => ({
+            ...e,
+            profiles: e.profiles
+          }));
+        }
+      }
+
+      const allLookupMap = [...(data || []).map(m => ({ ...m, profiles: profilesData?.find(p => p.id === m.sender_id) || null })), ...extraMessages];
+
       const enriched = (data || []).map(m => ({
         ...m,
-        profiles: profilesData?.find(p => p.id === m.sender_id) || null
+        profiles: profilesData?.find(p => p.id === m.sender_id) || null,
+        reply_to: m.reply_to_message_id ? allLookupMap.find(am => am.id === m.reply_to_message_id) : null
       }));
 
       setMessages(enriched);
@@ -149,10 +178,13 @@ export function FloatingChatWindow({
         
         setMessages(prev => {
           if (prev.some(m => m.id === newMessage.id)) return prev;
-          return [...prev, { ...newMessage, profiles: null }];
+          return [...prev, { ...newMessage, profiles: null, reply_to: null }];
         });
 
         markRead();
+
+        // Refetch metadata for replies
+        setTimeout(() => fetchMessages(), 1000);
 
         try {
           const { data: profile } = await supabase.from('profiles').select('id, full_name, avatar_url, avatar_preset').eq('id', newMessage.sender_id).single();
@@ -171,7 +203,7 @@ export function FloatingChatWindow({
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [chat.id, supabase, markRead]);
+  }, [chat.id, supabase, markRead, fetchMessages]);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -183,10 +215,12 @@ export function FloatingChatWindow({
         channel_id: chat.id,
         workspace_id: chat.workspace_id,
         sender_id: userProfile.id,
-        message: text
+        message: text,
+        reply_to_message_id: replyingToMessage?.id || null
       });
       if (error) throw error;
       setInput("");
+      setReplyingToMessage(null);
     } catch (err) {
       console.error("[Floating Chat] Transmission Error:", err);
     } finally {
@@ -257,6 +291,14 @@ export function FloatingChatWindow({
     });
   };
 
+  const handleJumpToMessage = (msgId: string) => {
+    const element = document.getElementById(`floating-message-${msgId}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Logic for temporary highlighting can be added here if needed
+    }
+  };
+
   return (
     <div className="w-[calc(100vw-2rem)] sm:w-[350px] h-[450px] sm:h-[500px] bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto">
       <div className="p-4 border-b dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex items-center justify-between shrink-0">
@@ -303,7 +345,7 @@ export function FloatingChatWindow({
               const isTaskUnavailable = msg.created_task_id && !msg.tasks;
 
               return (
-                <div key={msg.id} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start", isEditing && "w-full")}>
+                <div key={msg.id} id={`floating-message-${msg.id}`} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start", isEditing && "w-full")}>
                   {!isMe && <span className="text-[9px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
                   
                   {isEditing ? (
@@ -330,6 +372,22 @@ export function FloatingChatWindow({
                       "px-3 py-2 rounded-xl text-xs shadow-sm relative",
                       isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
                     )}>
+                      {/* Reply Preview inside Bubble */}
+                      {msg.reply_to && (
+                        <div 
+                          onClick={() => handleJumpToMessage(msg.reply_to!.id)}
+                          className={cn(
+                            "mb-1.5 p-1.5 rounded-lg border-l-2 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-[10px]",
+                            isMe ? "bg-white/10 border-white/40 text-white/90" : "bg-slate-50 dark:bg-slate-950/50 border-primary/40 text-slate-500 dark:text-slate-400"
+                          )}
+                        >
+                          <p className="font-bold mb-0.5 truncate">{msg.reply_to.profiles?.full_name || "User"}</p>
+                          <p className="line-clamp-1 italic text-[9px]">
+                            {msg.reply_to.is_deleted ? "Message deleted" : (msg.reply_to.message || "Attachment")}
+                          </p>
+                        </div>
+                      )}
+
                       {msg.message}
 
                       {/* Task Chip */}
@@ -373,6 +431,9 @@ export function FloatingChatWindow({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align={isMe ? "end" : "start"} className="w-40 dark:bg-slate-900 dark:border-slate-800">
+                               <DropdownMenuItem onClick={() => setReplyingToMessage(msg)} className="text-xs gap-2">
+                                 <Reply className="h-3 w-3" /> Reply
+                               </DropdownMenuItem>
                                <DropdownMenuItem 
                                  onClick={() => handleCopyMessage(msg.message)}
                                  disabled={!msg.message || msg.message.trim().length === 0}
@@ -424,7 +485,25 @@ export function FloatingChatWindow({
         </div>
       </ScrollArea>
 
-      <div className="p-3 border-t dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="p-3 border-t dark:border-slate-800 bg-white dark:bg-slate-900 relative">
+        {/* Reply Preview Bar */}
+        {replyingToMessage && (
+          <div className="absolute bottom-full left-0 right-0 bg-slate-50 dark:bg-slate-950 border-t dark:border-slate-800 p-2 animate-in slide-in-from-bottom-2 duration-200">
+             <div className="flex items-center justify-between gap-2 px-2">
+                <div className="flex items-center gap-2 overflow-hidden">
+                   <div className="w-0.5 h-6 bg-primary rounded-full shrink-0" />
+                   <div className="min-w-0">
+                      <p className="text-[9px] font-bold text-primary truncate">Replying to {replyingToMessage.profiles?.full_name}</p>
+                      <p className="text-[10px] text-slate-500 truncate">{replyingToMessage.message || "Attachment"}</p>
+                   </div>
+                </div>
+                <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full" onClick={() => setReplyingToMessage(null)}>
+                  <X className="w-3 h-3" />
+                </Button>
+             </div>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950 p-1.5 rounded-xl border dark:border-slate-800">
           <Input 
             value={input}

@@ -40,7 +40,8 @@ import {
   Copy,
   CheckSquare,
   AlertTriangle,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Reply
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -119,6 +120,7 @@ interface Message {
   created_at: string;
   updated_at?: string;
   created_task_id?: string | null;
+  reply_to_message_id?: string | null;
   is_deleted?: boolean;
   profiles?: {
     full_name: string;
@@ -130,6 +132,7 @@ interface Message {
   tasks?: {
     is_deleted: boolean;
   } | null;
+  reply_to?: Message | null;
 }
 
 interface WorkspaceMemberProfile {
@@ -197,6 +200,7 @@ export default function ChatPage() {
   const [isEditingLoading, setIsEditingLoading] = useState(false);
   const [isMessageDeleteDialogOpen, setIsMessageDeleteDialogOpen] = useState(false);
   const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
+  const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
 
   // Task Creation State
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
@@ -496,7 +500,7 @@ export default function ChatPage() {
       const [msgDataRes, attachDataRes] = await Promise.all([
         supabase
           .from('chat_messages')
-          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, tasks(is_deleted)')
+          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, reply_to_message_id, tasks(is_deleted)')
           .eq('channel_id', channelId)
           .eq('is_deleted', false)
           .order('created_at', { ascending: true }),
@@ -508,14 +512,47 @@ export default function ChatPage() {
       ]);
 
       if (msgDataRes.error) throw msgDataRes.error;
-      const msgData = msgDataRes.data || [];
+      const msgData: Message[] = msgDataRes.data || [];
       const attachData = attachDataRes.data || [];
 
       if (!msgData || msgData.length === 0) {
         setMessages([]);
+        setLoadingMessages(false);
         return;
       }
 
+      // Enrichment: Load profiles for all senders in the window
+      const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url, avatar_preset')
+        .in('id', senderIds);
+
+      // Enrichment: Load missing original messages for replies
+      const missingReplyIds = Array.from(new Set(
+        msgData
+          .map(m => m.reply_to_message_id)
+          .filter((id): id is string => !!id && !msgData.some(existing => existing.id === id))
+      ));
+
+      let extraMessages: Message[] = [];
+      if (missingReplyIds.length > 0) {
+        const { data: extras } = await supabase
+          .from('chat_messages')
+          .select('id, sender_id, message, created_at, is_deleted, profiles(full_name, avatar_url, avatar_preset)')
+          .in('id', missingReplyIds);
+        
+        if (extras) {
+          extraMessages = (extras as any[]).map(e => ({
+            ...e,
+            profiles: e.profiles
+          }));
+        }
+      }
+
+      const allLookupMap = [...msgData.map(m => ({ ...m, profiles: profilesData?.find(p => p.id === m.sender_id) || null })), ...extraMessages];
+
+      // Enrichment: Signed URLs for attachments
       let enrichedAttachments: Attachment[] = [...attachData];
       if (attachData.length > 0) {
         const { data: signedData, error: signedError } = await supabase.storage
@@ -530,16 +567,11 @@ export default function ChatPage() {
         }
       }
 
-      const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('id, full_name, avatar_url, avatar_preset')
-        .in('id', senderIds);
-
       const enrichedMessages: Message[] = msgData.map(m => ({
         ...m,
         profiles: profilesData?.find(p => p.id === m.sender_id) || null,
-        attachments: enrichedAttachments.filter(a => a.message_id === m.id)
+        attachments: enrichedAttachments.filter(a => a.message_id === m.id),
+        reply_to: m.reply_to_message_id ? allLookupMap.find(am => am.id === m.reply_to_message_id) : null
       }));
 
       setMessages(enrichedMessages);
@@ -1215,6 +1247,7 @@ export default function ChatPage() {
       setInChatSearchResults([]);
       setIsRenamingGroup(false);
       setEditingMessageId(null);
+      setReplyingToMessage(null);
     } else {
       setMessages([]);
     }
@@ -1240,14 +1273,14 @@ export default function ChatPage() {
             const wasAtBottom = isAtBottom();
             setMessages((prev) => {
               if (prev.some(m => m.id === newMessage.id)) return prev;
-              return [...prev, { ...newMessage, profiles: null, attachments: [] }];
+              return [...prev, { ...newMessage, profiles: null, attachments: [], reply_to: null }];
             });
 
             if (wasAtBottom || newMessage.sender_id === userProfile?.id) {
               markAsRead(selectedChatId);
             }
 
-            // Sync attachments after short delay
+            // Sync attachments and metadata after short delay
             setTimeout(() => fetchMessages(selectedChatId), 1000);
 
             try {
@@ -1328,7 +1361,8 @@ export default function ChatPage() {
           channel_id: chatObj.id,
           workspace_id: chatObj.workspace_id,
           sender_id: userProfile.id,
-          message: text || "" 
+          message: text || "",
+          reply_to_message_id: replyingToMessage?.id || null
         })
         .select('id')
         .single();
@@ -1370,6 +1404,7 @@ export default function ChatPage() {
       
       setMessageInput("");
       setSelectedFile(null);
+      setReplyingToMessage(null);
       await fetchMessages(chatObj.id);
       fetchUnreadCounts();
     } catch (err: any) {
@@ -1594,6 +1629,22 @@ export default function ChatPage() {
                           </div>
                         ) : (
                           <div className={cn("px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed border-2 border-transparent transition-all relative", isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700", isHighlighted && "border-primary ring-4 ring-primary/20")}>
+                            {/* Reply Preview inside Bubble */}
+                            {msg.reply_to && (
+                              <div 
+                                onClick={() => handleJumpToMessage(msg.channel_id, msg.reply_to!.id)}
+                                className={cn(
+                                  "mb-2 p-2 rounded-lg border-l-4 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 text-[11px]",
+                                  isMe ? "bg-white/10 border-white/40 text-white/90" : "bg-slate-50 dark:bg-slate-950/50 border-primary/40 text-slate-500 dark:text-slate-400"
+                                )}
+                              >
+                                <p className="font-bold mb-0.5">{msg.reply_to.profiles?.full_name || "Unknown User"}</p>
+                                <p className="line-clamp-1 italic">
+                                  {msg.reply_to.is_deleted ? "Message deleted" : (msg.reply_to.message || "Attachment")}
+                                </p>
+                              </div>
+                            )}
+
                             {msg.message}
                             {msg.attachments && msg.attachments.length > 0 && (
                               <div className="space-y-3 mt-4">
@@ -1650,6 +1701,9 @@ export default function ChatPage() {
                                     </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align={isMe ? "end" : "start"} className="w-48 dark:bg-slate-900 dark:border-slate-800">
+                                     <DropdownMenuItem onClick={() => setReplyingToMessage(msg)} className="gap-2">
+                                       <Reply className="h-4 w-4" /> Reply
+                                     </DropdownMenuItem>
                                      <DropdownMenuItem 
                                        onClick={() => handleCopyMessage(msg.message)}
                                        disabled={!msg.message || msg.message.trim().length === 0}
@@ -1719,7 +1773,25 @@ export default function ChatPage() {
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
-            <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800">
+            <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800 relative">
+              {/* Reply Preview Bar */}
+              {replyingToMessage && (
+                <div className="absolute bottom-full left-0 right-0 bg-slate-50 dark:bg-slate-950 border-t dark:border-slate-800 p-3 px-6 animate-in slide-in-from-bottom-2 duration-200">
+                  <div className="flex items-center justify-between gap-4 max-w-4xl mx-auto">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <div className="w-1 h-8 bg-primary rounded-full shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Replying to {replyingToMessage.profiles?.full_name}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{replyingToMessage.message || "Attachment"}</p>
+                      </div>
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => setReplyingToMessage(null)}>
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {selectedFile && <div className="mb-4 flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border dark:border-slate-800">
                 <div className="flex items-center gap-3 overflow-hidden"><div className="p-2 bg-primary/10 rounded-lg"><Paperclip className="w-4 h-4 text-primary" /></div><div className="min-w-0"><p className="text-sm font-bold truncate">{selectedFile.name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(selectedFile.size)}</p></div></div><Button variant="ghost" size="icon" aria-label="Remove Attachment" onClick={() => setSelectedFile(null)}><X className="w-4 h-4" /></Button>
               </div>}
