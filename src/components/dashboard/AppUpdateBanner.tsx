@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Megaphone, X, ArrowRight, Loader2, Sparkles, Wrench, Info, Zap, FileText } from "lucide-react";
+import { Megaphone, X, ArrowRight, Loader2, Sparkles, Wrench, Info, Zap, FileText, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
@@ -15,8 +15,6 @@ const typeIcons: Record<string, any> = {
   announcement: Megaphone,
   memo: FileText,
 };
-
-import { RefreshCw } from "lucide-react";
 
 export function AppUpdateBanner() {
   const { userProfile, activeWorkspace } = useWorkspace();
@@ -44,7 +42,6 @@ export function AppUpdateBanner() {
 
       if (error) throw error;
       
-      // Filter by targeting if necessary (RLS usually handles this, but we check logic)
       if (data && data.length > 0) {
         setUpdate(data[0]);
       } else {
