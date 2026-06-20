@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 
 /**
  * @fileOverview Secure API route for permanent user deletion by platform developers.
- * Handles database cleanup and Supabase Auth user removal using Service Role privileges.
+ * Handles database cleanup, Storage file removal, and Supabase Auth user removal.
  */
 
 export async function POST(req: Request) {
@@ -21,8 +21,7 @@ export async function POST(req: Request) {
     }
 
     // 1. Initialize Clients
-    // We use a normal client with the user's token for developer verification and cleanup RPC
-    // This is required because the cleanup RPC uses auth.uid() internally.
+    // User-authenticated client for dev checks and cleanup logic (uses developer context)
     const userClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -31,7 +30,7 @@ export async function POST(req: Request) {
       }
     );
 
-    // We use an admin client with Service Role ONLY for the actual Auth deletion and profile purge
+    // Admin client with Service Role for Auth deletion and Storage management
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -44,35 +43,31 @@ export async function POST(req: Request) {
     );
 
     // 2. Security Validation
-    // Verify the JWT is valid and get the logged-in user (the developer)
     const { data: { user: currentUser }, error: authError } = await userClient.auth.getUser();
     if (authError || !currentUser) {
       console.error('[Delete User API] Requester auth check failed:', authError);
       return NextResponse.json({ error: 'Invalid or expired session.' }, { status: 401 });
     }
 
-    console.log(`[Delete User API] Request by: ${currentUser.email} (${currentUser.id})`);
-
-    // Verify developer permissions via RPC using the user's own client
+    // Verify developer permissions
     const { data: isDev, error: devError } = await userClient.rpc('is_app_developer', {
       p_user_id: currentUser.id
     });
 
     if (devError || !isDev) {
-      console.error('[Delete User API] Access denied for:', currentUser.email, { devError, isDev });
+      console.error('[Delete User API] Access denied for:', currentUser.email);
       return NextResponse.json({ error: 'Permission denied: Developer access required.' }, { status: 403 });
     }
 
-    // Prevent self-deletion via API
+    // Prevent self-deletion
     if (targetUserId === currentUser.id) {
-      return NextResponse.json({ error: 'Security breach: You cannot delete your own account via the developer console.' }, { status: 400 });
+      return NextResponse.json({ error: 'Security breach: You cannot delete your own account via this console.' }, { status: 400 });
     }
 
-    // 3. Execution Flow
-    console.log(`[Developer Audit] User ${currentUser.email} initiating deletion of ${confirmEmail} (${targetUserId})`);
+    // 3. Multi-Stage Deletion Flow
+    console.log(`[Developer Deletion] Initiated by ${currentUser.email} for ${confirmEmail} (${targetUserId})`);
 
-    // A. Clean up database records (memberships, tasks, notes, etc)
-    // We MUST use userClient here so that auth.uid() is correctly populated in the DB context
+    // A. Clean up database records and get file paths for storage cleanup
     const { data: cleanupSummary, error: cleanupError } = await userClient.rpc('developer_cleanup_user_before_delete', {
       p_target_user_id: targetUserId,
       p_confirm_email: confirmEmail
@@ -83,22 +78,39 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: cleanupError.message || 'Database cleanup failed. Deletion aborted.' }, { status: 500 });
     }
 
-    // B. Delete from Supabase Auth (Requires Service Role)
-    const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
-    if (authDeleteError) {
-      console.error('[Deletion Error] Auth removal failed:', authDeleteError);
-      return NextResponse.json({ error: 'Cleanup was successful, but removing the authentication record failed.' }, { status: 500 });
+    // B. Clean up files via Storage API (Direct table deletion is forbidden)
+    const summary = cleanupSummary as any;
+    const paths = summary?.chat_attachment_file_paths || [];
+
+    if (Array.isArray(paths) && paths.length > 0) {
+      console.log(`[Developer Deletion] Cleaning up ${paths.length} storage files...`);
+      const { error: storageError } = await supabaseAdmin
+        .storage
+        .from("chat-attachments")
+        .remove(paths);
+
+      if (storageError) {
+        // We log but don't fail the entire process if storage cleanup hits a snag
+        console.error("[Developer Deletion] Storage cleanup encountered an issue:", storageError);
+      }
     }
 
-    // C. Final Profile Wipe (just in case cleanup RPC didn't handle it)
+    // C. Delete from Supabase Auth (Requires Service Role)
+    const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
+    if (authDeleteError) {
+      console.error('[Deletion Error] Supabase Auth removal failed:', authDeleteError);
+      return NextResponse.json({ error: 'Database cleanup was successful, but removing the authentication account failed.' }, { status: 500 });
+    }
+
+    // D. Final Profile Wipe (Ensure no dangling records)
     await supabaseAdmin.from('profiles').delete().eq('id', targetUserId);
 
-    console.log(`[Developer Audit] Deletion complete for ${confirmEmail}. Summary:`, cleanupSummary);
+    console.log(`[Developer Deletion] Successfully purged ${confirmEmail}.`);
 
     return NextResponse.json({
       success: true,
-      message: `User ${confirmEmail} has been removed.`,
-      summary: cleanupSummary
+      message: `User ${confirmEmail} has been permanently removed.`,
+      summary: summary
     });
 
   } catch (err: any) {
