@@ -25,7 +25,8 @@ import {
   X,
   ChevronRight,
   Globe,
-  BellRing
+  BellRing,
+  Smartphone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -225,22 +226,34 @@ export default function AppUpdatesAdminPage() {
   const handlePushToNotifications = async (id: string) => {
     setPushingId(id);
     try {
-      const { data: count, error } = await supabase.rpc("push_app_update_to_notifications", {
-        p_update_id: id
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Authentication session expired.");
+
+      const response = await fetch('/api/push/app-update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ updateId: id })
       });
 
-      if (error) throw error;
+      const result = await response.json();
+
+      if (!response.ok) throw new Error(result.error || "Failed to deliver notifications.");
+
+      const { sentCount, inAppNotificationCount, failedCount, disabledCount } = result;
 
       toast({ 
-        title: "Success", 
-        description: `Update pushed to ${count} users successfully.` 
+        title: "Broadcast Complete", 
+        description: `In-app: ${inAppNotificationCount}, Web Push: ${sentCount}. (${failedCount} failed, ${disabledCount} revoked)` 
       });
       fetchData();
     } catch (err: any) {
-      console.error("[Push] Failed:", err);
+      console.error("[Push] Delivery Failed:", err);
       toast({ 
         variant: "destructive", 
-        title: "Push Failed", 
+        title: "Delivery Failed", 
         description: err.message || "An error occurred while pushing notifications." 
       });
     } finally {
@@ -438,15 +451,15 @@ export default function AppUpdatesAdminPage() {
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button variant="outline" size="sm" className="h-8 rounded-lg border-primary/20 hover:bg-primary/5 text-primary" disabled={pushingId === up.id}>
-                              {pushingId === up.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <BellRing className="w-3.5 h-3.5 mr-1.5" />}
+                              {pushingId === up.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <Smartphone className="w-3.5 h-3.5 mr-1.5" />}
                               Push
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
                             <AlertDialogHeader>
-                              <AlertDialogTitle className="dark:text-white">Push update to users?</AlertDialogTitle>
+                              <AlertDialogTitle className="dark:text-white">Broadcast Announcement?</AlertDialogTitle>
                               <AlertDialogDescription className="dark:text-slate-400">
-                                This will generate workspace notifications for all targeted users. This action is immediate and cannot be undone.
+                                This will generate in-app alerts and real Web Push notifications for all targeted devices. This action is irreversible.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
