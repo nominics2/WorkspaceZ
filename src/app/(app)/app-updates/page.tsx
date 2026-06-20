@@ -14,7 +14,8 @@ import {
   Layout,
   Info,
   ExternalLink,
-  ChevronDown
+  ChevronDown,
+  MessageSquare
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +49,6 @@ export default function AppUpdatesPage() {
   const [loading, setLoading] = useState(true);
   const [isDeveloper, setIsDeveloper] = useState(false);
   const supabase = createClient();
-  const highlightedRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -64,6 +64,7 @@ export default function AppUpdatesPage() {
           .from('app_features')
           .select('*')
           .eq('is_active', true)
+          .order('category', { ascending: true })
           .order('sort_order', { ascending: true }),
         supabase.rpc('is_app_developer')
       ]);
@@ -104,13 +105,13 @@ export default function AppUpdatesPage() {
   }, {});
 
   return (
-    <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in duration-700 pb-20">
+    <div className="max-w-6xl mx-auto space-y-12 animate-in fade-in duration-700 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
             <Sparkles className="w-8 h-8 text-primary" /> What's New
           </h1>
-          <p className="text-muted-foreground font-medium mt-1">Stay updated with the latest workspace features and system logs.</p>
+          <p className="text-muted-foreground font-medium mt-1">Discover the latest improvements and master WorkspaceZ.</p>
         </div>
         {isDeveloper && (
           <Button asChild variant="outline" className="rounded-xl h-10 border-primary/20 hover:bg-primary/5 text-primary font-bold">
@@ -122,17 +123,25 @@ export default function AppUpdatesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         {/* Updates Timeline */}
         <div className="lg:col-span-7 space-y-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="h-8 w-1.5 bg-primary rounded-full" />
-            <h2 className="text-xl font-bold dark:text-white">Recent Releases</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-1.5 bg-primary rounded-full" />
+              <h2 className="text-xl font-bold dark:text-white">Recent Releases</h2>
+            </div>
+            {updates.length > 0 && (
+              <Badge variant="outline" className="rounded-lg px-2 text-[10px] uppercase font-bold border-slate-200 dark:border-slate-800 text-slate-500">
+                {updates.length} Updates
+              </Badge>
+            )}
           </div>
 
           {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
           ) : updates.length === 0 ? (
-            <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-[2rem] border-2 border-dashed dark:border-slate-800 opacity-60">
-              <Info className="w-10 h-10 mx-auto mb-3 text-slate-300" />
-              <p className="text-sm font-medium">No system updates yet.</p>
+            <div className="p-16 text-center bg-white dark:bg-slate-900 rounded-[2.5rem] border-2 border-dashed dark:border-slate-800 opacity-60">
+              <Info className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+              <p className="text-base font-bold">No system updates yet.</p>
+              <p className="text-sm text-muted-foreground mt-1">We'll announce new features here as they launch.</p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -166,7 +175,7 @@ export default function AppUpdatesPage() {
                         {update.summary}
                       </p>
                       {update.details && (
-                        <div className="prose prose-sm dark:prose-invert max-w-none pt-4 border-t dark:border-slate-800 mt-4 text-sm text-slate-500 dark:text-slate-400 whitespace-pre-wrap">
+                        <div className="prose prose-sm dark:prose-invert max-w-none pt-4 border-t dark:border-slate-800 mt-4 text-sm text-slate-500 dark:text-slate-400 whitespace-pre-wrap leading-relaxed">
                           {update.details}
                         </div>
                       )}
@@ -185,36 +194,51 @@ export default function AppUpdatesPage() {
             <h2 className="text-xl font-bold dark:text-white">Workspace Features</h2>
           </div>
 
-          <Card className="border-none shadow-lg bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
+          <Card className="border-none shadow-lg bg-white dark:bg-slate-900 rounded-[2.5rem] overflow-hidden">
             <CardContent className="p-6">
               {loading ? (
-                <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>
+                <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-amber-500" /></div>
               ) : features.length === 0 ? (
-                <p className="text-sm text-slate-400 italic text-center py-10">No feature details available.</p>
+                <div className="text-center py-16 opacity-60">
+                   <Zap className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+                   <p className="text-sm font-bold">Directory Empty</p>
+                   <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Feature catalog coming soon</p>
+                </div>
               ) : (
-                <Accordion type="multiple" className="w-full space-y-4">
+                <Accordion type="multiple" className="w-full space-y-6">
                   {Object.keys(groupedFeatures).map((category) => (
                     <div key={category} className="space-y-3">
-                      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em] px-1">{category}</p>
+                      <div className="flex items-center gap-2 px-1">
+                        <p className="text-[10px] font-extrabold text-primary uppercase tracking-[0.2em]">{category}</p>
+                        <div className="flex-1 h-px bg-slate-100 dark:bg-slate-800" />
+                      </div>
                       {groupedFeatures[category].map((feature: any) => (
                         <AccordionItem 
                           key={feature.id} 
                           value={feature.id} 
-                          className="border rounded-2xl px-4 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40"
+                          className="border rounded-[1.5rem] px-5 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 hover:bg-white dark:hover:bg-slate-900 hover:shadow-sm transition-all overflow-hidden"
                         >
-                          <AccordionTrigger className="hover:no-underline py-4">
-                            <div className="flex items-center gap-3 text-left">
-                              <div className="p-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700">
+                          <AccordionTrigger className="hover:no-underline py-5 group/item">
+                            <div className="flex items-start gap-4 text-left">
+                              <div className="p-2.5 bg-white dark:bg-slate-800 rounded-xl shadow-sm border dark:border-slate-700 shrink-0 group-hover/item:scale-110 transition-transform">
                                 <Zap className="w-4 h-4 text-amber-500 fill-amber-500/10" />
                               </div>
-                              <div>
-                                <p className="font-bold text-sm dark:text-slate-200">{feature.title}</p>
-                                <p className="text-[10px] text-slate-500 line-clamp-1">{feature.short_description}</p>
+                              <div className="min-w-0 pr-4">
+                                <p className="font-bold text-sm dark:text-slate-200 group-hover/item:text-primary transition-colors">{feature.title}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-2 mt-0.5 leading-normal">{feature.short_description}</p>
                               </div>
                             </div>
                           </AccordionTrigger>
-                          <AccordionContent className="pb-4 text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-wrap">
-                            {feature.details || feature.short_description}
+                          <AccordionContent className="pb-6 px-1">
+                            <div className="pl-[3.25rem] space-y-4">
+                               <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+                                 {feature.details || feature.short_description}
+                               </div>
+                               <div className="flex items-center gap-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                  <Badge variant="outline" className="h-4 py-0 text-[8px] border-slate-200 dark:border-slate-800">Stable</Badge>
+                                  <span>Feature Key: {feature.feature_key}</span>
+                               </div>
+                            </div>
                           </AccordionContent>
                         </AccordionItem>
                       ))}
@@ -225,17 +249,20 @@ export default function AppUpdatesPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-md bg-gradient-to-br from-indigo-500 to-primary text-white rounded-[2rem] overflow-hidden">
-             <CardContent className="p-8 text-center space-y-4">
-                <div className="mx-auto w-12 h-12 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-md">
-                   <Info className="w-6 h-6" />
+          <Card className="border-none shadow-md bg-gradient-to-br from-indigo-600 to-primary text-white rounded-[2.5rem] overflow-hidden relative group">
+             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700" />
+             <CardContent className="p-8 text-center space-y-5 relative z-10">
+                <div className="mx-auto w-14 h-14 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-md shadow-inner">
+                   <MessageSquare className="w-6 h-6" />
                 </div>
-                <h3 className="text-xl font-bold">Request a Feature?</h3>
-                <p className="text-sm opacity-90 leading-relaxed">
-                   Have ideas to improve WorkspaceZ? Reach out to your admin or developer team to suggest new capabilities.
-                </p>
-                <Button variant="secondary" className="w-full rounded-xl font-bold text-primary bg-white shadow-xl shadow-black/10">
-                   Contact Support
+                <div>
+                   <h3 className="text-xl font-bold">Have a suggestion?</h3>
+                   <p className="text-sm opacity-80 leading-relaxed mt-2">
+                      WorkspaceZ grows through your feedback. Share your ideas for new tools or enhancements.
+                   </p>
+                </div>
+                <Button variant="secondary" className="w-full rounded-xl h-11 font-bold text-primary bg-white hover:bg-slate-50 shadow-xl shadow-black/10 border-none">
+                   Suggest a Feature
                 </Button>
              </CardContent>
           </Card>
