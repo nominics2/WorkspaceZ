@@ -428,7 +428,7 @@ export default function AppUpdatesAdminPage() {
     setIsDeletingUser(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Session expired. Please reload.");
+      if (!session) throw new Error("You must be logged in to delete a user.");
 
       const response = await fetch('/api/developer/users/delete', {
         method: 'POST',
@@ -691,7 +691,7 @@ export default function AppUpdatesAdminPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle className="dark:text-white">Broadcast Announcement?</AlertDialogTitle>
                               <AlertDialogDescription className="dark:text-slate-400">
-                                This will generate in-app alerts and real Web Push notifications for all targeted devices. This action is irreversible.
+                                This will generate in-app alerts and real Web Push notifications for all targeted users.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

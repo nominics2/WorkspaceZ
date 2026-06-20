@@ -16,11 +16,13 @@ export async function POST(req: Request) {
     }
 
     if (!authHeader) {
+      console.error('[Delete User API] Missing Authorization header');
       return NextResponse.json({ error: 'Unauthorized: Missing session token.' }, { status: 401 });
     }
 
     // 1. Initialize Clients
-    // We use a normal client with the user's token to check their developer status
+    // We use a normal client with the user's token for developer verification and cleanup RPC
+    // This is required because the cleanup RPC uses auth.uid() internally.
     const userClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
       }
     );
 
-    // We use an admin client with Service Role for the actual deletion
+    // We use an admin client with Service Role ONLY for the actual Auth deletion and profile purge
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -42,16 +44,22 @@ export async function POST(req: Request) {
     );
 
     // 2. Security Validation
+    // Verify the JWT is valid and get the logged-in user (the developer)
     const { data: { user: currentUser }, error: authError } = await userClient.auth.getUser();
     if (authError || !currentUser) {
+      console.error('[Delete User API] Requester auth check failed:', authError);
       return NextResponse.json({ error: 'Invalid or expired session.' }, { status: 401 });
     }
 
-    const { data: isDev, error: devError } = await supabaseAdmin.rpc('is_app_developer', {
+    console.log(`[Delete User API] Request by: ${currentUser.email} (${currentUser.id})`);
+
+    // Verify developer permissions via RPC using the user's own client
+    const { data: isDev, error: devError } = await userClient.rpc('is_app_developer', {
       p_user_id: currentUser.id
     });
 
     if (devError || !isDev) {
+      console.error('[Delete User API] Access denied for:', currentUser.email, { devError, isDev });
       return NextResponse.json({ error: 'Permission denied: Developer access required.' }, { status: 403 });
     }
 
@@ -64,31 +72,32 @@ export async function POST(req: Request) {
     console.log(`[Developer Audit] User ${currentUser.email} initiating deletion of ${confirmEmail} (${targetUserId})`);
 
     // A. Clean up database records (memberships, tasks, notes, etc)
-    const { data: cleanupSummary, error: cleanupError } = await supabaseAdmin.rpc('developer_cleanup_user_before_delete', {
+    // We MUST use userClient here so that auth.uid() is correctly populated in the DB context
+    const { data: cleanupSummary, error: cleanupError } = await userClient.rpc('developer_cleanup_user_before_delete', {
       p_target_user_id: targetUserId,
       p_confirm_email: confirmEmail
     });
 
     if (cleanupError) {
       console.error('[Deletion Error] Cleanup RPC failed:', cleanupError);
-      throw new Error(cleanupError.message || 'Database cleanup failed. Deletion aborted.');
+      return NextResponse.json({ error: cleanupError.message || 'Database cleanup failed. Deletion aborted.' }, { status: 500 });
     }
 
-    // B. Delete from Supabase Auth
+    // B. Delete from Supabase Auth (Requires Service Role)
     const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
     if (authDeleteError) {
       console.error('[Deletion Error] Auth removal failed:', authDeleteError);
-      throw new Error('Cleanup was successful, but removing the authentication record failed. User may still be able to log in but will have no data.');
+      return NextResponse.json({ error: 'Cleanup was successful, but removing the authentication record failed.' }, { status: 500 });
     }
 
-    // C. Final Profile Wipe (just in case cleanup RPC didn't handle it or if it was created after RPC)
+    // C. Final Profile Wipe (just in case cleanup RPC didn't handle it)
     await supabaseAdmin.from('profiles').delete().eq('id', targetUserId);
 
     console.log(`[Developer Audit] Deletion complete for ${confirmEmail}. Summary:`, cleanupSummary);
 
     return NextResponse.json({
       success: true,
-      message: `User ${confirmEmail} has been completely removed from Workspace Z.`,
+      message: `User ${confirmEmail} has been removed.`,
       summary: cleanupSummary
     });
 
