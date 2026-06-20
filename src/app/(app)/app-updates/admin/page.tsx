@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { format } from "date-fns";
 import { 
   Sparkles, 
@@ -29,7 +29,12 @@ import {
   Smartphone,
   MessageSquare,
   MoreVertical,
-  ClipboardList
+  ClipboardList,
+  UserX,
+  UserMinus,
+  Mail,
+  Fingerprint,
+  Layers
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -91,6 +96,8 @@ export default function AppUpdatesAdminPage() {
   const [submitting, setSubmitting] = useState(false);
   const [pushingId, setPushingId] = useState<string | null>(null);
   
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState<any>(null);
   const [updateForm, setUpdateForm] = useState({
@@ -140,15 +147,27 @@ export default function AppUpdatesAdminPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
+        console.log("[Dev Check] No user session found.");
         setIsDeveloper(false);
         return;
       }
+
+      console.log(`[Dev Check] Verifying access for ${user.email} (${user.id})...`);
 
       const { data, error } = await supabase.rpc('is_app_developer', {
         p_user_id: user.id
       });
 
-      if (error) console.error("[Dev Check] RPC Error:", error);
+      if (error) {
+        console.error("[Dev Check] RPC Error:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+      }
+      
+      console.log(`[Dev Check] Result for ${user.email}:`, data);
       setIsDeveloper(!!data);
     } catch (err) {
       console.error("[Dev Check] Failed:", err);
@@ -159,19 +178,31 @@ export default function AppUpdatesAdminPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [updatesRes, featuresRes, requestsRes, wsRes, usersRes] = await Promise.all([
+      const [updatesRes, featuresRes, requestsRes, wsRes, usersRes, membershipsRes] = await Promise.all([
         supabase.from('app_updates').select('*').order('published_at', { ascending: false }),
         supabase.from('app_features').select('*').order('category', { ascending: true }).order('sort_order', { ascending: true }),
         supabase.from('app_feature_requests').select('*, profiles(full_name, email), workspaces(name)').order('created_at', { ascending: false }),
         supabase.from('workspaces').select('id, name, icon_preset').order('name', { ascending: true }),
-        supabase.from('profiles').select('id, full_name, username, avatar_url, avatar_preset').order('full_name', { ascending: true }).limit(100)
+        supabase.from('profiles').select('id, full_name, username, avatar_url, avatar_preset, email, created_at, updated_at').order('created_at', { ascending: false }),
+        supabase.from('workspace_members').select('user_id')
       ]);
+
+      // Calculate workspace counts per user
+      const membershipCounts: Record<string, number> = {};
+      membershipsRes.data?.forEach(m => {
+        membershipCounts[m.user_id] = (membershipCounts[m.user_id] || 0) + 1;
+      });
+
+      const enrichedUsers = (usersRes.data || []).map(u => ({
+        ...u,
+        workspace_count: membershipCounts[u.id] || 0
+      }));
 
       setUpdates(updatesRes.data || []);
       setFeatures(featuresRes.data || []);
       setRequests(requestsRes.data || []);
       setWorkspaces(wsRes.data || []);
-      setUsers(usersRes.data || []);
+      setUsers(enrichedUsers);
     } catch (err) {
       console.error("[Admin] Fetch failed:", err);
     } finally {
@@ -188,6 +219,16 @@ export default function AppUpdatesAdminPage() {
       fetchData();
     }
   }, [isDeveloper, fetchData]);
+
+  const filteredUsers = useMemo(() => {
+    if (!userSearchQuery.trim()) return users;
+    const q = userSearchQuery.toLowerCase();
+    return users.filter(u => 
+      u.full_name?.toLowerCase().includes(q) ||
+      u.username?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q)
+    );
+  }, [users, userSearchQuery]);
 
   const handleSaveUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -394,7 +435,7 @@ export default function AppUpdatesAdminPage() {
           <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
             <ShieldCheck className="w-8 h-8 text-primary" /> Developer Console
           </h1>
-          <p className="text-muted-foreground font-medium mt-1">Manage platform-wide communication and feature roadmap.</p>
+          <p className="text-muted-foreground font-medium mt-1">Manage platform-wide communication, features, and user accounts.</p>
         </div>
         <div className="flex items-center gap-3">
           <Button onClick={() => { setEditingFeature(null); setFeatureForm({ feature_key: "", title: "", short_description: "", details: "", category: "General", sort_order: features.length, is_active: true, release_date: new Date().toISOString().split('T')[0] }); setIsFeatureModalOpen(true); }} variant="outline" className="rounded-xl h-10 border-amber-500/20 hover:bg-amber-500/5 text-amber-600">
@@ -407,12 +448,15 @@ export default function AppUpdatesAdminPage() {
       </div>
 
       <Tabs defaultValue="features" className="space-y-6">
-        <TabsList className="bg-white dark:bg-slate-900 p-1 border dark:border-slate-800 rounded-xl">
-          <TabsTrigger value="features" className="rounded-lg px-6 font-bold">Feature Catalog</TabsTrigger>
-          <TabsTrigger value="requests" className="rounded-lg px-6 font-bold flex items-center gap-2">
+        <TabsList className="bg-white dark:bg-slate-900 p-1 border dark:border-slate-800 rounded-xl w-full flex overflow-x-auto no-scrollbar">
+          <TabsTrigger value="features" className="rounded-lg px-6 font-bold flex-1 md:flex-none">Feature Catalog</TabsTrigger>
+          <TabsTrigger value="requests" className="rounded-lg px-6 font-bold flex items-center gap-2 flex-1 md:flex-none">
             Feedback {requests.filter(r => r.status === 'new').length > 0 && <Badge className="h-4 px-1 bg-rose-500 text-[10px]">{requests.filter(r => r.status === 'new').length}</Badge>}
           </TabsTrigger>
-          <TabsTrigger value="updates" className="rounded-lg px-6 font-bold">Announcements</TabsTrigger>
+          <TabsTrigger value="updates" className="rounded-lg px-6 font-bold flex-1 md:flex-none">Announcements</TabsTrigger>
+          <TabsTrigger value="users" className="rounded-lg px-6 font-bold flex-1 md:flex-none flex items-center gap-2">
+            Global Users <Badge variant="secondary" className="h-4 px-1 text-[10px]">{users.length}</Badge>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="features" className="space-y-4">
@@ -606,6 +650,79 @@ export default function AppUpdatesAdminPage() {
                       <Button variant="ghost" size="sm" className="h-8 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10" onClick={() => handleDeleteUpdate(up.id)}>
                         <Trash2 className="w-4 h-4 mr-2" /> Delete
                       </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="users" className="space-y-6">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border dark:border-slate-800 shadow-sm">
+            <div className="relative w-full md:max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input 
+                placeholder="Search users by name, handle, or email..." 
+                className="pl-10 h-10 dark:bg-slate-950 border-none shadow-none"
+                value={userSearchQuery}
+                onChange={(e) => setUserSearchQuery(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-4 text-xs font-bold text-muted-foreground uppercase tracking-widest">
+              <div className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {users.length} Total</div>
+              <div className="w-px h-4 bg-slate-200 dark:bg-slate-800" />
+              <div className="flex items-center gap-1.5 text-primary"><Check className="w-3.5 h-3.5" /> All Verified</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {filteredUsers.length === 0 ? (
+              <div className="text-center py-20 bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed dark:border-slate-800">
+                <p className="text-slate-400 italic">No users found matching your search.</p>
+              </div>
+            ) : (
+              filteredUsers.map((user) => (
+                <Card key={user.id} className="border-none shadow-sm dark:bg-slate-900 group">
+                  <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-6">
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <Avatar className="h-14 w-14 border-2 border-white dark:border-slate-800 shadow-sm">
+                        <AvatarImage src={user.avatar_preset ? `/avatars/${user.avatar_preset}.png` : user.avatar_url} />
+                        <AvatarFallback className="font-bold bg-primary/10 text-primary uppercase text-lg">{user.full_name?.[0]}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <h3 className="font-extrabold text-base dark:text-slate-100 truncate">{user.full_name}</h3>
+                          <Badge variant="secondary" className="text-[9px] font-bold py-0 h-4 dark:bg-slate-800">@{user.username}</Badge>
+                        </div>
+                        <p className="text-xs text-slate-500 flex items-center gap-1.5"><Mail className="w-3 h-3" /> {user.email}</p>
+                        <div className="flex items-center gap-3 mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                           <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Joined {format(new Date(user.created_at), "MMM yyyy")}</span>
+                           <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                           <span className="flex items-center gap-1 text-violet-500"><Layers className="w-3 h-3" /> {user.workspace_count} Workspaces</span>
+                           <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                           <span className="flex items-center gap-1"><Fingerprint className="w-3 h-3" /> {user.id.slice(0, 8)}...</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 shrink-0 border-t md:border-none pt-3 md:pt-0">
+                      <DropdownMenu onOpenChange={() => forceUnlockUI()}>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-9 px-4 gap-2 dark:border-slate-800 bg-white dark:bg-slate-900 font-bold">
+                            <MoreVertical className="w-4 h-4" />
+                            Manage User
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56 dark:bg-slate-950">
+                          <DropdownMenuItem disabled className="opacity-50 gap-2"><UserX className="w-4 h-4" /> Deactivate Account</DropdownMenuItem>
+                          <DropdownMenuItem disabled className="opacity-50 text-rose-500 gap-2"><UserMinus className="w-4 h-4" /> Delete Profile</DropdownMenuItem>
+                          <DropdownMenuSeparator className="dark:bg-slate-800" />
+                          <div className="px-2 py-1.5 text-[9px] font-bold text-muted-foreground uppercase leading-tight italic">
+                            Destructive actions are coming after safety audit
+                          </div>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </CardContent>
                 </Card>
@@ -853,3 +970,4 @@ export default function AppUpdatesAdminPage() {
     </div>
   );
 }
+
