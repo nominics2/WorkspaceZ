@@ -37,6 +37,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
+import { getWorkspaceIconSrc } from "@/lib/workspace-icons";
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -123,10 +124,12 @@ export function SidebarNav() {
                   )}
                 >
                   <div className="flex items-center gap-3 overflow-hidden">
-                    <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
-                      <span className="text-white font-bold text-xs">
-                        {activeWorkspace?.name?.[0] || 'W'}
-                      </span>
+                    <div className="w-7 h-7 rounded-lg overflow-hidden shrink-0 shadow-lg shadow-primary/20 border border-slate-200 dark:border-slate-800 bg-white">
+                      <img 
+                        src={getWorkspaceIconSrc(activeWorkspace?.icon_preset)} 
+                        alt={activeWorkspace?.name || 'Workspace'} 
+                        className="w-full h-full object-cover"
+                      />
                     </div>
                     {!isCollapsed && (
                       <div className="text-left overflow-hidden">
@@ -146,8 +149,14 @@ export function SidebarNav() {
                 <div className="p-2 px-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b dark:border-slate-800 mb-1">Your Workspaces</div>
                 {workspaces.map((ws) => (
                   <DropdownMenuItem key={ws.id} onClick={() => switchWorkspace(ws.id)} className="rounded-lg gap-2 py-2">
-                    <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded flex items-center justify-center text-[10px] font-bold">{ws.name[0]}</div>
-                    <span className="font-medium">{ws.name}</span>
+                    <div className="w-6 h-6 rounded overflow-hidden border dark:border-slate-800 shrink-0 bg-white">
+                      <img 
+                        src={getWorkspaceIconSrc(ws.icon_preset)} 
+                        alt={ws.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <span className="font-medium truncate flex-1">{ws.name}</span>
                     {ws.id === activeWorkspace?.id && <BadgeCheck className="w-3.5 h-3.5 text-primary ml-auto" />}
                   </DropdownMenuItem>
                 ))}

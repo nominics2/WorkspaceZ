@@ -31,7 +31,8 @@ import {
   UserMinus,
   Search,
   Save,
-  PlaneTakeoff
+  PlaneTakeoff,
+  Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -75,6 +76,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { WORKSPACE_ICON_PRESETS, getWorkspaceIconSrc } from "@/lib/workspace-icons";
 
 export default function WorkspaceAdminPage() {
   const { activeWorkspace, refreshWorkspaces, userProfile, userRole, hasPermission } = useWorkspace();
@@ -88,11 +90,13 @@ export default function WorkspaceAdminPage() {
   const [wsPermissions, setWsPermissions] = useState<any[]>([]);
   const [workspaceInfo, setWorkspaceInfo] = useState<any>(null);
   const [wsNameInput, setWsNameInput] = useState("");
+  const [selectedIcon, setSelectedIcon] = useState("");
   const [loading, setLoading] = useState(true);
   const [isAllocating, setIsAllocating] = useState(false);
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
   const [editingTeam, setEditingTeam] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [iconSubmitting, setIconSubmitting] = useState(false);
   const [updatingRole, setUpdatingRole] = useState<string | null>(null);
   const [updatingPerm, setUpdatingPerm] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "pending">("active");
@@ -136,7 +140,10 @@ export default function WorkspaceAdminPage() {
     try {
       const { data: wsData } = await supabase.from('workspaces').select('*').eq('id', activeWorkspace.id).single();
       setWorkspaceInfo(wsData);
-      if (wsData) setWsNameInput(wsData.name);
+      if (wsData) {
+        setWsNameInput(wsData.name);
+        setSelectedIcon(wsData.icon_preset || WORKSPACE_ICON_PRESETS[0].id);
+      }
       const { data: wsMembers, error: wsMembersError } = await supabase.from('workspace_members').select('*').eq('workspace_id', activeWorkspace.id);
       if (wsMembersError) throw wsMembersError;
       if (wsMembers && wsMembers.length > 0) {
@@ -173,6 +180,35 @@ export default function WorkspaceAdminPage() {
   }, [activeWorkspace, userProfile, userRole, hasPermission, supabase, toast]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleUpdateWorkspaceIcon = async () => {
+    if (!activeWorkspace || !canManageSettings || !selectedIcon) return;
+    setIconSubmitting(true);
+    try {
+      const { error } = await supabase.rpc("update_workspace_icon_preset", {
+        p_workspace_id: activeWorkspace.id,
+        p_icon_preset: selectedIcon,
+      });
+      if (error) throw error;
+      toast({ title: "Workspace icon updated" });
+      await refreshWorkspaces();
+      await fetchData();
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Unable to update workspace icon", 
+        description: err.message 
+      });
+      console.error("[Workspace Icon] Update Error:", {
+        message: err.message,
+        details: err.details,
+        hint: err.hint,
+        code: err.code
+      });
+    } finally {
+      setIconSubmitting(false);
+    }
+  };
 
   const handleCopyJoinCode = () => {
     if (activeWorkspace?.join_code) {
@@ -483,7 +519,76 @@ export default function WorkspaceAdminPage() {
 
         <TabsContent value="audit" className="space-y-4"><div className="space-y-3">{auditLogs.length === 0 ? (<p className="py-12 text-center text-muted-foreground italic bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-800">No logs found.</p>) : (auditLogs.map((log) => (<Card key={log.id} className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-3 md:p-4 flex gap-3"><History className="w-4 h-4 text-primary shrink-0 mt-1" /><div className="min-w-0 flex-1"><p className="text-xs font-bold capitalize dark:text-slate-200">{log.action.replace(/_/g, ' ')}</p><p className="text-[10px] text-muted-foreground leading-snug"><span className="font-bold text-foreground dark:text-slate-300">{(log.actor as any)?.full_name}</span> performed action {log.target_user_id && <> for <span className="font-bold text-foreground dark:text-slate-300">{(log.target as any)?.full_name}</span></>}</p><p className="text-[8px] text-muted-foreground mt-1">{new Date(log.created_at).toLocaleString()}</p></div></CardContent></Card>)))}</div></TabsContent>
 
-        <TabsContent value="settings" className="space-y-6"><Card className="border-none shadow-sm dark:bg-slate-900"><CardHeader className="p-4 md:p-6"><CardTitle className="text-lg dark:text-slate-100">General Details</CardTitle><CardDescription>Update the primary identification of this workspace.</CardDescription></CardHeader><CardContent className="p-4 md:p-6 space-y-4"><form onSubmit={handleUpdateWorkspaceName} className="space-y-4"><div className="space-y-2"><Label htmlFor="wsName" className="dark:text-slate-300">Workspace Name</Label><div className="flex flex-col sm:flex-row gap-3"><Input id="wsName" value={wsNameInput} onChange={(e) => setWsNameInput(e.target.value)} placeholder="Workspace Name" className="flex-1 dark:bg-slate-950 dark:border-slate-800" required disabled={!canManageSettings || submitting} /><Button type="submit" disabled={!canManageSettings || submitting || !wsNameInput.trim() || wsNameInput === workspaceInfo?.name} className="gap-2 shadow-lg shadow-primary/20">{submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}Update Name</Button></div><p className="text-[10px] text-muted-foreground italic">Renaming the workspace will update the display name for all members.</p></div></form></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardHeader className="p-4 md:p-6"><CardTitle className="text-lg dark:text-slate-100">Access Control</CardTitle></CardHeader><CardContent className="p-4 md:p-6 space-y-4"><div className="flex items-center justify-between gap-4 p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border dark:border-slate-800"><div><p className="text-sm font-bold dark:text-slate-200">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div><Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!canManageMembers} /></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardHeader className="p-4 md:p-6"><div className="flex items-center gap-2"><BellRing className="w-5 h-5 text-primary" /><CardTitle className="text-lg dark:text-slate-100">Notification Automation</CardTitle></div><CardDescription>Manually trigger scheduled system checks for task deadlines and reminders.</CardDescription></CardHeader><CardContent className="p-4 md:p-6 space-y-4"><div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"><div className="space-y-1"><p className="text-sm font-bold dark:text-slate-200">Process Deadlines & Reminders</p><p className="text-[10px] text-muted-foreground max-w-md">Checks for due reminders, tasks due within 3 days, and overdue assignments to generate relevant system notifications.</p></div><Button onClick={handleRunNotificationChecks} disabled={isRunningChecks} className="w-full sm:w-auto gap-2 shadow-lg shadow-primary/20">{isRunningChecks ? (<Loader2 className="w-4 h-4 animate-spin" />) : (<RefreshCw className="w-4 h-4" />)}Run Checks</Button></div></CardContent></Card></TabsContent>
+        <TabsContent value="settings" className="space-y-6">
+          <Card className="border-none shadow-sm dark:bg-slate-900">
+            <CardHeader className="p-4 md:p-6">
+              <CardTitle className="text-lg dark:text-slate-100">Workspace Identity</CardTitle>
+              <CardDescription>Customize how your workspace appears to members.</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 md:p-6 space-y-6">
+              <div className="flex flex-col sm:flex-row gap-6">
+                <div className="space-y-3 shrink-0">
+                  <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Workspace Icon</Label>
+                  <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-white dark:border-slate-800 shadow-xl bg-white">
+                    <img src={getWorkspaceIconSrc(selectedIcon)} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+                <div className="flex-1 space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Select Preset</Label>
+                    <div className="grid grid-cols-5 gap-3 max-w-sm">
+                      {WORKSPACE_ICON_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => setSelectedIcon(preset.id)}
+                          className={cn(
+                            "aspect-square rounded-xl overflow-hidden border-2 transition-all hover:scale-105 relative bg-white",
+                            selectedIcon === preset.id 
+                              ? "border-primary ring-2 ring-primary/20 shadow-md scale-105" 
+                              : "border-slate-100 dark:border-slate-800 opacity-70 grayscale-[0.5] hover:grayscale-0 hover:opacity-100"
+                          )}
+                        >
+                          <img src={preset.src} alt={preset.label} className="w-full h-full object-cover" />
+                          {selectedIcon === preset.id && (
+                            <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
+                              <Check className="w-5 h-5 text-primary" />
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={handleUpdateWorkspaceIcon} 
+                    disabled={!canManageSettings || iconSubmitting || selectedIcon === workspaceInfo?.icon_preset}
+                    size="sm"
+                    className="gap-2"
+                  >
+                    {iconSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                    Save Icon
+                  </Button>
+                </div>
+              </div>
+
+              <Separator className="dark:bg-slate-800" />
+
+              <form onSubmit={handleUpdateWorkspaceName} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="wsName" className="dark:text-slate-300">Workspace Name</Label>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <Input id="wsName" value={wsNameInput} onChange={(e) => setWsNameInput(e.target.value)} placeholder="Workspace Name" className="flex-1 dark:bg-slate-950 dark:border-slate-800" required disabled={!canManageSettings || submitting} />
+                    <Button type="submit" disabled={!canManageSettings || submitting || !wsNameInput.trim() || wsNameInput === workspaceInfo?.name} className="gap-2 shadow-lg shadow-primary/20">
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Update Name
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+          <Card className="border-none shadow-sm dark:bg-slate-900"><CardHeader className="p-4 md:p-6"><CardTitle className="text-lg dark:text-slate-100">Access Control</CardTitle></CardHeader><CardContent className="p-4 md:p-6 space-y-4"><div className="flex items-center justify-between gap-4 p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border dark:border-slate-800"><div><p className="text-sm font-bold dark:text-slate-200">Join Approval</p><p className="text-[10px] text-muted-foreground">Require review for code-joining users.</p></div><Switch checked={workspaceInfo?.require_join_approval || false} onCheckedChange={handleToggleJoinApproval} disabled={!canManageMembers} /></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardHeader className="p-4 md:p-6"><div className="flex items-center gap-2"><BellRing className="w-5 h-5 text-primary" /><CardTitle className="text-lg dark:text-slate-100">Notification Automation</CardTitle></div><CardDescription>Manually trigger scheduled system checks for task deadlines and reminders.</CardDescription></CardHeader><CardContent className="p-4 md:p-6 space-y-4"><div className="p-4 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"><div className="space-y-1"><p className="text-sm font-bold dark:text-slate-200">Process Deadlines & Reminders</p><p className="text-[10px] text-muted-foreground max-w-md">Checks for due reminders, tasks due within 3 days, and overdue assignments to generate relevant system notifications.</p></div><Button onClick={handleRunNotificationChecks} disabled={isRunningChecks} className="w-full sm:w-auto gap-2 shadow-lg shadow-primary/20">{isRunningChecks ? (<Loader2 className="w-4 h-4 animate-spin" />) : (<RefreshCw className="w-4 h-4" />)}Run Checks</Button></div></CardContent></Card>
+        </TabsContent>
       </Tabs>
 
       <Dialog open={isAllocating} onOpenChange={(open) => { setIsAllocating(open); if (!open) forceUnlockUI(); }}>

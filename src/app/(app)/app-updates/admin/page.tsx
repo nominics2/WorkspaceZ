@@ -68,6 +68,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { getWorkspaceIconSrc } from "@/lib/workspace-icons";
 
 export default function AppUpdatesAdminPage() {
   const { userProfile } = useWorkspace();
@@ -144,7 +145,7 @@ export default function AppUpdatesAdminPage() {
       const [updatesRes, featuresRes, wsRes, usersRes] = await Promise.all([
         supabase.from('app_updates').select('*').order('published_at', { ascending: false }),
         supabase.from('app_features').select('*').order('category', { ascending: true }).order('sort_order', { ascending: true }),
-        supabase.from('workspaces').select('id, name').order('name', { ascending: true }),
+        supabase.from('workspaces').select('id, name, icon_preset').order('name', { ascending: true }),
         supabase.from('profiles').select('id, full_name, username, avatar_url, avatar_preset').order('full_name', { ascending: true }).limit(100)
       ]);
 
@@ -571,7 +572,9 @@ export default function AppUpdatesAdminPage() {
                              workspaces.map(ws => (
                                 <button key={ws.id} type="button" onClick={() => setUpdateForm(f => ({...f, target_ids: f.target_ids.includes(ws.id) ? f.target_ids.filter(x => x !== ws.id) : [...f.target_ids, ws.id]}))} className={cn("w-full flex items-center justify-between p-2 rounded-xl text-xs", updateForm.target_ids.includes(ws.id) ? "bg-primary/10 text-primary font-bold" : "hover:bg-slate-50 dark:hover:bg-slate-900")}>
                                    <div className="flex items-center gap-2">
-                                      <Layout className="w-3.5 h-3.5" />
+                                      <div className="w-5 h-5 rounded overflow-hidden border shrink-0 bg-white">
+                                        <img src={getWorkspaceIconSrc(ws.icon_preset)} className="w-full h-full object-cover" alt="" />
+                                      </div>
                                       {ws.name}
                                    </div>
                                    {updateForm.target_ids.includes(ws.id) && <Check className="w-3.5 h-3.5" />}

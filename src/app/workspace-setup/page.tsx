@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
-import { PlusCircle, Users, Loader2, ArrowLeft, Clock, LogOut } from "lucide-react";
+import { PlusCircle, Users, Loader2, ArrowLeft, Clock, LogOut, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { WORKSPACE_ICON_PRESETS } from "@/lib/workspace-icons";
+import { cn } from "@/lib/utils";
 
 /**
  * Normalizes the join status returned from the Supabase RPC.
@@ -31,6 +33,7 @@ function normalizeJoinStatus(result: unknown): string | null {
 export default function WorkspaceSetupPage() {
   const [mode, setMode] = useState<"choice" | "create" | "join" | "pending">("choice");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [selectedIcon, setSelectedIcon] = useState(WORKSPACE_ICON_PRESETS[0].id);
   const [joinCode, setJoinCode] = useState("");
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
@@ -72,11 +75,21 @@ export default function WorkspaceSetupPage() {
         return;
       }
 
-      const { data, error } = await supabase.rpc("create_workspace", {
+      // 1. Create workspace
+      const { data: wsId, error } = await supabase.rpc("create_workspace", {
         p_name: workspaceName,
       });
 
       if (error) throw error;
+
+      // 2. Set icon preset
+      if (wsId) {
+        const { error: iconError } = await supabase.rpc("update_workspace_icon_preset", {
+          p_workspace_id: wsId,
+          p_icon_preset: selectedIcon
+        });
+        if (iconError) console.error("[Icon Setup] Failed to set preset:", iconError);
+      }
       
       toast({ title: "Success", description: "Workspace created successfully!" });
       router.replace("/dashboard");
@@ -99,19 +112,7 @@ export default function WorkspaceSetupPage() {
         p_join_code: joinCode
       });
 
-      // Debugging logs to identify response shape
-      console.log("[Join Workspace] result data:", data);
-      console.log("[Join Workspace] result type:", typeof data);
-      
-      if (error) {
-        console.error("[Join Workspace] Supabase error:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        throw error;
-      }
+      if (error) throw error;
 
       const joinStatus = normalizeJoinStatus(data);
 
@@ -121,11 +122,7 @@ export default function WorkspaceSetupPage() {
       } else if (joinStatus === 'pending' || joinStatus === 'pending_approval') {
         setMode("pending");
         toast({ title: "Request Sent", description: "Your join request is pending approval." });
-      } else if (joinStatus === 'invalid_code' || joinStatus === 'not_found') {
-        throw new Error("Invalid workspace code.");
       } else {
-        // Fallback for unexpected shapes without showing [object Object]
-        console.error("[Join Workspace] Unexpected normalized status:", joinStatus, "from data:", data);
         throw new Error("Unable to join workspace. Please check the code and try again.");
       }
     } catch (err: any) {
@@ -170,12 +167,6 @@ export default function WorkspaceSetupPage() {
             </Button>
           </CardContent>
         </Card>
-        
-        <div className="mt-8 text-center">
-           <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest">
-             Powered by Eos Studios | Creation of Maldives
-           </p>
-        </div>
       </div>
     );
   }
@@ -184,20 +175,12 @@ export default function WorkspaceSetupPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-slate-50 dark:bg-slate-950 gap-8">
         <div className="flex justify-center items-center">
-             <img 
-               src="/brand/full-logo.png" 
-               alt="WorkspaceZ" 
-               className="w-[180px] h-auto object-contain dark:hidden"
-             />
-             <img 
-               src="/brand/full-logo-dark.png" 
-               alt="WorkspaceZ" 
-               className="w-[180px] h-auto object-contain hidden dark:block"
-             />
+             <img src="/brand/full-logo.png" alt="WorkspaceZ" className="w-[180px] h-auto object-contain dark:hidden" />
+             <img src="/brand/full-logo-dark.png" alt="WorkspaceZ" className="w-[180px] h-auto object-contain hidden dark:block" />
         </div>
         <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card 
-            className="hover:border-primary cursor-pointer transition-all hover:shadow-lg group dark:bg-slate-900 dark:border-slate-800 dark:hover:border-primary"
+            className="hover:border-primary cursor-pointer transition-all hover:shadow-lg group dark:bg-slate-900 dark:border-slate-800"
             onClick={() => setMode("create")}
           >
             <CardHeader className="text-center pt-8">
@@ -213,7 +196,7 @@ export default function WorkspaceSetupPage() {
           </Card>
 
           <Card 
-            className="hover:border-accent cursor-pointer transition-all hover:shadow-lg group dark:bg-slate-900 dark:border-slate-800 dark:hover:border-accent"
+            className="hover:border-accent cursor-pointer transition-all hover:shadow-lg group dark:bg-slate-900 dark:border-slate-800"
             onClick={() => setMode("join")}
           >
             <CardHeader className="text-center pt-8">
@@ -228,12 +211,6 @@ export default function WorkspaceSetupPage() {
             </CardContent>
           </Card>
         </div>
-        
-        <div className="mt-4 text-center">
-           <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest">
-             Powered by Eos Studios | Creation of Maldives
-           </p>
-        </div>
       </div>
     );
   }
@@ -243,7 +220,7 @@ export default function WorkspaceSetupPage() {
       <Card className="w-full max-w-md shadow-xl border-none dark:bg-slate-900">
         <CardHeader>
           <div className="flex items-center gap-2 mb-4">
-            <Button variant="ghost" size="icon" onClick={() => setMode("choice")} className="dark:text-slate-400 dark:hover:bg-slate-800">
+            <Button variant="ghost" size="icon" onClick={() => setMode("choice")} className="dark:text-slate-400">
               <ArrowLeft className="w-4 h-4" />
             </Button>
             <CardTitle className="text-2xl font-bold dark:text-slate-100">
@@ -255,20 +232,47 @@ export default function WorkspaceSetupPage() {
           </CardDescription>
         </CardHeader>
         <form onSubmit={mode === "create" ? handleCreate : handleJoin}>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6 pb-10">
             {mode === "create" ? (
-              <div className="space-y-2">
-                <Label htmlFor="wsName" className="dark:text-slate-300">Workspace Name</Label>
-                <Input 
-                  id="wsName" 
-                  placeholder="e.g. Acme Tech Corp" 
-                  required 
-                  value={workspaceName}
-                  onChange={(e) => setWorkspaceName(e.target.value)}
-                  disabled={loading}
-                  className="h-11 dark:bg-slate-800 dark:border-slate-700"
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="wsName" className="dark:text-slate-300">Workspace Name</Label>
+                  <Input 
+                    id="wsName" 
+                    placeholder="e.g. Acme Tech Corp" 
+                    required 
+                    value={workspaceName}
+                    onChange={(e) => setWorkspaceName(e.target.value)}
+                    disabled={loading}
+                    className="h-11 dark:bg-slate-800 dark:border-slate-700"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label className="dark:text-slate-300">Workspace Icon</Label>
+                  <div className="grid grid-cols-5 gap-3">
+                    {WORKSPACE_ICON_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setSelectedIcon(preset.id)}
+                        className={cn(
+                          "aspect-square rounded-xl overflow-hidden border-2 transition-all hover:scale-105 relative bg-white",
+                          selectedIcon === preset.id 
+                            ? "border-primary ring-2 ring-primary/20 shadow-md scale-105" 
+                            : "border-slate-100 dark:border-slate-800 opacity-70 grayscale-[0.5] hover:grayscale-0 hover:opacity-100"
+                        )}
+                      >
+                        <img src={preset.src} alt={preset.label} className="w-full h-full object-cover" />
+                        {selectedIcon === preset.id && (
+                          <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
+                            <Check className="w-5 h-5 text-primary" />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
             ) : (
               <div className="space-y-2">
                 <Label htmlFor="code" className="dark:text-slate-300">Join Code</Label>
@@ -283,21 +287,13 @@ export default function WorkspaceSetupPage() {
                 />
               </div>
             )}
-          </CardContent>
-          <CardContent className="flex flex-col gap-3 pt-0 pb-10">
-            <Button type="submit" className="w-full py-6 text-lg font-semibold shadow-lg shadow-primary/20" disabled={loading}>
+            <Button type="submit" className="w-full py-6 text-lg font-semibold shadow-lg shadow-primary/20 mt-4" disabled={loading}>
               {loading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
-              Continue
+              {mode === "create" ? "Create Workspace" : "Continue"}
             </Button>
           </CardContent>
         </form>
       </Card>
-      
-      <div className="mt-8 text-center">
-         <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-widest">
-           Powered by Eos Studios | Creation of Maldives
-         </p>
-      </div>
     </div>
   );
 }

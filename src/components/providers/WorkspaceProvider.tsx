@@ -8,6 +8,7 @@ interface Workspace {
   id: string;
   name: string;
   join_code: string;
+  icon_preset?: string | null;
 }
 
 type ThemePreference = 'light' | 'dark' | 'system';
@@ -98,7 +99,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           workspaces (
             id,
             name,
-            join_code
+            join_code,
+            icon_preset
           )
         `)
         .eq('user_id', user.id)
