@@ -23,7 +23,9 @@ import {
   AlertCircle,
   PlusCircle,
   Users,
-  Info
+  Info,
+  X,
+  Copy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -36,12 +38,15 @@ const ONBOARDING_STEPS = [
   { id: 'profile', title: 'Profile', description: 'Set up your identity', icon: User },
   { id: 'workspace', title: 'Workspace', description: 'Create or join a team', icon: Layout },
   { id: 'teams', title: 'Setup Teams', description: 'Organize your focus', icon: Flag },
+  { id: 'invite', title: 'Invite Members', description: 'Grow your community', icon: Users },
   { id: 'install', title: 'Install App', description: 'Get the best experience', icon: Smartphone },
   { id: 'notifications', title: 'Notifications', description: 'Stay in the loop', icon: Bell },
   { id: 'finish', title: 'Finish', description: 'You are all set!', icon: Check },
 ];
 
 const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`);
+
+const SUGGESTED_TEAMS = ['Management', 'Operations', 'Sales', 'HR', 'Finance', 'Projects', 'Support'];
 
 /**
  * Normalizes the join status returned from the Supabase RPC.
@@ -58,7 +63,7 @@ function normalizeJoinStatus(result: unknown): string | null {
 }
 
 export default function OnboardingPage() {
-  const { loading, workspaces, userProfile, refreshWorkspaces } = useWorkspace();
+  const { loading, workspaces, userProfile, refreshWorkspaces, activeWorkspace } = useWorkspace();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
@@ -81,6 +86,10 @@ export default function OnboardingPage() {
     join_code: ""
   });
 
+  // Teams State
+  const [selectedTeams, setSelectedTeams] = useState<string[]>([]);
+  const [customTeamName, setCustomTeamName] = useState("");
+
   // Initialize form from userProfile
   useEffect(() => {
     if (userProfile) {
@@ -94,10 +103,11 @@ export default function OnboardingPage() {
 
   // Routing Logic: Skip onboarding if workspace exists
   useEffect(() => {
-    if (!loading && workspaces && workspaces.length > 0) {
-      router.replace('/dashboard');
+    if (!loading && workspaces && workspaces.length > 0 && currentStepIndex === 0) {
+      // Allow them to continue if they already started onboarding and are at a later step
+      // But if they just hit the page, and have workspaces, they might be done.
     }
-  }, [loading, workspaces, router]);
+  }, [loading, workspaces, currentStepIndex]);
 
   const currentStep = ONBOARDING_STEPS[currentStepIndex];
   const progress = ((currentStepIndex + 1) / ONBOARDING_STEPS.length) * 100;
@@ -117,7 +127,7 @@ export default function OnboardingPage() {
     } else if (!/^[a-z0-9_]{3,20}$/.test(username)) {
       newErrors.username = "3-20 characters, lowercase, numbers, or underscores only";
     } else {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('id')
         .eq('username', username)
@@ -182,31 +192,25 @@ export default function OnboardingPage() {
         p_name: workspaceForm.name.trim(),
       });
 
-      if (error) {
-        console.error("[Workspace Create] RPC Error:", error);
-        throw error;
-      }
+      if (error) throw error;
 
       // 2. Set icon preset
       if (wsId) {
-        const { error: iconError } = await supabase.rpc("update_workspace_icon_preset", {
+        await supabase.rpc("update_workspace_icon_preset", {
           p_workspace_id: wsId,
           p_icon_preset: workspaceForm.icon_preset
         });
-        if (iconError) console.error("[Icon Setup] Failed to set preset:", iconError);
       }
 
       // 3. Mark Onboarding
-      const { error: onboardingError } = await supabase.rpc('update_my_onboarding', {
+      await supabase.rpc('update_my_onboarding', {
         p_current_step: 'teams',
         p_workspace_completed: true
       });
 
-      if (onboardingError) throw onboardingError;
-
       await refreshWorkspaces();
       toast({ title: "Workspace Created", description: `Welcome to ${workspaceForm.name}!` });
-      setCurrentStepIndex(currentStepIndex + 1);
+      setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'teams'));
     } catch (err: any) {
       toast({ 
         variant: "destructive", 
@@ -226,45 +230,81 @@ export default function OnboardingPage() {
         p_join_code: workspaceForm.join_code.trim().toUpperCase()
       });
 
-      if (error) {
-        console.error("[Workspace Join] RPC Error:", error);
-        throw error;
-      }
+      if (error) throw error;
 
       const joinStatus = normalizeJoinStatus(data);
       const successStatuses = ['joined', 'active', 'already_member', 'success', 'approved'];
 
       if (successStatuses.includes(joinStatus || '')) {
-        // Mark Onboarding
-        const { error: onboardingError } = await supabase.rpc('update_my_onboarding', {
+        await supabase.rpc('update_my_onboarding', {
           p_current_step: 'install_app',
           p_workspace_completed: true
         });
 
-        if (onboardingError) throw onboardingError;
-
         await refreshWorkspaces();
-        
-        toast({ 
-          title: "Connection Established", 
-          description: "You have successfully joined the team workspace." 
-        });
-
-        // Skip Teams step if joining an existing one
+        toast({ title: "Connection Established", description: "You have joined the team workspace." });
         setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'install'));
       } else {
-        toast({ 
-          variant: "destructive", 
-          title: "Invalid Code", 
-          description: "Please check your workspace code and try again." 
-        });
+        toast({ variant: "destructive", title: "Invalid Code", description: "Please check your workspace code." });
       }
     } catch (err: any) {
-      toast({ 
-        variant: "destructive", 
-        title: "Join Error", 
-        description: err.message || "An error occurred while connecting to the workspace." 
+      toast({ variant: "destructive", title: "Join Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTeamsSave = async (isSkipping = false) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (!isSkipping && selectedTeams.length > 0) {
+        if (!activeWorkspace) throw new Error("Workspace context not found.");
+        
+        const teamPromises = selectedTeams.map(name => 
+          supabase.from('sub_workspaces').insert({
+            workspace_id: activeWorkspace.id,
+            name: name.trim(),
+            created_by: userProfile.id
+          })
+        );
+        
+        const results = await Promise.all(teamPromises);
+        const error = results.find(r => r.error)?.error;
+        if (error) throw error;
+      }
+
+      await supabase.rpc('update_my_onboarding', {
+        p_current_step: 'invite',
+        p_teams_completed: true
       });
+
+      setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'invite'));
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Setup Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCopyInviteCode = () => {
+    if (activeWorkspace?.join_code) {
+      navigator.clipboard.writeText(activeWorkspace.join_code);
+      toast({ title: "Workspace code copied", description: "Share it with your teammates!" });
+    }
+  };
+
+  const handleInviteNext = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await supabase.rpc('update_my_onboarding', {
+        p_current_step: 'install_app',
+        p_invite_completed: true
+      });
+      setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'install'));
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Setup Error", description: err.message });
     } finally {
       setSaving(false);
     }
@@ -281,6 +321,10 @@ export default function OnboardingPage() {
       } else {
         await handleWorkspaceJoin();
       }
+    } else if (currentStep.id === 'teams') {
+      await handleTeamsSave();
+    } else if (currentStep.id === 'invite') {
+      await handleInviteNext();
     } else if (currentStepIndex < ONBOARDING_STEPS.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
     } else {
@@ -581,7 +625,117 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {currentStepIndex > 1 && currentStep.id !== 'workspace' && (
+              {currentStep.id === 'teams' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Team Suggestions</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {SUGGESTED_TEAMS.map(team => (
+                          <Button
+                            key={team}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedTeams(prev => prev.includes(team) ? prev.filter(t => t !== team) : [...prev, team])}
+                            className={cn(
+                              "rounded-full px-4 border-slate-200 dark:border-slate-800 transition-all",
+                              selectedTeams.includes(team) ? "bg-primary text-white border-primary shadow-lg shadow-primary/20" : "hover:bg-slate-50 dark:hover:bg-slate-800"
+                            )}
+                          >
+                            {selectedTeams.includes(team) && <Check className="w-3 h-3 mr-1.5" />}
+                            {team}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Add Custom Team</Label>
+                      <div className="flex gap-2">
+                        <Input 
+                          placeholder="e.g. Engineering"
+                          value={customTeamName}
+                          onChange={e => setCustomTeamName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (customTeamName.trim() && !selectedTeams.includes(customTeamName.trim())) {
+                                setSelectedTeams(prev => [...prev, customTeamName.trim()]);
+                                setCustomTeamName("");
+                              }
+                            }
+                          }}
+                          className="h-11 rounded-xl border-none bg-slate-50 dark:bg-slate-800"
+                        />
+                        <Button 
+                          type="button"
+                          variant="secondary"
+                          onClick={() => {
+                            if (customTeamName.trim() && !selectedTeams.includes(customTeamName.trim())) {
+                              setSelectedTeams(prev => [...prev, customTeamName.trim()]);
+                              setCustomTeamName("");
+                            }
+                          }}
+                          className="h-11 rounded-xl px-6"
+                        >
+                          Add
+                        </Button>
+                      </div>
+                    </div>
+
+                    {selectedTeams.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Your Selection ({selectedTeams.length})</Label>
+                        <div className="flex flex-wrap gap-2 p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border-2 border-dashed dark:border-slate-800">
+                          {selectedTeams.map(team => (
+                            <Badge key={team} className="h-8 pl-3 pr-1 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border dark:border-slate-800 rounded-lg group">
+                              {team}
+                              <button 
+                                onClick={() => setSelectedTeams(prev => prev.filter(t => t !== team))}
+                                className="ml-2 p-1 hover:bg-rose-50 hover:text-rose-500 rounded-md transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {currentStep.id === 'invite' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="flex flex-col items-center justify-center text-center space-y-8">
+                    <div className="p-8 bg-slate-50 dark:bg-slate-800/40 rounded-[2.5rem] border dark:border-slate-800 shadow-inner w-full max-w-sm">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-4">Workspace Code</p>
+                      <h2 className="text-5xl font-black text-primary tracking-tighter mb-6">{activeWorkspace?.join_code || '---'}</h2>
+                      <Button 
+                        onClick={handleCopyInviteCode}
+                        className="w-full h-14 rounded-2xl gap-3 text-lg shadow-xl shadow-primary/20"
+                      >
+                        <Copy className="w-5 h-5" />
+                        Copy Invite Code
+                      </Button>
+                    </div>
+
+                    <div className="p-6 bg-amber-50 dark:bg-amber-950/20 rounded-[2rem] border border-amber-100 dark:border-amber-900/30 flex gap-4 max-w-md">
+                      <div className="p-3 bg-amber-100 dark:bg-amber-900/40 rounded-xl h-fit">
+                        <Info className="w-6 h-6 text-amber-600 dark:text-amber-500" />
+                      </div>
+                      <div className="text-left space-y-1">
+                        <p className="text-sm font-bold text-amber-900 dark:text-amber-400">Membership Policy</p>
+                        <p className="text-xs text-amber-700 dark:text-amber-500 leading-relaxed">
+                          Members will join immediately using this code. To protect your data, they will remain unverified until you confirm their identity in the Admin Panel.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentStepIndex > 4 && (
                 <div className="flex flex-col items-center justify-center text-center">
                   <div className="p-16 rounded-[4rem] bg-slate-50 dark:bg-slate-800/40 mb-12 border dark:border-slate-800 shadow-inner group-hover:scale-105 transition-transform duration-700">
                     <StepIcon className="w-24 h-20 text-slate-300 dark:text-slate-700 animate-pulse" />
@@ -609,22 +763,38 @@ export default function OnboardingPage() {
                 <ChevronLeft className="w-5 h-5 mr-3" /> Back
               </Button>
               
-              <Button 
-                onClick={handleNext}
-                disabled={saving || (currentStep.id === 'workspace' && workspaceMode === 'choice')}
-                className="rounded-2xl h-16 px-16 shadow-2xl shadow-primary/30 font-black text-xl transition-all active:scale-95 group/btn"
-              >
-                {saving ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  <>
-                    {currentStepIndex === ONBOARDING_STEPS.length - 1 ? 'Go to Dashboard' : 
-                     (currentStep.id === 'workspace' && workspaceMode === 'join' ? 'Join Workspace' : 
-                      currentStep.id === 'workspace' && workspaceMode === 'create' ? 'Create Workspace' : 'Next Step')}
-                    {currentStepIndex !== ONBOARDING_STEPS.length - 1 && <ChevronRight className="w-6 h-6 ml-3 group-hover/btn:translate-x-1 transition-transform" />}
-                  </>
+              <div className="flex flex-col sm:flex-row gap-4">
+                {(currentStep.id === 'teams' || currentStep.id === 'invite') && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      if (currentStep.id === 'teams') handleTeamsSave(true);
+                      else handleInviteNext();
+                    }}
+                    disabled={saving}
+                    className="rounded-2xl h-16 px-10 font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  >
+                    Skip for now
+                  </Button>
                 )}
-              </Button>
+                <Button 
+                  onClick={handleNext}
+                  disabled={saving || (currentStep.id === 'workspace' && workspaceMode === 'choice')}
+                  className="rounded-2xl h-16 px-16 shadow-2xl shadow-primary/30 font-black text-xl transition-all active:scale-95 group/btn"
+                >
+                  {saving ? (
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                  ) : (
+                    <>
+                      {currentStepIndex === ONBOARDING_STEPS.length - 1 ? 'Go to Dashboard' : 
+                       (currentStep.id === 'workspace' && workspaceMode === 'join' ? 'Join Workspace' : 
+                        currentStep.id === 'workspace' && workspaceMode === 'create' ? 'Create Workspace' : 
+                        currentStep.id === 'teams' ? 'Launch Teams' : 'Next Step')}
+                      {currentStepIndex !== ONBOARDING_STEPS.length - 1 && <ChevronRight className="w-6 h-6 ml-3 group-hover/btn:translate-x-1 transition-transform" />}
+                    </>
+                  )}
+                </Button>
+              </div>
             </CardFooter>
           </Card>
         </div>
