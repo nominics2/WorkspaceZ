@@ -55,7 +55,7 @@ export function FloatingChatWindow({
   onClose: () => void;
   isMuted?: boolean;
 }) {
-  const { userProfile } = useWorkspace();
+  const { userProfile, userRole } = useWorkspace();
   const { refreshUnread } = useFloatingChat();
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +72,8 @@ export function FloatingChatWindow({
   const [isEditingLoading, setIsEditingLoading] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
+
+  const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
@@ -208,20 +210,16 @@ export function FloatingChatWindow({
     if (!messageIdToDelete || !userProfile) return;
 
     try {
-      const { error } = await supabase
-        .from('chat_messages')
-        .update({
-          is_deleted: true,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', messageIdToDelete)
-        .eq('sender_id', userProfile.id);
+      const { error } = await supabase.rpc("soft_delete_chat_message", {
+        p_message_id: messageIdToDelete
+      });
 
       if (error) throw error;
 
       setMessages(prev => prev.filter(m => m.id !== messageIdToDelete));
       toast({ title: "Deleted" });
     } catch (err: any) {
+      console.error("[Floating Chat] Delete Error:", err);
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setIsDeleteDialogOpen(false);
@@ -278,6 +276,8 @@ export function FloatingChatWindow({
               const isMe = msg.sender_id === userProfile?.id;
               const isEditing = editingMessageId === msg.id;
               const wasEdited = msg.updated_at && new Date(msg.updated_at).getTime() - new Date(msg.created_at).getTime() > 1000;
+              
+              const canDelete = isMe || isAdminOrSuper;
 
               return (
                 <div key={msg.id} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start", isEditing && "w-full")}>
@@ -342,7 +342,7 @@ export function FloatingChatWindow({
                                    <Edit2 className="h-3 w-3" /> Edit
                                  </DropdownMenuItem>
                                )}
-                               {isMe && (
+                               {canDelete && (
                                  <DropdownMenuItem 
                                    onClick={() => { setMessageIdToDelete(msg.id); setIsDeleteDialogOpen(true); }}
                                    className="text-xs gap-2 text-rose-500"

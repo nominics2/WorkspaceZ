@@ -985,14 +985,9 @@ export default function ChatPage() {
     if (!messageIdToDelete || !userProfile) return;
 
     try {
-      const { error } = await supabase
-        .from('chat_messages')
-        .update({
-          is_deleted: true,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', messageIdToDelete)
-        .eq('sender_id', userProfile.id);
+      const { error } = await supabase.rpc("soft_delete_chat_message", {
+        p_message_id: messageIdToDelete
+      });
 
       if (error) throw error;
 
@@ -1279,7 +1274,8 @@ export default function ChatPage() {
 
   // Group Admin Check for Management UI
   const currentUserInGroup = infoMembers.find(m => m.user_id === userProfile?.id);
-  const canUserManageRoster = currentUserInGroup?.role === 'admin' || userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
+  const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
+  const canUserManageRoster = currentUserInGroup?.role === 'admin' || isAdminOrSuper;
 
   return (
     <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500 relative">
@@ -1382,6 +1378,9 @@ export default function ChatPage() {
                   const isHighlighted = highlightedMessageId === msg.id;
                   const isEditing = editingMessageId === msg.id;
                   const wasEdited = msg.updated_at && new Date(msg.updated_at).getTime() - new Date(msg.created_at).getTime() > 1000;
+                  
+                  // Permission logic for deletion
+                  const canDelete = isMe || (selectedChat?.type === 'group' && canUserManageRoster) || isAdminOrSuper;
 
                   return (
                     <div key={msg.id} id={`message-${msg.id}`} className={cn("group flex gap-3 max-w-[85%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
@@ -1458,7 +1457,7 @@ export default function ChatPage() {
                                          <Edit2 className="h-4 w-4" /> Edit Message
                                        </DropdownMenuItem>
                                      )}
-                                     {isMe && (
+                                     {canDelete && (
                                        <DropdownMenuItem 
                                          onClick={() => { setMessageIdToDelete(msg.id); setIsMessageDeleteDialogOpen(true); }}
                                          className="gap-2 text-rose-500"
