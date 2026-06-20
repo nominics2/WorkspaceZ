@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useWorkspace } from '@/components/providers/WorkspaceProvider';
 
@@ -45,12 +45,14 @@ interface FloatingChatContextType {
   totalUnreadCount: number;
   onlineUsers: Record<string, PresenceUser>;
   notificationPrefs: ChatNotificationPreferences | null;
+  muteStates: Record<string, { is_muted: boolean, muted_until: string | null }>;
   addBubble: (chat: Chat) => void;
   removeBubble: (chatId: string) => void;
   toggleExpand: (chatId: string | null) => void;
   refreshUnread: () => Promise<void>;
   refreshNotificationPrefs: () => Promise<void>;
   updateNotificationPrefs: (prefs: Partial<ChatNotificationPreferences>) => Promise<void>;
+  playNotificationSound: () => void;
 }
 
 const FloatingChatContext = createContext<FloatingChatContextType | undefined>(undefined);
@@ -62,7 +64,9 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
   const [totalUnreadCount, setTotalUnreadCount] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState<Record<string, PresenceUser>>({});
   const [notificationPrefs, setNotificationPrefs] = useState<ChatNotificationPreferences | null>(null);
+  const [muteStates, setMuteStates] = useState<Record<string, { is_muted: boolean, muted_until: string | null }>>({});
   
+  const lastSoundPlayRef = useRef<number>(0);
   const supabase = createClient();
 
   const fetchNotificationPrefs = useCallback(async () => {
@@ -119,12 +123,18 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       const unreadData = (unreadRes.data || []) as any[];
       const muteData = (muteRes.data || []) as any[];
 
+      const mutes: Record<string, { is_muted: boolean, muted_until: string | null }> = {};
+      muteData.forEach(item => {
+        mutes[item.channel_id] = { 
+          is_muted: item.is_muted, 
+          muted_until: item.muted_until 
+        };
+      });
+      setMuteStates(mutes);
+
       const total = unreadData.reduce((acc: number, curr: any) => {
-        const isMuted = muteData.some((m: any) => 
-          m.channel_id === curr.channel_id && 
-          m.is_muted && 
-          (!m.muted_until || new Date(m.muted_until) > new Date())
-        );
+        const isMuted = mutes[curr.channel_id]?.is_muted && 
+          (!mutes[curr.channel_id].muted_until || new Date(mutes[curr.channel_id].muted_until!) > new Date());
         
         if (isMuted) return acc;
         return acc + (curr.unread_count || 0);
@@ -135,6 +145,32 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       // Silently handle errors in background refresh
     }
   }, [supabase]);
+
+  /**
+   * PLAY NOTIFICATION SOUND
+   * Respects cooldown to avoid spam.
+   */
+  const playNotificationSound = useCallback(() => {
+    if (!notificationPrefs?.sound_enabled) return;
+
+    const now = Date.now();
+    // Cooldown of 2 seconds
+    if (now - lastSoundPlayRef.current < 2000) return;
+
+    lastSoundPlayRef.current = now;
+
+    try {
+      // TODO: Ensure public/sounds/chat-notification.mp3 exists for production
+      const audio = new Audio('/sounds/chat-notification.mp3');
+      audio.volume = 0.4;
+      audio.play().catch(e => {
+        // Autoplay restrictions or missing asset - log and ignore
+        console.log('[Notification Sound] Playback blocked or asset missing:', e.message);
+      });
+    } catch (err) {
+      // Audio API not supported or unexpected error
+    }
+  }, [notificationPrefs]);
 
   // Presence logic
   useEffect(() => {
@@ -208,6 +244,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
         setExpandedChannelId(null);
         setOnlineUsers({});
         setNotificationPrefs(null);
+        setMuteStates({});
       } else {
         fetchUnreadData();
         fetchNotificationPrefs();
@@ -244,12 +281,14 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       totalUnreadCount,
       onlineUsers,
       notificationPrefs,
+      muteStates,
       addBubble,
       removeBubble,
       toggleExpand,
       refreshUnread: fetchUnreadData,
       refreshNotificationPrefs: fetchNotificationPrefs,
-      updateNotificationPrefs
+      updateNotificationPrefs,
+      playNotificationSound
     }}>
       {children}
     </FloatingChatContext.Provider>

@@ -17,17 +17,18 @@ import { useFloatingChat } from "@/components/chat/FloatingChatProvider";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 
 export function NotificationBell() {
   const { activeWorkspace, userProfile } = useWorkspace();
-  const { notificationPrefs } = useFloatingChat();
+  const { notificationPrefs, muteStates, playNotificationSound, expandedChannelId } = useFloatingChat();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const supabase = createClient();
   const { toast } = useToast();
   const router = useRouter();
+  const pathname = usePathname();
 
   const fetchNotifications = useCallback(async () => {
     if (!userProfile) return;
@@ -94,16 +95,33 @@ export function NotificationBell() {
             
             // Respect Notification Preferences for Chat/Message types
             const isChatRelated = newNotif.type === 'chat' || newNotif.type === 'message' || !!newNotif.related_message_id;
+            const channelId = newNotif.related_channel_id || newNotif.channel_id;
             
             if (isChatRelated) {
               const inAppEnabled = notificationPrefs?.in_app_enabled ?? true;
               const showPreview = notificationPrefs?.show_message_preview ?? true;
-              
-              if (inAppEnabled) {
+              const soundEnabled = notificationPrefs?.sound_enabled ?? true;
+
+              // Check if channel is muted
+              const muteInfo = channelId ? muteStates[channelId] : null;
+              const isMuted = muteInfo?.is_muted && (!muteInfo.muted_until || new Date(muteInfo.muted_until) > new Date());
+
+              if (isMuted) return;
+
+              // Check if user is currently looking at this chat
+              // This is a heuristic: if on /chat page with same channel, or bubble expanded
+              const isReading = (pathname === '/chat' && expandedChannelId === null) || (expandedChannelId === channelId);
+
+              if (inAppEnabled && !isReading) {
                 toast({
-                  title: newNotif.title || "New Notification",
+                  title: newNotif.title || "New Message",
                   description: showPreview ? newNotif.message : "New message received",
                 });
+              }
+
+              // Play Sound if enabled and not currently reading
+              if (soundEnabled && !isReading) {
+                playNotificationSound();
               }
 
               // Handle browser notifications if enabled and tab is hidden
@@ -142,7 +160,7 @@ export function NotificationBell() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userProfile, activeWorkspace, supabase, toast, fetchNotifications, notificationPrefs]);
+  }, [userProfile, activeWorkspace, supabase, toast, fetchNotifications, notificationPrefs, muteStates, playNotificationSound, pathname, expandedChannelId]);
 
   const handleMarkAsRead = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
