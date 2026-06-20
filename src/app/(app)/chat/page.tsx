@@ -35,7 +35,8 @@ import {
   LogOut,
   Edit2,
   UserMinus,
-  Shield
+  Shield,
+  Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -202,6 +203,8 @@ export default function ChatPage() {
   const [newGroupNameInput, setNewGroupNameInput] = useState("");
   const [isRenamingLoading, setIsRenamingLoading] = useState(false);
   const [isLeavingLoading, setIsLeavingLoading] = useState(false);
+  const [isArchivingLoading, setIsArchivingLoading] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteGroupOpen] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<ChatMemberWithProfile | null>(null);
   const [isRemovingLoading, setIsRemovingLoading] = useState(false);
 
@@ -343,8 +346,9 @@ export default function ChatPage() {
       
       const { data: channelsData, error: channelsError } = await supabase
         .from('chat_channels')
-        .select('id, workspace_id, sub_workspace_id, name, type, created_at')
+        .select('id, workspace_id, sub_workspace_id, name, type, created_at, archived_at, archived_by')
         .in('workspace_id', workspaceIds)
+        .is('archived_at', null)
         .order('created_at', { ascending: false });
 
       if (channelsError) throw channelsError;
@@ -397,7 +401,9 @@ export default function ChatPage() {
           created_at: channel.created_at,
           display_name: displayName,
           display_avatar: displayAvatar,
-          display_avatar_preset: displayAvatarPreset
+          display_avatar_preset: displayAvatarPreset,
+          archived_at: channel.archived_at,
+          archived_by: channel.archived_by
         };
       }).sort((a, b) => {
         const isAGeneral = a.name.toLowerCase() === 'general' && (activeWorkspace ? a.workspace_id === activeWorkspace.id : true);
@@ -807,6 +813,31 @@ export default function ChatPage() {
       toast({ variant: "destructive", title: "Exit failed", description: err.message });
     } finally {
       setIsLeavingLoading(false);
+    }
+  };
+
+  const handleDeleteGroup = async () => {
+    if (!selectedChatId || isArchivingLoading) return;
+
+    setIsArchivingLoading(true);
+    try {
+      const { error } = await supabase.rpc("archive_group_chat", {
+        p_channel_id: selectedChatId
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Group deleted" });
+      setIsInfoSheetOpen(false);
+      setIsDeleteGroupOpen(false);
+      removeBubble(selectedChatId);
+      setSelectedChatId(null);
+      setShowConversation(false);
+      await fetchChats();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Deletion failed", description: err.message });
+    } finally {
+      setIsArchivingLoading(false);
     }
   };
 
@@ -1463,28 +1494,59 @@ export default function ChatPage() {
                              <UserPlus className="w-4 h-4" /> Add Participants
                           </Button>
                           
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="outline" className="w-full justify-start gap-3 rounded-xl text-rose-500 border-rose-50 dark:border-rose-900/20 hover:bg-rose-50 dark:hover:bg-rose-950/20">
-                                 <LogOut className="w-4 h-4" /> Leave Group
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
-                              <AlertDialogHeader>
-                                <AlertDialogTitle className="dark:text-white">Leave Group?</AlertDialogTitle>
-                                <AlertDialogDescription className="dark:text-slate-400">
-                                  Are you sure you want to leave <strong>{selectedChat.name}</strong>? You will no longer be able to see or send messages in this group.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={handleLeaveGroup} className="bg-rose-500 hover:bg-rose-600 text-white">
-                                  {isLeavingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                                  Leave Group
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
+                          <div className="pt-2 flex flex-col gap-2">
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" className="w-full justify-start gap-3 rounded-xl text-rose-500 border-rose-50 dark:border-rose-900/20 hover:bg-rose-50 dark:hover:bg-rose-950/20">
+                                   <LogOut className="w-4 h-4" /> Leave Group
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle className="dark:text-white">Leave Group?</AlertDialogTitle>
+                                  <AlertDialogDescription className="dark:text-slate-400">
+                                    Are you sure you want to leave <strong>{selectedChat.name}</strong>? You will no longer be able to see or send messages in this group.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={handleLeaveGroup} className="bg-rose-500 hover:bg-rose-600 text-white">
+                                    {isLeavingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                                    Leave Group
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+
+                            {canUserManageRoster && (
+                              <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteGroupOpen}>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="outline" className="w-full justify-start gap-3 rounded-xl text-rose-600 border-rose-100 dark:border-rose-900/40 bg-rose-50/30 dark:bg-rose-950/10 hover:bg-rose-100 dark:hover:bg-rose-900/30">
+                                     <Trash2 className="w-4 h-4" /> Delete Group
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle className="dark:text-white">Delete Group?</AlertDialogTitle>
+                                    <AlertDialogDescription className="dark:text-slate-400">
+                                      This will remove the group <strong>{selectedChat.name}</strong> from members’ chat lists. Message history and shared files will be preserved in the archive.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+                                    <AlertDialogAction 
+                                      onClick={handleDeleteGroup} 
+                                      className="bg-rose-600 hover:bg-rose-700 text-white"
+                                      disabled={isArchivingLoading}
+                                    >
+                                      {isArchivingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                                      Confirm Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
+                          </div>
                         </>
                       ) : (
                         <p className="text-[10px] text-muted-foreground italic px-1">Management actions are not available for this chat type.</p>

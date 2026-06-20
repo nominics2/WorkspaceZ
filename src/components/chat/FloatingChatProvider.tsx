@@ -14,6 +14,8 @@ export interface Chat {
   display_name?: string;
   display_avatar?: string;
   display_avatar_preset?: string;
+  archived_at?: string | null;
+  archived_by?: string | null;
 }
 
 interface FloatingChatContextType {
