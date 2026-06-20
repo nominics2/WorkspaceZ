@@ -29,15 +29,28 @@ export interface PresenceUser {
   online_at: string;
 }
 
+export interface ChatNotificationPreferences {
+  workspace_id: string;
+  user_id: string;
+  in_app_enabled: boolean;
+  browser_enabled: boolean;
+  sound_enabled: boolean;
+  show_message_preview: boolean;
+  updated_at: string;
+}
+
 interface FloatingChatContextType {
   floatingBubbles: Chat[];
   expandedChannelId: string | null;
   totalUnreadCount: number;
   onlineUsers: Record<string, PresenceUser>;
+  notificationPrefs: ChatNotificationPreferences | null;
   addBubble: (chat: Chat) => void;
   removeBubble: (chatId: string) => void;
   toggleExpand: (chatId: string | null) => void;
   refreshUnread: () => Promise<void>;
+  refreshNotificationPrefs: () => Promise<void>;
+  updateNotificationPrefs: (prefs: Partial<ChatNotificationPreferences>) => Promise<void>;
 }
 
 const FloatingChatContext = createContext<FloatingChatContextType | undefined>(undefined);
@@ -48,8 +61,45 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
   const [expandedChannelId, setExpandedChannelId] = useState<string | null>(null);
   const [totalUnreadCount, setTotalUnreadCount] = useState(0);
   const [onlineUsers, setOnlineUsers] = useState<Record<string, PresenceUser>>({});
+  const [notificationPrefs, setNotificationPrefs] = useState<ChatNotificationPreferences | null>(null);
   
   const supabase = createClient();
+
+  const fetchNotificationPrefs = useCallback(async () => {
+    if (!activeWorkspace) return;
+    try {
+      const { data, error } = await supabase.rpc("get_chat_notification_preferences", {
+        p_workspace_id: activeWorkspace.id
+      });
+      if (!error && data) {
+        setNotificationPrefs(data as ChatNotificationPreferences);
+      }
+    } catch (err) {
+      console.error("[FloatingChat] Failed to fetch notification preferences:", err);
+    }
+  }, [activeWorkspace, supabase]);
+
+  const updateNotificationPrefs = useCallback(async (updates: Partial<ChatNotificationPreferences>) => {
+    if (!activeWorkspace || !notificationPrefs) return;
+
+    const newPrefs = { ...notificationPrefs, ...updates };
+    
+    try {
+      const { error } = await supabase.rpc("update_chat_notification_preferences", {
+        p_workspace_id: activeWorkspace.id,
+        p_in_app_enabled: newPrefs.in_app_enabled,
+        p_browser_enabled: newPrefs.browser_enabled,
+        p_sound_enabled: newPrefs.sound_enabled,
+        p_show_message_preview: newPrefs.show_message_preview
+      });
+
+      if (error) throw error;
+      setNotificationPrefs(newPrefs);
+    } catch (err) {
+      console.error("[FloatingChat] Failed to update notification preferences:", err);
+      throw err;
+    }
+  }, [activeWorkspace, notificationPrefs, supabase]);
 
   const fetchUnreadData = useCallback(async () => {
     try {
@@ -136,6 +186,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     fetchUnreadData();
+    fetchNotificationPrefs();
 
     const channel = supabase
       .channel('chat_global_sync')
@@ -156,8 +207,10 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
         setFloatingBubbles([]);
         setExpandedChannelId(null);
         setOnlineUsers({});
+        setNotificationPrefs(null);
       } else {
         fetchUnreadData();
+        fetchNotificationPrefs();
       }
     });
 
@@ -165,7 +218,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       supabase.removeChannel(channel);
       subscription.unsubscribe();
     };
-  }, [supabase, fetchUnreadData]);
+  }, [supabase, fetchUnreadData, fetchNotificationPrefs]);
 
   const addBubble = useCallback((chat: Chat) => {
     setFloatingBubbles(prev => {
@@ -190,10 +243,13 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       expandedChannelId,
       totalUnreadCount,
       onlineUsers,
+      notificationPrefs,
       addBubble,
       removeBubble,
       toggleExpand,
-      refreshUnread: fetchUnreadData
+      refreshUnread: fetchUnreadData,
+      refreshNotificationPrefs: fetchNotificationPrefs,
+      updateNotificationPrefs
     }}>
       {children}
     </FloatingChatContext.Provider>

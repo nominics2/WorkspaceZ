@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
@@ -14,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { useFloatingChat } from "@/components/chat/FloatingChatProvider";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 
 export function NotificationBell() {
   const { activeWorkspace, userProfile } = useWorkspace();
+  const { notificationPrefs } = useFloatingChat();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -91,10 +92,34 @@ export function NotificationBell() {
             });
             setUnreadCount((prev) => prev + 1);
             
-            toast({
-              title: newNotif.title || "New Notification",
-              description: newNotif.message,
-            });
+            // Respect Notification Preferences for Chat/Message types
+            const isChatRelated = newNotif.type === 'chat' || newNotif.type === 'message' || !!newNotif.related_message_id;
+            
+            if (isChatRelated) {
+              const inAppEnabled = notificationPrefs?.in_app_enabled ?? true;
+              const showPreview = notificationPrefs?.show_message_preview ?? true;
+              
+              if (inAppEnabled) {
+                toast({
+                  title: newNotif.title || "New Notification",
+                  description: showPreview ? newNotif.message : "New message received",
+                });
+              }
+
+              // Handle browser notifications if enabled and tab is hidden
+              if (notificationPrefs?.browser_enabled && document.visibilityState === 'hidden' && "Notification" in window && Notification.permission === "granted") {
+                new Notification(newNotif.title || "WorkspaceZ", {
+                  body: showPreview ? newNotif.message : "New message received",
+                  icon: "/brand/logomark.png"
+                });
+              }
+            } else {
+              // Generic fallback for non-chat notifications
+              toast({
+                title: newNotif.title || "New Notification",
+                description: newNotif.message,
+              });
+            }
           }
         }
       )
@@ -117,7 +142,7 @@ export function NotificationBell() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userProfile, activeWorkspace, supabase, toast, fetchNotifications]);
+  }, [userProfile, activeWorkspace, supabase, toast, fetchNotifications, notificationPrefs]);
 
   const handleMarkAsRead = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();

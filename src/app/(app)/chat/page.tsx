@@ -46,7 +46,9 @@ import {
   FileSpreadsheet,
   Archive,
   Presentation,
-  Maximize2
+  Maximize2,
+  Settings,
+  Volume2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,6 +103,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
 
 /**
@@ -197,7 +200,7 @@ interface TypingUser {
 
 export default function ChatPage() {
   const { activeWorkspace, userProfile, userRole } = useWorkspace();
-  const { addBubble, refreshUnread, removeBubble, onlineUsers } = useFloatingChat();
+  const { addBubble, refreshUnread, removeBubble, onlineUsers, notificationPrefs, updateNotificationPrefs } = useFloatingChat();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [showConversation, setShowConversation] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -211,6 +214,10 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Notification Settings State
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
+  const [isSavingPrefs, setIsSavingPrefs] = useState(false);
 
   // Upload Progress State
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -1052,6 +1059,34 @@ export default function ChatPage() {
       toast({ title: "Notifications restored" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Unmute failed", description: err.message });
+    }
+  };
+
+  /**
+   * NOTIFICATION SETTINGS ACTIONS
+   */
+  const handleToggleBrowserNotifications = async (checked: boolean) => {
+    if (!checked) {
+      updateNotificationPrefs({ browser_enabled: false });
+      return;
+    }
+
+    if (!("Notification" in window)) {
+      toast({ variant: "destructive", title: "Unsupported", description: "Your browser does not support desktop notifications." });
+      return;
+    }
+
+    let permission = Notification.permission;
+    if (permission === "default") {
+      permission = await Notification.requestPermission();
+    }
+
+    if (permission === "granted") {
+      updateNotificationPrefs({ browser_enabled: true });
+      new Notification("Notifications Enabled", { body: "You will now receive workspace alerts on your desktop.", icon: "/brand/logomark.png" });
+    } else {
+      toast({ variant: "destructive", title: "Permission Denied", description: "Browser notifications are blocked. Enable them in your browser settings." });
+      updateNotificationPrefs({ browser_enabled: false });
     }
   };
 
@@ -1927,7 +1962,13 @@ export default function ChatPage() {
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Detach" className="rounded-xl text-slate-400 hover:text-primary" onClick={() => addBubble(selectedChat)}><MessageCircle className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Open as floating window</TooltipContent></Tooltip></TooltipProvider>
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Media & Files" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}><Files className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Shared assets</TooltipContent></Tooltip></TooltipProvider>
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Search" className="rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}><Search className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Search thread</TooltipContent></Tooltip></TooltipProvider>
-                    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="More Options" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56 dark:bg-slate-900 dark:border-slate-800"><DropdownMenuLabel className="dark:text-slate-100">Notification Settings</DropdownMenuLabel>{isCurrentChatMuted ? <DropdownMenuItem onClick={handleUnmute} className="gap-2 text-primary font-medium"><Bell className="w-4 h-4" /> Restore Alerts</DropdownMenuItem> : <><DropdownMenuItem onClick={() => handleMute('1h')}>Mute for 1 hour</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('8h')}>Mute for 8 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('24h')}>Mute for 24 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('forever')} className="text-rose-500">Mute Indefinitely</DropdownMenuItem></>}</DropdownMenuContent></DropdownMenu>
+                    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label="More Options" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-56 dark:bg-slate-900 dark:border-slate-800">
+                      <DropdownMenuLabel className="dark:text-slate-100">Notification Settings</DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => setIsNotificationSettingsOpen(true)} className="gap-2"><Settings className="w-4 h-4" /> Global Preferences</DropdownMenuItem>
+                      <DropdownMenuSeparator className="dark:bg-slate-800" />
+                      <DropdownMenuLabel className="dark:text-slate-100">Quick Mute</DropdownMenuLabel>
+                      {isCurrentChatMuted ? <DropdownMenuItem onClick={handleUnmute} className="gap-2 text-primary font-medium"><Bell className="w-4 h-4" /> Restore Alerts</DropdownMenuItem> : <><DropdownMenuItem onClick={() => handleMute('1h')}>Mute for 1 hour</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('8h')}>Mute for 8 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('24h')}>Mute for 24 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('forever')} className="text-rose-500">Mute Indefinitely</DropdownMenuItem></>}
+                    </DropdownMenuContent></DropdownMenu>
                   </div>
                 </>
               )}
@@ -2321,6 +2362,82 @@ export default function ChatPage() {
           <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-4"><MessageSquare className="w-12 h-12 text-primary/40" /><h2 className="text-xl font-bold">Workspace Messenger</h2><p className="text-sm text-slate-500 max-w-xs">Select or start a conversation to begin collaborating with your team.</p></div>
         )}
       </div>
+
+      {/* Notification Settings Modal */}
+      <Dialog open={isNotificationSettingsOpen} onOpenChange={(open) => !isSavingPrefs && setIsNotificationSettingsOpen(open)}>
+        <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 rounded-[2rem]">
+          <div className="p-8 pb-4">
+            <DialogHeader>
+              <div className="p-3 bg-primary/10 rounded-2xl w-fit mb-4">
+                <Bell className="w-6 h-6 text-primary" />
+              </div>
+              <DialogTitle className="text-2xl font-bold tracking-tight">Notification Preferences</DialogTitle>
+              <DialogDescription>Configure how you want to be alerted for new workspace activity.</DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 mt-8">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-slate-400" /> In-App Alerts
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">Show toast notifications while active in WorkspaceZ.</p>
+                </div>
+                <Switch 
+                  checked={notificationPrefs?.in_app_enabled || false} 
+                  onCheckedChange={(c) => updateNotificationPrefs({ in_app_enabled: c })}
+                  disabled={isSavingPrefs}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-slate-400" /> Desktop Notifications
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">Receive browser alerts even when tab is in background.</p>
+                </div>
+                <Switch 
+                  checked={notificationPrefs?.browser_enabled || false} 
+                  onCheckedChange={handleToggleBrowserNotifications}
+                  disabled={isSavingPrefs}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-slate-400" /> Alert Sounds
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">Play a subtle audio ping for new chat messages.</p>
+                </div>
+                <Switch 
+                  checked={notificationPrefs?.sound_enabled || false} 
+                  onCheckedChange={(c) => updateNotificationPrefs({ sound_enabled: c })}
+                  disabled={isSavingPrefs}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label className="text-sm font-bold flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-slate-400" /> Message Previews
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">Include a snippet of the message text in notifications.</p>
+                </div>
+                <Switch 
+                  checked={notificationPrefs?.show_message_preview || false} 
+                  onCheckedChange={(c) => updateNotificationPrefs({ show_message_preview: c })}
+                  disabled={isSavingPrefs}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="p-6 pt-0 bg-slate-50 dark:bg-slate-900/40 border-t dark:border-slate-800 mt-4">
+             <Button variant="ghost" className="w-full rounded-xl" onClick={() => setIsNotificationSettingsOpen(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isNewChatOpen} onOpenChange={setIsNewChatOpen}>
         <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 rounded-[2rem]">
