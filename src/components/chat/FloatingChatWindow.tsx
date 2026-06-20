@@ -15,7 +15,15 @@ import {
   Check,
   ExternalLink,
   AlertTriangle,
-  Reply
+  Reply,
+  FileIcon,
+  Download,
+  Image as ImageIcon,
+  FileText,
+  Archive,
+  FileSpreadsheet,
+  Presentation,
+  Maximize2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +52,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+} from "@/components/ui/dialog";
 import { useRouter } from "next/navigation";
+
+interface Attachment {
+  id: string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  file_size_bytes: number;
+  message_id: string;
+  uploaded_by: string;
+  created_at: string;
+  signed_url?: string;
+}
 
 interface Message {
   id: string;
@@ -61,6 +85,7 @@ interface Message {
     avatar_url: string;
     avatar_preset: string;
   } | null;
+  attachments?: Attachment[];
   tasks?: {
     is_deleted: boolean;
   } | null;
@@ -108,6 +133,7 @@ export function FloatingChatWindow({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+  const [selectedImageForLightbox, setSelectedImageForLightbox] = useState<Attachment | null>(null);
 
   const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
 
@@ -126,6 +152,26 @@ export function FloatingChatWindow({
     if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
     
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
+  const formatBytes = (bytes: number, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
+  const getFileIcon = (fileName: string, fileType?: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (fileType?.startsWith('image/')) return <ImageIcon className="w-4 h-4 text-emerald-500" />;
+    if (ext === 'pdf') return <FileText className="w-4 h-4 text-rose-500" />;
+    if (['xlsx', 'xls', 'csv'].includes(ext || '')) return <FileSpreadsheet className="w-4 h-4 text-emerald-600" />;
+    if (['docx', 'doc'].includes(ext || '')) return <FileText className="w-4 h-4 text-blue-500" />;
+    if (['pptx', 'ppt'].includes(ext || '')) return <Presentation className="w-4 h-4 text-orange-500" />;
+    if (['zip', 'rar', '7z'].includes(ext || '')) return <Archive className="w-4 h-4 text-amber-500" />;
+    return <FileIcon className="w-4 h-4 text-slate-500" />;
   };
 
   /**
@@ -219,16 +265,25 @@ export function FloatingChatWindow({
   const fetchMessages = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('chat_messages')
-        .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, reply_to_message_id, tasks(is_deleted)')
-        .eq('channel_id', chat.id)
-        .eq('is_deleted', false)
-        .order('created_at', { ascending: true });
+      const [msgDataRes, attachDataRes] = await Promise.all([
+        supabase
+          .from('chat_messages')
+          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, reply_to_message_id, tasks(is_deleted)')
+          .eq('channel_id', chat.id)
+          .eq('is_deleted', false)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('chat_message_attachments')
+          .select('*, chat_messages!inner(is_deleted)')
+          .eq('channel_id', chat.id)
+          .eq('chat_messages.is_deleted', false)
+      ]);
 
-      if (error) throw error;
+      if (msgDataRes.error) throw msgDataRes.error;
+      const data = msgDataRes.data || [];
+      const attachData = attachDataRes.data || [];
       
-      const senderIds = Array.from(new Set(data?.map(m => m.sender_id) || []));
+      const senderIds = Array.from(new Set(data.map(m => m.sender_id) || []));
       const { data: profilesData } = await supabase
         .from('profiles')
         .select('id, full_name, avatar_url, avatar_preset, last_seen_at')
@@ -256,11 +311,27 @@ export function FloatingChatWindow({
         }
       }
 
+      // Signed URLs
+      let enrichedAttachments: Attachment[] = [...attachData];
+      if (attachData.length > 0) {
+        const { data: signedData } = await supabase.storage
+          .from('chat-attachments')
+          .createSignedUrls(attachData.map(a => a.file_path), 3600);
+        
+        if (signedData) {
+          enrichedAttachments = attachData.map(a => ({
+            ...a,
+            signed_url: signedData.find(s => s.path === a.file_path)?.signedUrl
+          }));
+        }
+      }
+
       const allLookupMap = [...(data || []).map(m => ({ ...m, profiles: profilesData?.find(p => p.id === m.sender_id) || null })), ...extraMessages];
 
       const enriched = (data || []).map(m => ({
         ...m,
         profiles: profilesData?.find(p => p.id === m.sender_id) || null,
+        attachments: enrichedAttachments.filter(a => a.message_id === m.id),
         reply_to: m.reply_to_message_id ? allLookupMap.find(am => am.id === m.reply_to_message_id) : null
       }));
 
@@ -295,12 +366,12 @@ export function FloatingChatWindow({
         
         setMessages(prev => {
           if (prev.some(m => m.id === newMessage.id)) return prev;
-          return [...prev, { ...newMessage, profiles: null, reply_to: null }];
+          return [...prev, { ...newMessage, profiles: null, attachments: [], reply_to: null }];
         });
 
         markRead();
 
-        // Refetch metadata for replies
+        // Refetch metadata for replies and attachments
         setTimeout(() => fetchMessages(), 1000);
 
         try {
@@ -477,6 +548,9 @@ export function FloatingChatWindow({
               const isTaskDeleted = msg.tasks?.is_deleted;
               const isTaskUnavailable = msg.created_task_id && !msg.tasks;
 
+              const imageAttachments = msg.attachments?.filter(a => a.file_type?.startsWith('image/')) || [];
+              const otherAttachments = msg.attachments?.filter(a => !a.file_type?.startsWith('image/')) || [];
+
               return (
                 <div key={msg.id} id={`floating-message-${msg.id}`} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start", isEditing && "w-full")}>
                   {!isMe && <span className="text-[9px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
@@ -522,6 +596,41 @@ export function FloatingChatWindow({
                       )}
 
                       {msg.message}
+
+                      {/* Attachment Grid Compact */}
+                      {imageAttachments.length > 0 && (
+                        <div className={cn("grid gap-1 mt-1", imageAttachments.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+                          {imageAttachments.map(att => (
+                            <div key={att.id} className="relative aspect-square rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 group/img">
+                              {att.signed_url ? (
+                                <>
+                                  <img src={att.signed_url} alt={att.file_name} className="w-full h-full object-cover cursor-pointer" onClick={() => setSelectedImageForLightbox(att)} />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Maximize2 className="w-3 h-3 text-white" />
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-[8px] p-1 text-center text-muted-foreground">Unavailable</div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {otherAttachments.length > 0 && (
+                        <div className="space-y-1 mt-1">
+                          {otherAttachments.map(att => (
+                            <div key={att.id} className={cn(
+                              "flex items-center gap-2 p-1.5 rounded-lg border",
+                              isMe ? "bg-white/10 border-white/20" : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800"
+                            )} onClick={() => window.open(att.signed_url, '_blank')}>
+                              <div className="shrink-0">{getFileIcon(att.file_name, att.file_type)}</div>
+                              <p className="text-[10px] font-bold truncate flex-1">{att.file_name}</p>
+                              <Download className="w-3 h-3 opacity-50" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Task Chip */}
                       {msg.created_task_id && (
@@ -666,6 +775,23 @@ export function FloatingChatWindow({
           </Button>
         </div>
       </div>
+
+      {/* Lightbox for floating window */}
+      <Dialog open={!!selectedImageForLightbox} onOpenChange={(open) => !open && setSelectedImageForLightbox(null)}>
+        <DialogContent className="max-w-[90vw] p-0 overflow-hidden bg-white dark:bg-slate-950 border-none shadow-2xl">
+          {selectedImageForLightbox && (
+            <div className="flex flex-col">
+              <div className="p-3 border-b flex items-center justify-between">
+                 <p className="text-xs font-bold truncate flex-1">{selectedImageForLightbox.file_name}</p>
+                 <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => window.open(selectedImageForLightbox.signed_url, '_blank')}><Download className="w-4 h-4" /></Button>
+              </div>
+              <div className="p-2 flex items-center justify-center bg-black/5 dark:bg-black/20">
+                 <img src={selectedImageForLightbox.signed_url} alt="Preview" className="max-w-full max-h-[60vh] object-contain rounded-md" />
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => !open && setIsDeleteDialogOpen(false)}>
         <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800 p-6 rounded-2xl w-[90vw] max-w-sm">

@@ -41,7 +41,12 @@ import {
   CheckSquare,
   AlertTriangle,
   Link as LinkIcon,
-  Reply
+  Reply,
+  FileText,
+  FileSpreadsheet,
+  Archive,
+  Presentation,
+  Maximize2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -230,6 +235,7 @@ export default function ChatPage() {
   const [isAttachmentDeleteDialogOpen, setIsAttachmentDeleteDialogOpen] = useState(false);
   const [attachmentToDelete, setAttachmentToDelete] = useState<Attachment | null>(null);
   const [isDeletingAttachment, setIsDeletingAttachment] = useState(false);
+  const [selectedImageForLightbox, setSelectedImageForLightbox] = useState<Attachment | null>(null);
 
   // Task Creation State
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
@@ -483,6 +489,17 @@ export default function ChatPage() {
       console.error("[Chat] Clipboard Error:", err);
       toast({ variant: "destructive", title: "Unable to copy message" });
     });
+  };
+
+  const getFileIcon = (fileName: string, fileType?: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    if (fileType?.startsWith('image/')) return <ImageIcon className="w-5 h-5 text-emerald-500" />;
+    if (ext === 'pdf') return <FileText className="w-5 h-5 text-rose-500" />;
+    if (['xlsx', 'xls', 'csv'].includes(ext || '')) return <FileSpreadsheet className="w-5 h-5 text-emerald-600" />;
+    if (['docx', 'doc'].includes(ext || '')) return <FileText className="w-5 h-5 text-blue-500" />;
+    if (['pptx', 'ppt'].includes(ext || '')) return <Presentation className="w-5 h-5 text-orange-500" />;
+    if (['zip', 'rar', '7z'].includes(ext || '')) return <Archive className="w-5 h-5 text-amber-500" />;
+    return <FileIcon className="w-5 h-5 text-slate-500" />;
   };
 
   /**
@@ -1932,6 +1949,9 @@ export default function ChatPage() {
                   const isTaskDeleted = msg.tasks?.is_deleted;
                   const isTaskUnavailable = msg.created_task_id && !msg.tasks;
 
+                  const imageAttachments = msg.attachments?.filter(a => a.file_type?.startsWith('image/')) || [];
+                  const otherAttachments = msg.attachments?.filter(a => !a.file_type?.startsWith('image/')) || [];
+
                   return (
                     <div key={msg.id} id={`message-${msg.id}`} className={cn("group flex gap-3 max-w-[85%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
                       {!isMe && <Avatar className="w-8 h-8 shrink-0 mt-1"><AvatarImage src={msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url} /><AvatarFallback className="text-[10px]">{msg.profiles?.full_name?.[0]}</AvatarFallback></Avatar>}
@@ -1963,7 +1983,7 @@ export default function ChatPage() {
                             "rounded-2xl shadow-sm text-sm leading-relaxed border-2 border-transparent transition-all relative", 
                             isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700", 
                             isHighlighted && "border-primary ring-4 ring-primary/20",
-                            msg.message ? "px-4 py-3" : "p-1"
+                            msg.message || msg.attachments?.length ? "px-4 py-3" : "p-1"
                           )}>
                             {/* Reply Preview inside Bubble */}
                             {msg.reply_to && (
@@ -1982,48 +2002,92 @@ export default function ChatPage() {
                             )}
 
                             {msg.message && <p className={cn(msg.attachments?.length ? "mb-3" : "")}>{msg.message}</p>}
-                            {msg.attachments && msg.attachments.length > 0 && (
-                              <div className={cn("space-y-3", msg.message ? "mt-2" : "mt-0")}>
-                                {msg.attachments.map(att => {
-                                  const isImage = att.file_type?.startsWith('image/');
+                            
+                            {/* Image Grid */}
+                            {imageAttachments.length > 0 && (
+                              <div className={cn(
+                                "grid gap-2 mb-2",
+                                imageAttachments.length === 1 ? "grid-cols-1" : 
+                                imageAttachments.length === 2 ? "grid-cols-2" : 
+                                "grid-cols-2"
+                              )}>
+                                {imageAttachments.map((att) => (
+                                  <div key={att.id} className="relative group/img overflow-hidden rounded-xl bg-black/5 dark:bg-white/5 aspect-square">
+                                    {!att.signed_url ? (
+                                      <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">Attachment unavailable</div>
+                                    ) : (
+                                      <>
+                                        <img 
+                                          src={att.signed_url} 
+                                          alt={att.file_name} 
+                                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                          onClick={() => setSelectedImageForLightbox(att)}
+                                        />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                           <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full bg-white/20 backdrop-blur-md border-none text-white hover:bg-white/30" onClick={() => setSelectedImageForLightbox(att)}><Maximize2 className="w-4 h-4" /></Button>
+                                           <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full bg-white/20 backdrop-blur-md border-none text-white hover:bg-white/30" onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button>
+                                        </div>
+                                        {/* Action Dots for Images */}
+                                        <div className="absolute top-2 right-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                                           <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
+                                              <DropdownMenuTrigger asChild>
+                                                <Button size="icon" variant="secondary" className="h-6 w-6 rounded-lg bg-black/40 backdrop-blur-sm border-none text-white"><MoreVertical className="w-3 h-3" /></Button>
+                                              </DropdownMenuTrigger>
+                                              <DropdownMenuContent align="end">
+                                                <DropdownMenuItem onClick={() => { setAttachmentToDelete(att); setIsAttachmentDeleteDialogOpen(true); }} className="text-rose-500"><Trash2 className="w-4 h-4 mr-2" /> Delete</DropdownMenuItem>
+                                              </DropdownMenuContent>
+                                           </DropdownMenu>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Other Files List */}
+                            {otherAttachments.length > 0 && (
+                              <div className="space-y-2 mt-2">
+                                {otherAttachments.map(att => {
                                   const canDeleteAttachment = (att.uploaded_by === userProfile?.id) || (msg.sender_id === userProfile?.id) || isAdminOrSuper;
 
                                   return (
-                                    <div key={att.id} className="max-w-xs group/att relative">
-                                      {isImage && att.signed_url ? (
-                                        <img src={att.signed_url} alt={att.file_name} className="w-full rounded-xl cursor-pointer" onClick={() => window.open(att.signed_url, '_blank')} />
-                                      ) : (
-                                        <div className="flex items-center gap-4 p-3 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
-                                          <FileIcon className="w-5 h-5" />
-                                          <div className="flex-1 min-w-0">
-                                            <p className="text-xs font-bold truncate">{att.file_name}</p>
-                                            <p className="text-[10px] opacity-60 uppercase">{formatBytes(att.file_size_bytes)}</p>
-                                          </div>
-                                          <Button variant="ghost" size="icon" aria-label="Download" className="h-8 w-8" onClick={() => window.open(att.signed_url, '_blank')}>
-                                            <Download className="w-4 h-4" />
-                                          </Button>
-                                        </div>
-                                      )}
-                                      
-                                      {/* Attachment Action Menu */}
-                                      <div className="absolute top-2 right-2 opacity-0 group-hover/att:opacity-100 transition-opacity">
-                                        <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
-                                          <DropdownMenuTrigger asChild>
-                                            <Button variant="secondary" size="icon" className="h-6 w-6 rounded-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm shadow-lg">
-                                              <MoreVertical className="h-3 w-3" />
-                                            </Button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end" className="w-40 dark:bg-slate-900 dark:border-slate-800">
-                                            <DropdownMenuItem onClick={() => window.open(att.signed_url, '_blank')} className="gap-2">
-                                              <Download className="h-3.5 w-3.5" /> Download
-                                            </DropdownMenuItem>
-                                            {canDeleteAttachment && (
-                                              <DropdownMenuItem onClick={() => { setAttachmentToDelete(att); setIsAttachmentDeleteDialogOpen(true); }} className="gap-2 text-rose-500">
-                                                <Trash2 className="h-3.5 w-3.5" /> Delete
+                                    <div key={att.id} className={cn(
+                                      "flex items-center gap-3 p-3 rounded-xl border transition-colors group/file",
+                                      isMe ? "bg-white/10 border-white/20 hover:bg-white/20" : "bg-slate-50 dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800/80"
+                                    )}>
+                                      <div className={cn(
+                                        "p-2 rounded-lg",
+                                        isMe ? "bg-white/20" : "bg-white dark:bg-slate-800 shadow-sm"
+                                      )}>
+                                        {getFileIcon(att.file_name, att.file_type)}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className={cn("text-xs font-bold truncate", isMe ? "text-white" : "text-slate-900 dark:text-slate-100")} title={att.file_name}>
+                                          {att.file_name}
+                                        </p>
+                                        <p className={cn("text-[10px] uppercase opacity-70 font-medium", isMe ? "text-white/80" : "text-slate-500")}>
+                                          {formatBytes(att.file_size_bytes)} • {att.file_name.split('.').pop()?.toUpperCase()}
+                                        </p>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-lg", isMe ? "text-white hover:bg-white/20" : "text-slate-500")} onClick={() => window.open(att.signed_url, '_blank')}>
+                                          <Download className="w-4 h-4" />
+                                        </Button>
+                                        {canDeleteAttachment && (
+                                          <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
+                                            <DropdownMenuTrigger asChild>
+                                              <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-lg", isMe ? "text-white hover:bg-white/20" : "text-slate-500")}>
+                                                <MoreVertical className="w-4 h-4" />
+                                              </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end">
+                                              <DropdownMenuItem onClick={() => { setAttachmentToDelete(att); setIsAttachmentDeleteDialogOpen(true); }} className="text-rose-500">
+                                                <Trash2 className="w-4 h-4 mr-2" /> Delete
                                               </DropdownMenuItem>
-                                            )}
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
+                                            </DropdownMenuContent>
+                                          </DropdownMenu>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -2224,7 +2288,7 @@ export default function ChatPage() {
                   {selectedFiles.map((file, idx) => (
                     <div key={`${file.name}-${idx}`} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border dark:border-slate-800 animate-in zoom-in-95 duration-200 group">
                       <div className="p-2 bg-primary/10 rounded-lg">
-                        <Paperclip className="w-4 h-4 text-primary" />
+                        {getFileIcon(file.name, file.type)}
                       </div>
                       <div className="min-w-0 max-w-[150px]">
                         <p className="text-xs font-bold truncate">{file.name}</p>
@@ -2271,9 +2335,14 @@ export default function ChatPage() {
           const canDeleteFromGallery = (item.uploaded_by === userProfile?.id) || (item.chat_messages?.sender_id === userProfile?.id) || isAdminOrSuper;
           return (
             <div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
-              {item.signed_url && <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover" />}
+              {item.signed_url ? (
+                <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover cursor-pointer" onClick={() => setSelectedImageForLightbox(item)} />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground p-4 text-center">Attachment unavailable</div>
+              )}
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                <Button size="icon" variant="secondary" aria-label="Download" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button>
+                {item.signed_url && <Button size="icon" variant="secondary" aria-label="View" className="h-8 w-8 rounded-full" onClick={() => setSelectedImageForLightbox(item)}><Maximize2 className="w-3.5 h-3.5" /></Button>}
+                {item.signed_url && <Button size="icon" variant="secondary" aria-label="Download" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button>}
                 {canDeleteFromGallery && (
                   <Button size="icon" variant="destructive" aria-label="Delete" className="h-8 w-8 rounded-full" onClick={() => { setAttachmentToDelete(item); setIsAttachmentDeleteDialogOpen(true); }}><Trash2 className="w-3.5 h-3.5" /></Button>
                 )}
@@ -2284,8 +2353,8 @@ export default function ChatPage() {
           const canDeleteFromGallery = (item.uploaded_by === userProfile?.id) || (item.chat_messages?.sender_id === userProfile?.id) || isAdminOrSuper;
           return (
             <div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 transition-colors group">
-              <div className="p-2.5 bg-primary/10 rounded-xl"><FileIcon className="w-5 h-5 text-primary" /></div>
-              <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div>
+              <div className="p-2.5 bg-primary/10 rounded-xl">{getFileIcon(item.file_name, item.file_type)}</div>
+              <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate" title={item.file_name}>{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Button size="icon" variant="ghost" aria-label="Download" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-4 h-4" /></Button>
                 {canDeleteFromGallery && (
@@ -2517,6 +2586,39 @@ export default function ChatPage() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      {/* Attachment Lightbox */}
+      <Dialog open={!!selectedImageForLightbox} onOpenChange={(open) => !open && setSelectedImageForLightbox(null)}>
+        <DialogContent className="max-w-[90vw] md:max-w-4xl p-0 overflow-hidden dark:bg-slate-950 border-none shadow-2xl">
+           {selectedImageForLightbox && (
+             <div className="flex flex-col h-full">
+                <div className="p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="p-2 bg-primary/10 rounded-lg shrink-0">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                    </div>
+                    <p className="text-sm font-bold truncate dark:text-white">{selectedImageForLightbox.file_name}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="h-8 gap-2 dark:border-slate-800" onClick={() => window.open(selectedImageForLightbox.signed_url, '_blank')}>
+                      <ExternalLink className="w-3.5 h-3.5" /> Open Original
+                    </Button>
+                    <Button size="sm" className="h-8 gap-2 shadow-lg" onClick={() => window.open(selectedImageForLightbox.signed_url, '_blank')}>
+                      <Download className="w-3.5 h-3.5" /> Download
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto bg-slate-50 dark:bg-slate-950 p-4 md:p-8 flex items-center justify-center min-h-[50vh] max-h-[80vh]">
+                  <img src={selectedImageForLightbox.signed_url} alt={selectedImageForLightbox.file_name} className="max-w-full max-h-full object-contain rounded-lg shadow-xl" />
+                </div>
+                <div className="p-4 bg-white dark:bg-slate-900 border-t dark:border-slate-800 flex items-center justify-between text-[10px] uppercase font-bold text-slate-500 shrink-0">
+                   <span>Size: {formatBytes(selectedImageForLightbox.file_size_bytes)}</span>
+                   <span>Shared on: {new Date(selectedImageForLightbox.created_at).toLocaleDateString()}</span>
+                </div>
+             </div>
+           )}
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
         <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
