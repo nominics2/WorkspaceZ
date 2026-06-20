@@ -38,7 +38,8 @@ import {
   Shield,
   Trash2,
   Copy,
-  CheckSquare
+  CheckSquare,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -117,6 +118,7 @@ interface Message {
   created_at: string;
   updated_at?: string;
   created_task_id?: string | null;
+  is_deleted?: boolean;
   profiles?: {
     full_name: string;
     avatar_url: string;
@@ -124,7 +126,10 @@ interface Message {
   } | null;
   attachments?: Attachment[];
   channel_display_name?: string;
-  is_deleted?: boolean;
+  // Added for task state detection
+  tasks?: {
+    is_deleted: boolean;
+  } | null;
 }
 
 interface WorkspaceMemberProfile {
@@ -464,7 +469,7 @@ export default function ChatPage() {
       const [msgDataRes, attachDataRes] = await Promise.all([
         supabase
           .from('chat_messages')
-          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id')
+          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, tasks(is_deleted)')
           .eq('channel_id', channelId)
           .eq('is_deleted', false)
           .order('created_at', { ascending: true }),
@@ -1437,6 +1442,9 @@ export default function ChatPage() {
                   // Permission logic for deletion
                   const canDelete = isMe || (selectedChat?.type === 'group' && canUserManageRoster) || isAdminOrSuper;
 
+                  const isTaskDeleted = msg.tasks?.is_deleted;
+                  const isTaskUnavailable = msg.created_task_id && !msg.tasks;
+
                   return (
                     <div key={msg.id} id={`message-${msg.id}`} className={cn("group flex gap-3 max-w-[85%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
                       {!isMe && <Avatar className="w-8 h-8 shrink-0 mt-1"><AvatarImage src={msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url} /><AvatarFallback className="text-[10px]">{msg.profiles?.full_name?.[0]}</AvatarFallback></Avatar>}
@@ -1483,13 +1491,21 @@ export default function ChatPage() {
                             {msg.created_task_id && (
                               <div className="mt-3 pt-2 border-t border-white/20 dark:border-slate-700">
                                 <button 
+                                  disabled={isTaskDeleted || isTaskUnavailable}
                                   onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
                                   className={cn(
                                     "flex items-center gap-1.5 text-[10px] font-bold uppercase hover:opacity-80 transition-opacity",
-                                    isMe ? "text-white" : "text-primary"
+                                    isMe ? "text-white" : "text-primary",
+                                    (isTaskDeleted || isTaskUnavailable) && "opacity-50 cursor-not-allowed"
                                   )}
                                 >
-                                  <CheckSquare className="w-3 h-3" /> Linked Task Created
+                                  {isTaskDeleted ? (
+                                    <><X className="w-3 h-3" /> Task Deleted</>
+                                  ) : isTaskUnavailable ? (
+                                    <><AlertTriangle className="w-3 h-3" /> Task Unavailable</>
+                                  ) : (
+                                    <><CheckSquare className="w-3 h-3" /> Linked Task Created</>
+                                  )}
                                 </button>
                               </div>
                             )}
@@ -1539,6 +1555,7 @@ export default function ChatPage() {
                                      <DropdownMenuSeparator className="dark:bg-slate-800" />
                                      {msg.created_task_id ? (
                                        <DropdownMenuItem 
+                                         disabled={isTaskDeleted || isTaskUnavailable}
                                          onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
                                          className="gap-2"
                                        >

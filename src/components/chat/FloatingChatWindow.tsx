@@ -1,7 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Send, X, Minus, Loader2, BellOff, MoreVertical, Copy, Edit2, Trash2, CheckSquare, Check } from "lucide-react";
+import { 
+  Send, 
+  X, 
+  Minus, 
+  Loader2, 
+  BellOff, 
+  MoreVertical, 
+  Copy, 
+  Edit2, 
+  Trash2, 
+  CheckSquare, 
+  Check,
+  ExternalLink,
+  AlertTriangle
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -29,6 +43,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useRouter } from "next/navigation";
 
 interface Message {
   id: string;
@@ -37,10 +52,15 @@ interface Message {
   message: string;
   created_at: string;
   updated_at?: string;
+  created_task_id?: string | null;
+  is_deleted?: boolean;
   profiles?: {
     full_name: string;
     avatar_url: string;
     avatar_preset: string;
+  } | null;
+  tasks?: {
+    is_deleted: boolean;
   } | null;
 }
 
@@ -63,7 +83,7 @@ export function FloatingChatWindow({
   const [isSending, setIsSending] = useState(false);
   const supabase = createClient();
   const { toast } = useToast();
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   const endRef = useRef<HTMLDivElement>(null);
 
   // Message Actions state
@@ -80,7 +100,7 @@ export function FloatingChatWindow({
     try {
       const { data, error } = await supabase
         .from('chat_messages')
-        .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id, tasks(is_deleted)')
         .eq('channel_id', chat.id)
         .eq('is_deleted', false)
         .order('created_at', { ascending: true });
@@ -265,7 +285,7 @@ export function FloatingChatWindow({
         </div>
       </div>
 
-      <ScrollArea ref={scrollRef} className="flex-1 p-4 bg-slate-50/30 dark:bg-slate-950/10">
+      <ScrollArea className="flex-1 p-4 bg-slate-50/30 dark:bg-slate-950/10">
         <div className="space-y-4">
           {loading ? (
             <div className="flex justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
@@ -278,6 +298,9 @@ export function FloatingChatWindow({
               const wasEdited = msg.updated_at && new Date(msg.updated_at).getTime() - new Date(msg.created_at).getTime() > 1000;
               
               const canDelete = isMe || isAdminOrSuper;
+
+              const isTaskDeleted = msg.tasks?.is_deleted;
+              const isTaskUnavailable = msg.created_task_id && !msg.tasks;
 
               return (
                 <div key={msg.id} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start", isEditing && "w-full")}>
@@ -308,6 +331,29 @@ export function FloatingChatWindow({
                       isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
                     )}>
                       {msg.message}
+
+                      {/* Task Chip */}
+                      {msg.created_task_id && (
+                        <div className="mt-2 pt-1 border-t border-white/20 dark:border-slate-700">
+                          <button 
+                            disabled={isTaskDeleted || isTaskUnavailable}
+                            onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
+                            className={cn(
+                              "flex items-center gap-1 text-[8px] font-bold uppercase hover:opacity-80 transition-opacity",
+                              isMe ? "text-white" : "text-primary",
+                              (isTaskDeleted || isTaskUnavailable) && "opacity-50 cursor-not-allowed"
+                            )}
+                          >
+                            {isTaskDeleted ? (
+                              <><X className="h-2 w-2" /> Deleted</>
+                            ) : isTaskUnavailable ? (
+                              <><AlertTriangle className="h-2 w-2" /> Unavailable</>
+                            ) : (
+                              <><CheckSquare className="h-2 w-2" /> Linked Task</>
+                            )}
+                          </button>
+                        </div>
+                      )}
 
                       <div className="flex items-center gap-1.5 mt-1 justify-end opacity-70 text-[8px] font-bold">
                         {wasEdited && <span className="italic mr-0.5">(edited)</span>}
@@ -351,7 +397,19 @@ export function FloatingChatWindow({
                                  </DropdownMenuItem>
                                )}
                                <DropdownMenuSeparator className="dark:bg-slate-800" />
-                               <DropdownMenuItem disabled className="text-xs gap-2"><CheckSquare className="h-3 w-3" /> Task</DropdownMenuItem>
+                               {msg.created_task_id ? (
+                                 <DropdownMenuItem 
+                                   disabled={isTaskDeleted || isTaskUnavailable}
+                                   onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
+                                   className="text-xs gap-2"
+                                 >
+                                   <ExternalLink className="h-3 w-3" /> View Task
+                                 </DropdownMenuItem>
+                               ) : (
+                                 <DropdownMenuItem disabled className="text-xs gap-2">
+                                   <CheckSquare className="h-3 w-3" /> Create Task
+                                 </DropdownMenuItem>
+                               )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
