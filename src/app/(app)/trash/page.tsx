@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -78,7 +79,7 @@ export default function TrashPage() {
   }, [fetchTrash]);
 
   const handleRestore = async (item: any) => {
-    if (!canManageTrash) return;
+    if (!canManageTrash || !item.item_id) return;
     setActionLoading(item.item_id);
     try {
       let rpcName = "";
@@ -86,9 +87,25 @@ export default function TrashPage() {
       if (item.item_type === 'task') { rpcName = 'restore_task_from_trash'; params = { p_task_id: item.item_id }; }
       else if (item.item_type === 'note') { rpcName = 'restore_note_from_trash'; params = { p_note_id: item.item_id }; }
       else if (item.item_type === 'notification') { rpcName = 'restore_notification_from_trash'; params = { p_notification_id: item.item_id }; }
+      
+      if (!rpcName) throw new Error("Unsupported item type for restoration");
+
       const { error } = await supabase.rpc(rpcName, params);
-      if (error) throw error;
+      
+      if (error) {
+        console.error(`[Trash] Restore error (${item.item_type}):`, {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+      
       toast({ title: "Item restored", description: `${item.title} has been moved back.` });
+      
+      // Optimistic update
+      setItems(prev => prev.filter(i => i.item_id !== item.item_id));
       fetchTrash();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Restore failed", description: err.message });
@@ -99,20 +116,52 @@ export default function TrashPage() {
   };
 
   const handlePermanentDelete = async (item: any) => {
-    if (!canManageTrash) return;
+    if (!canManageTrash || !item.item_id) return;
     setActionLoading(item.item_id);
     try {
       let rpcName = "";
       let params: any = {};
-      if (item.item_type === 'task') { rpcName = 'permanently_delete_task'; params = { p_task_id: item.item_id }; }
-      else if (item.item_type === 'note') { rpcName = 'permanently_delete_note'; params = { p_note_id: item.item_id }; }
-      else if (item.item_type === 'notification') { rpcName = 'permanently_delete_notification'; params = { p_notification_id: item.item_id }; }
+      
+      if (item.item_type === 'task') { 
+        rpcName = 'permanently_delete_task'; 
+        params = { p_task_id: item.item_id }; 
+      }
+      else if (item.item_type === 'note') { 
+        rpcName = 'permanently_delete_note'; 
+        params = { p_note_id: item.item_id }; 
+      }
+      else if (item.item_type === 'notification') { 
+        rpcName = 'permanently_delete_notification'; 
+        params = { p_notification_id: item.item_id }; 
+      }
+      
+      if (!rpcName) throw new Error("Unsupported item type for deletion");
+
+      // We strictly use the RPC to handle deletion and avoid any frontend inserts 
+      // into task_activity_logs or other meta tables which might cause constraint errors.
       const { error } = await supabase.rpc(rpcName, params);
-      if (error) throw error;
+      
+      if (error) {
+        console.error(`[Trash] Permanent delete error (${item.item_type}):`, {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+      
       toast({ title: "Item deleted permanently" });
+      
+      // Optimistic update
+      setItems(prev => prev.filter(i => i.item_id !== item.item_id));
       fetchTrash();
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Deletion failed", description: err.message });
+      toast({ 
+        variant: "destructive", 
+        title: "Deletion failed", 
+        description: err.message || "An unexpected error occurred during permanent deletion." 
+      });
     } finally {
       setActionLoading(null);
       forceUnlockUI();
