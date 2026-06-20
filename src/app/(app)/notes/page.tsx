@@ -81,14 +81,28 @@ function NotesPageContent() {
 
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
-      document.body.style.pointerEvents = "";
-      document.body.style.overflow = "";
+      // Immediate reset to override any active locks
+      document.body.style.pointerEvents = "auto";
+      document.body.style.overflow = "auto";
+      
+      // Secondary cleanup after delay to catch Radix exit transitions
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+        document.body.style.overflow = "";
+      }, 300);
     }
   }, []);
 
   useEffect(() => {
     return () => forceUnlockUI();
   }, [forceUnlockUI]);
+
+  // Ensure UI is unlocked whenever modal closes
+  useEffect(() => {
+    if (!isModalOpen) {
+      forceUnlockUI();
+    }
+  }, [isModalOpen, forceUnlockUI]);
 
   const fetchData = useCallback(async () => {
     if (!activeWorkspace || !userProfile) return;
