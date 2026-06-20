@@ -155,7 +155,7 @@ interface ChatMuteState {
 }
 
 export default function ChatPage() {
-  const { activeWorkspace, userProfile } = useWorkspace();
+  const { activeWorkspace, userProfile, userRole } = useWorkspace();
   const { addBubble, refreshUnread, removeBubble } = useFloatingChat();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [showConversation, setShowConversation] = useState(false);
@@ -200,6 +200,8 @@ export default function ChatPage() {
   const [newGroupNameInput, setNewGroupNameInput] = useState("");
   const [isRenamingLoading, setIsRenamingLoading] = useState(false);
   const [isLeavingLoading, setIsLeavingLoading] = useState(false);
+  const [memberToRemove, setMemberToRemove] = useState<ChatMemberWithProfile | null>(null);
+  const [isRemovingLoading, setIsRemovingLoading] = useState(false);
 
   // Add Members State
   const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
@@ -801,6 +803,28 @@ export default function ChatPage() {
     }
   };
 
+  const handleRemoveMember = async () => {
+    if (!selectedChatId || !memberToRemove || isRemovingLoading) return;
+
+    setIsRemovingLoading(true);
+    try {
+      const { error } = await supabase.rpc("remove_group_chat_member", {
+        p_channel_id: selectedChatId,
+        p_member_user_id: memberToRemove.user_id,
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Member removed", description: `${memberToRemove.profiles?.full_name} has been disconnected from the group.` });
+      setMemberToRemove(null);
+      await fetchInfoMembers();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Removal failed", description: err.message });
+    } finally {
+      setIsRemovingLoading(false);
+    }
+  };
+
   const handleAddMembersToGroup = async () => {
     if (!selectedChatId || selectedMemberIdsToAdd.length === 0 || isAddingMembersLoading) return;
 
@@ -1100,6 +1124,10 @@ export default function ChatPage() {
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
 
+  // Group Admin Check for Roster Removal UI
+  const currentUserInGroup = infoMembers.find(m => m.user_id === userProfile?.id);
+  const canUserRemove = currentUserInGroup?.role === 'admin' || userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
+
   return (
     <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500 relative">
       <div className={cn("w-full md:w-[350px] border-r dark:border-slate-800 flex flex-col shrink-0 transition-all", showConversation ? "hidden md:flex" : "flex")}>
@@ -1349,12 +1377,24 @@ export default function ChatPage() {
                                       <p className="text-[10px] text-slate-500 truncate">@{member.profiles?.username || member.profiles?.email.split('@')[0]}</p>
                                    </div>
                                 </div>
-                                <Badge variant="outline" className={cn(
-                                   "text-[8px] uppercase h-4 px-1.5",
-                                   member.role === 'admin' ? "border-primary text-primary" : "text-slate-400"
-                                )}>
-                                   {member.role}
-                                </Badge>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline" className={cn(
+                                     "text-[8px] uppercase h-4 px-1.5",
+                                     member.role === 'admin' ? "border-primary text-primary" : "text-slate-400"
+                                  )}>
+                                     {member.role}
+                                  </Badge>
+                                  {selectedChat?.type === 'group' && canUserRemove && member.user_id !== userProfile?.id && (
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-7 w-7 text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity" 
+                                      onClick={() => setMemberToRemove(member)}
+                                    >
+                                      <UserMinus className="w-3.5 h-3.5" />
+                                    </Button>
+                                  )}
+                                </div>
                              </div>
                           ))}
                        </div>
@@ -1406,6 +1446,28 @@ export default function ChatPage() {
           </ScrollArea>
         </SheetContent>
       </Sheet>
+
+      <AlertDialog open={!!memberToRemove} onOpenChange={(open) => !open && setMemberToRemove(null)}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-white">Remove Member?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              Are you sure you want to remove <strong>{memberToRemove?.profiles?.full_name}</strong> from this conversation? They will lose access to all message history.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleRemoveMember} 
+              className="bg-rose-500 hover:bg-rose-600 text-white"
+              disabled={isRemovingLoading}
+            >
+              {isRemovingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirm Removal
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={isAddMembersOpen} onOpenChange={setIsAddMembersOpen}>
         <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 rounded-[2rem]">
