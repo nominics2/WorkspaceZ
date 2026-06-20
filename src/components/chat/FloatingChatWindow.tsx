@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Send, X, Minus, Loader2, BellOff } from "lucide-react";
+import { Send, X, Minus, Loader2, BellOff, MoreVertical, Copy, Edit2, Trash2, CheckSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,6 +10,14 @@ import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { cn } from "@/lib/utils";
 import { Chat, useFloatingChat } from "./FloatingChatProvider";
+import { useToast } from "@/hooks/use-toast";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface Message {
   id: string;
@@ -42,6 +50,7 @@ export function FloatingChatWindow({
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const supabase = createClient();
+  const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -136,6 +145,16 @@ export function FloatingChatWindow({
     }
   };
 
+  const handleCopyMessage = (text: string) => {
+    if (!text || text.trim().length === 0) return;
+    navigator.clipboard.writeText(text).then(() => {
+      toast({ title: "Message copied" });
+    }).catch((err) => {
+      console.error("[Floating Chat] Clipboard Error:", err);
+      toast({ variant: "destructive", title: "Unable to copy message" });
+    });
+  };
+
   return (
     <div className="w-[calc(100vw-2rem)] sm:w-[350px] h-[450px] sm:h-[500px] bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300 pointer-events-auto">
       <div className="p-4 border-b dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 flex items-center justify-between shrink-0">
@@ -174,13 +193,39 @@ export function FloatingChatWindow({
             messages.map((msg) => {
               const isMe = msg.sender_id === userProfile?.id;
               return (
-                <div key={msg.id} className={cn("flex flex-col max-w-[85%]", isMe ? "ml-auto items-end" : "items-start")}>
+                <div key={msg.id} className={cn("group flex flex-col max-w-[85%] relative", isMe ? "ml-auto items-end" : "items-start")}>
                   {!isMe && <span className="text-[9px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
                   <div className={cn(
-                    "px-3 py-2 rounded-xl text-xs shadow-sm",
+                    "px-3 py-2 rounded-xl text-xs shadow-sm relative",
                     isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700"
                   )}>
                     {msg.message}
+
+                    {/* Action Menu */}
+                    <div className={cn(
+                      "absolute top-0 opacity-0 group-hover:opacity-100 transition-opacity",
+                      isMe ? "-left-8" : "-right-8"
+                    )}>
+                      <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full dark:text-slate-400">
+                            <MoreVertical className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align={isMe ? "end" : "start"} className="w-40 dark:bg-slate-900 dark:border-slate-800">
+                           <DropdownMenuItem 
+                             onClick={() => handleCopyMessage(msg.message)}
+                             disabled={!msg.message || msg.message.trim().length === 0}
+                             className="text-xs gap-2"
+                           >
+                             <Copy className="h-3 w-3" /> Copy
+                           </DropdownMenuItem>
+                           <DropdownMenuSeparator className="dark:bg-slate-800" />
+                           <DropdownMenuItem disabled className="text-xs gap-2"><Edit2 className="h-3 w-3" /> Edit</DropdownMenuItem>
+                           <DropdownMenuItem disabled className="text-xs gap-2 text-rose-500"><Trash2 className="h-3 w-3" /> Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </div>
                 </div>
               );

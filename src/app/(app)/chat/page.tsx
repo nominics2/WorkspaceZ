@@ -36,7 +36,8 @@ import {
   Edit2,
   UserMinus,
   Shield,
-  Trash2
+  Trash2,
+  Copy
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -115,6 +116,7 @@ interface Message {
   } | null;
   attachments?: Attachment[];
   channel_display_name?: string;
+  is_deleted?: boolean;
 }
 
 interface WorkspaceMemberProfile {
@@ -272,6 +274,16 @@ export default function ChatPage() {
     if (!viewport) return true;
     const { scrollTop, scrollHeight, clientHeight } = viewport;
     return scrollHeight - scrollTop <= clientHeight + 150;
+  };
+
+  const handleCopyMessage = (text: string) => {
+    if (!text || text.trim().length === 0) return;
+    navigator.clipboard.writeText(text).then(() => {
+      toast({ title: "Message copied" });
+    }).catch((err) => {
+      console.error("[Chat] Clipboard Error:", err);
+      toast({ variant: "destructive", title: "Unable to copy message" });
+    });
   };
 
   /**
@@ -1293,9 +1305,9 @@ export default function ChatPage() {
                   const isMe = msg.sender_id === userProfile?.id;
                   const isHighlighted = highlightedMessageId === msg.id;
                   return (
-                    <div key={msg.id} id={`message-${msg.id}`} className={cn("flex gap-3 max-w-[85%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
+                    <div key={msg.id} id={`message-${msg.id}`} className={cn("group flex gap-3 max-w-[85%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
                       {!isMe && <Avatar className="w-8 h-8 shrink-0 mt-1"><AvatarImage src={msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url} /><AvatarFallback className="text-[10px]">{msg.profiles?.full_name?.[0]}</AvatarFallback></Avatar>}
-                      <div className={cn("flex flex-col", isMe ? "items-end" : "items-start")}>
+                      <div className={cn("flex flex-col relative", isMe ? "items-end" : "items-start")}>
                         {!isMe && <span className="text-[10px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
                         <div className={cn("px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed border-2 border-transparent transition-all", isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700", isHighlighted && "border-primary ring-4 ring-primary/20")}>
                           {msg.message}
@@ -1312,6 +1324,33 @@ export default function ChatPage() {
                             </div>
                           )}
                           <div className={cn("flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold", isMe ? "text-white/80" : "text-slate-400")}><span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>{isMe && <CheckCheck className="w-3 h-3" />}</div>
+                        </div>
+
+                        {/* Message Action Menu */}
+                        <div className={cn(
+                          "absolute top-0 opacity-0 md:group-hover:opacity-100 transition-opacity",
+                          isMe ? "-left-10" : "-right-10"
+                        )}>
+                          <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" aria-label="Message actions" className="h-8 w-8 rounded-full dark:text-slate-400 dark:hover:text-white">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align={isMe ? "end" : "start"} className="w-48 dark:bg-slate-900 dark:border-slate-800">
+                               <DropdownMenuItem 
+                                 onClick={() => handleCopyMessage(msg.message)}
+                                 disabled={!msg.message || msg.message.trim().length === 0}
+                                 className="gap-2"
+                               >
+                                 <Copy className="h-4 w-4" /> Copy Message
+                               </DropdownMenuItem>
+                               <DropdownMenuSeparator className="dark:bg-slate-800" />
+                               <DropdownMenuItem disabled className="gap-2"><Edit2 className="h-4 w-4" /> Edit Message</DropdownMenuItem>
+                               <DropdownMenuItem disabled className="gap-2"><CheckSquare className="h-4 w-4" /> Create Task</DropdownMenuItem>
+                               <DropdownMenuItem disabled className="gap-2 text-rose-500"><Trash2 className="h-4 w-4" /> Delete</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </div>
                     </div>
@@ -1450,7 +1489,7 @@ export default function ChatPage() {
                                      {member.role}
                                   </Badge>
                                   {selectedChat?.type === 'group' && canUserManageRoster && member.user_id !== userProfile?.id && (
-                                    <DropdownMenu>
+                                    <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
                                       <DropdownMenuTrigger asChild>
                                         <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
                                           <MoreVertical className="w-3.5 h-3.5" />
