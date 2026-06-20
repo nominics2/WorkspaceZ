@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { usePwaInstall } from "@/components/providers/PwaInstallProvider";
+import { usePushNotifications } from "@/components/providers/PushNotificationProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -25,7 +27,13 @@ import {
   Users,
   Info,
   X,
-  Copy
+  Copy,
+  Download,
+  Share,
+  PlusSquare,
+  CheckCircle2,
+  BellRing,
+  Globe
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +72,9 @@ function normalizeJoinStatus(result: unknown): string | null {
 
 export default function OnboardingPage() {
   const { loading, workspaces, userProfile, refreshWorkspaces, activeWorkspace } = useWorkspace();
+  const { installAvailable, isStandalone, isIOS, promptInstall } = usePwaInstall();
+  const { isSupported, isConfigured, isSubscribed, permissionState, isLoading: pushLoading, enablePush } = usePushNotifications();
+  
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
@@ -100,14 +111,6 @@ export default function OnboardingPage() {
       });
     }
   }, [userProfile]);
-
-  // Routing Logic: Skip onboarding if workspace exists
-  useEffect(() => {
-    if (!loading && workspaces && workspaces.length > 0 && currentStepIndex === 0) {
-      // Allow them to continue if they already started onboarding and are at a later step
-      // But if they just hit the page, and have workspaces, they might be done.
-    }
-  }, [loading, workspaces, currentStepIndex]);
 
   const currentStep = ONBOARDING_STEPS[currentStepIndex];
   const progress = ((currentStepIndex + 1) / ONBOARDING_STEPS.length) * 100;
@@ -187,14 +190,12 @@ export default function OnboardingPage() {
     if (saving || !workspaceForm.name.trim()) return;
     setSaving(true);
     try {
-      // 1. Create workspace
       const { data: wsId, error } = await supabase.rpc("create_workspace", {
         p_name: workspaceForm.name.trim(),
       });
 
       if (error) throw error;
 
-      // 2. Set icon preset
       if (wsId) {
         await supabase.rpc("update_workspace_icon_preset", {
           p_workspace_id: wsId,
@@ -202,7 +203,6 @@ export default function OnboardingPage() {
         });
       }
 
-      // 3. Mark Onboarding
       await supabase.rpc('update_my_onboarding', {
         p_current_step: 'teams',
         p_workspace_completed: true
@@ -310,8 +310,46 @@ export default function OnboardingPage() {
     }
   };
 
+  const handleInstallNext = async (isSkipping = false) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await supabase.rpc('update_my_onboarding', {
+        p_current_step: 'notifications',
+        [isSkipping ? 'p_install_app_skipped' : 'p_install_app_completed']: true
+      });
+      setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'notifications'));
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleNotificationsNext = async (isSkipping = false) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (!isSkipping) {
+        await enablePush();
+      }
+
+      await supabase.rpc('update_my_onboarding', {
+        p_current_step: 'features_intro',
+        [isSkipping ? 'p_notifications_skipped' : 'p_notifications_completed']: true
+      });
+      setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'finish'));
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleNext = async () => {
-    if (currentStep.id === 'profile') {
+    if (currentStep.id === 'welcome') {
+      setCurrentStepIndex(currentStepIndex + 1);
+    } else if (currentStep.id === 'profile') {
       await handleProfileSave();
     } else if (currentStep.id === 'workspace') {
       if (workspaceMode === 'choice') {
@@ -325,6 +363,10 @@ export default function OnboardingPage() {
       await handleTeamsSave();
     } else if (currentStep.id === 'invite') {
       await handleInviteNext();
+    } else if (currentStep.id === 'install') {
+      await handleInstallNext();
+    } else if (currentStep.id === 'notifications') {
+      await handleNotificationsNext();
     } else if (currentStepIndex < ONBOARDING_STEPS.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
     } else {
@@ -735,7 +777,152 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {currentStepIndex > 4 && (
+              {currentStep.id === 'install' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="flex flex-col items-center justify-center text-center space-y-6">
+                    {isStandalone ? (
+                      <div className="space-y-6">
+                        <div className="w-24 h-24 bg-emerald-50 dark:bg-emerald-500/10 rounded-3xl flex items-center justify-center mx-auto border-2 border-emerald-500/20 shadow-xl shadow-emerald-500/5">
+                          <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+                        </div>
+                        <div className="space-y-2">
+                          <h3 className="text-2xl font-bold dark:text-white">Successfully Installed!</h3>
+                          <p className="text-slate-500 dark:text-slate-400 max-w-sm">WorkspaceZ is already running as a standalone app on your device.</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="p-12 bg-slate-50 dark:bg-slate-800/40 rounded-[3rem] border-2 border-dashed dark:border-slate-800 shadow-inner group-hover:scale-105 transition-transform duration-700">
+                          <Download className="w-24 h-24 text-primary animate-bounce" />
+                        </div>
+                        
+                        <div className="max-w-md space-y-4">
+                           {installAvailable ? (
+                             <div className="space-y-6">
+                                <p className="text-lg font-medium text-slate-600 dark:text-slate-300">WorkspaceZ is ready to be added to your home screen or dock.</p>
+                                <Button 
+                                  onClick={promptInstall}
+                                  className="w-full h-16 rounded-2xl gap-3 text-xl shadow-xl shadow-primary/30"
+                                >
+                                  <Smartphone className="w-6 h-6" />
+                                  Install Now
+                                </Button>
+                             </div>
+                           ) : isIOS ? (
+                             <div className="space-y-6 text-left">
+                                <div className="p-6 bg-white dark:bg-slate-950 rounded-3xl border dark:border-slate-800 space-y-5 shadow-sm">
+                                  <div className="flex items-start gap-4">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black shrink-0">1</div>
+                                    <p className="text-sm leading-relaxed dark:text-slate-200">Ensure you are viewing this in <strong>Safari</strong>.</p>
+                                  </div>
+                                  <div className="flex items-start gap-4">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black shrink-0">2</div>
+                                    <p className="text-sm leading-relaxed flex items-center flex-wrap gap-2 dark:text-slate-200">
+                                      Tap the <Share className="w-4 h-4 text-blue-500" /> Share button in the bottom menu.
+                                    </p>
+                                  </div>
+                                  <div className="flex items-start gap-4">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-xs font-black shrink-0">3</div>
+                                    <p className="text-sm leading-relaxed flex items-center flex-wrap gap-2 dark:text-slate-200">
+                                      Scroll down and tap <PlusSquare className="w-4 h-4 text-slate-500" /> <strong>Add to Home Screen</strong>.
+                                    </p>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-center text-muted-foreground font-medium px-4">Apple requires this manual setup for all web applications.</p>
+                             </div>
+                           ) : (
+                             <div className="p-8 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border dark:border-slate-800 text-center">
+                                <AlertCircle className="w-12 h-12 text-slate-400 mx-auto mb-4" />
+                                <p className="text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                                  Native installation isn't supported on this browser. You can always install WorkspaceZ from Chrome or Edge on Desktop.
+                                </p>
+                             </div>
+                           )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {currentStep.id === 'notifications' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  <div className="flex flex-col items-center justify-center text-center space-y-8">
+                    <div className="relative group">
+                       <div className="p-16 bg-primary/5 rounded-[4rem] border dark:border-slate-800 shadow-inner group-hover:bg-primary/10 transition-colors">
+                        {isSubscribed ? (
+                          <BellRing className="w-24 h-24 text-emerald-500 animate-pulse" />
+                        ) : (
+                          <Bell className="w-24 h-24 text-primary" />
+                        )}
+                      </div>
+                      {isSubscribed && (
+                        <div className="absolute -top-4 -right-4 bg-emerald-500 text-white rounded-full p-3 shadow-xl animate-in zoom-in duration-300">
+                          <Check className="w-8 h-8" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="max-w-md space-y-6">
+                      <div className="space-y-2">
+                        <h2 className="text-2xl font-bold dark:text-white">Push Notifications</h2>
+                        <p className="text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
+                          Stay connected with real-time alerts for task deadlines, chat messages, and workspace updates.
+                        </p>
+                      </div>
+
+                      {!isConfigured ? (
+                        <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-[2rem] border dark:border-slate-800 flex gap-4">
+                           <Info className="w-6 h-6 text-slate-400 shrink-0" />
+                           <p className="text-xs text-left text-slate-500 font-medium">Server communication is not configured. Notifications will be available once the system completes setup.</p>
+                        </div>
+                      ) : !isSupported ? (
+                        <div className="p-6 bg-amber-50 dark:bg-amber-950/20 rounded-[2rem] border border-amber-100 dark:border-amber-900/30 flex gap-4 text-left">
+                           <AlertCircle className="w-6 h-6 text-amber-500 shrink-0" />
+                           <p className="text-xs text-amber-800 dark:text-amber-400 font-medium">Push notifications are not supported on this device/browser combination.</p>
+                        </div>
+                      ) : isSubscribed ? (
+                        <div className="p-6 bg-emerald-50 dark:bg-emerald-500/10 rounded-3xl border border-emerald-500/20 flex items-center justify-center gap-3">
+                           <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                           <span className="text-sm font-bold text-emerald-600">Notifications are enabled!</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                           <Button 
+                            onClick={() => handleNotificationsNext(false)}
+                            disabled={pushLoading}
+                            className="w-full h-16 rounded-2xl gap-3 text-xl shadow-xl shadow-primary/30"
+                          >
+                            {pushLoading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Globe className="w-6 h-6" />}
+                            Enable Notifications
+                          </Button>
+                          {permissionState === 'denied' && (
+                            <p className="text-[10px] text-rose-500 font-bold uppercase tracking-tight">Access blocked in browser settings</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentStep.id === 'finish' && (
+                <div className="flex flex-col items-center justify-center text-center">
+                  <div className="p-16 rounded-[4rem] bg-emerald-50 dark:bg-emerald-500/10 mb-12 border-2 border-emerald-500/20 shadow-xl shadow-emerald-500/5 group-hover:scale-105 transition-transform duration-700">
+                    <CheckCircle2 className="w-24 h-24 text-emerald-500" />
+                  </div>
+                  <div className="max-w-md space-y-6">
+                    <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                      Ready for action!
+                    </h2>
+                    <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-lg font-medium">
+                      Your workspace is ready. You've established your identity, organized your team, and connected your device.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {(currentStep.id !== 'welcome' && currentStep.id !== 'profile' && currentStep.id !== 'workspace' && currentStep.id !== 'teams' && currentStep.id !== 'invite' && currentStep.id !== 'install' && currentStep.id !== 'notifications' && currentStep.id !== 'finish') && (
                 <div className="flex flex-col items-center justify-center text-center">
                   <div className="p-16 rounded-[4rem] bg-slate-50 dark:bg-slate-800/40 mb-12 border dark:border-slate-800 shadow-inner group-hover:scale-105 transition-transform duration-700">
                     <StepIcon className="w-24 h-20 text-slate-300 dark:text-slate-700 animate-pulse" />
@@ -764,12 +951,14 @@ export default function OnboardingPage() {
               </Button>
               
               <div className="flex flex-col sm:flex-row gap-4">
-                {(currentStep.id === 'teams' || currentStep.id === 'invite') && (
+                {(currentStep.id === 'teams' || currentStep.id === 'invite' || currentStep.id === 'install' || currentStep.id === 'notifications') && (
                   <Button
                     variant="ghost"
                     onClick={() => {
                       if (currentStep.id === 'teams') handleTeamsSave(true);
-                      else handleInviteNext();
+                      else if (currentStep.id === 'invite') handleInviteNext();
+                      else if (currentStep.id === 'install') handleInstallNext(true);
+                      else handleNotificationsNext(true);
                     }}
                     disabled={saving}
                     className="rounded-2xl h-16 px-10 font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
@@ -779,17 +968,20 @@ export default function OnboardingPage() {
                 )}
                 <Button 
                   onClick={handleNext}
-                  disabled={saving || (currentStep.id === 'workspace' && workspaceMode === 'choice')}
+                  disabled={saving || pushLoading || (currentStep.id === 'workspace' && workspaceMode === 'choice')}
                   className="rounded-2xl h-16 px-16 shadow-2xl shadow-primary/30 font-black text-xl transition-all active:scale-95 group/btn"
                 >
-                  {saving ? (
+                  {saving || pushLoading ? (
                     <Loader2 className="w-6 h-6 animate-spin" />
                   ) : (
                     <>
                       {currentStepIndex === ONBOARDING_STEPS.length - 1 ? 'Go to Dashboard' : 
                        (currentStep.id === 'workspace' && workspaceMode === 'join' ? 'Join Workspace' : 
                         currentStep.id === 'workspace' && workspaceMode === 'create' ? 'Create Workspace' : 
-                        currentStep.id === 'teams' ? 'Launch Teams' : 'Next Step')}
+                        currentStep.id === 'teams' ? 'Launch Teams' : 
+                        currentStep.id === 'install' ? (isStandalone ? 'Continue' : 'Install App') :
+                        currentStep.id === 'notifications' ? (isSubscribed ? 'Continue' : 'Enable Setup') :
+                        'Next Step')}
                       {currentStepIndex !== ONBOARDING_STEPS.length - 1 && <ChevronRight className="w-6 h-6 ml-3 group-hover/btn:translate-x-1 transition-transform" />}
                     </>
                   )}
