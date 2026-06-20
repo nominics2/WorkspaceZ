@@ -34,7 +34,9 @@ import {
   UserMinus,
   Mail,
   Fingerprint,
-  Layers
+  Layers,
+  AlertTriangle,
+  ShieldAlert
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -80,7 +82,8 @@ import {
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
-  DropdownMenuTrigger 
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu";
 import { getWorkspaceIconSrc } from "@/lib/workspace-icons";
 
@@ -132,6 +135,12 @@ export default function AppUpdatesAdminPage() {
     status: "new",
     developer_note: ""
   });
+
+  // User Deletion State
+  const [isDeleteUserModalOpen, setIsDeleteUserModalOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
 
   const supabase = createClient();
   const { toast } = useToast();
@@ -405,6 +414,56 @@ export default function AppUpdatesAdminPage() {
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleRealUserDelete = async () => {
+    if (!userToDelete || !deleteConfirmEmail.trim()) return;
+    
+    if (deleteConfirmEmail.toLowerCase() !== userToDelete.email.toLowerCase()) {
+      toast({ variant: "destructive", title: "Confirmation Mismatch", description: "The email you typed does not match the user's email." });
+      return;
+    }
+
+    setIsDeletingUser(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Session expired. Please reload.");
+
+      const response = await fetch('/api/developer/users/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({
+          targetUserId: userToDelete.id,
+          confirmEmail: deleteConfirmEmail.trim()
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to delete user profile.");
+      }
+
+      toast({ title: "User removed permanently", description: `Account for ${userToDelete.full_name} has been purged.` });
+      setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
+      setIsDeleteUserModalOpen(false);
+      setUserToDelete(null);
+      setDeleteConfirmEmail("");
+      
+    } catch (err: any) {
+      console.error("[Developer Deletion] Error:", err);
+      toast({ 
+        variant: "destructive", 
+        title: "Purge Failed", 
+        description: err.message || "An error occurred during account deletion." 
+      });
+    } finally {
+      setIsDeletingUser(false);
+      forceUnlockUI();
     }
   };
 
@@ -716,10 +775,20 @@ export default function AppUpdatesAdminPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-56 dark:bg-slate-950">
                           <DropdownMenuItem disabled className="opacity-50 gap-2"><UserX className="w-4 h-4" /> Deactivate Account</DropdownMenuItem>
-                          <DropdownMenuItem disabled className="opacity-50 text-rose-500 gap-2"><UserMinus className="w-4 h-4" /> Delete Profile</DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="text-rose-500 gap-2 focus:bg-rose-50 dark:focus:bg-rose-500/10" 
+                            disabled={user.id === userProfile?.id}
+                            onClick={() => {
+                              setUserToDelete(user);
+                              setDeleteConfirmEmail("");
+                              setIsDeleteUserModalOpen(true);
+                            }}
+                          >
+                            <UserMinus className="w-4 h-4" /> Delete Profile
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator className="dark:bg-slate-800" />
                           <div className="px-2 py-1.5 text-[9px] font-bold text-muted-foreground uppercase leading-tight italic">
-                            Destructive actions are coming after safety audit
+                            Account purges are final and irreversible
                           </div>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -731,6 +800,67 @@ export default function AppUpdatesAdminPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Delete User Modal */}
+      <Dialog open={isDeleteUserModalOpen} onOpenChange={(open) => { if (!isDeletingUser) { setIsDeleteUserModalOpen(open); if (!open) forceUnlockUI(); } }}>
+        <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] shadow-2xl border-none">
+          <div className="bg-rose-500 h-2 w-full" />
+          <div className="p-8">
+            <DialogHeader className="mb-6">
+              <div className="w-14 h-14 bg-rose-50 dark:bg-rose-500/10 rounded-2xl flex items-center justify-center mb-4">
+                <ShieldAlert className="w-8 h-8 text-rose-500" />
+              </div>
+              <DialogTitle className="text-2xl font-bold text-slate-900 dark:text-white">Delete User Account?</DialogTitle>
+              <DialogDescription className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                This will permanently purge <span className="font-bold text-slate-900 dark:text-slate-100">{userToDelete?.full_name}</span> (@{userToDelete?.username}) from the platform.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mb-8">
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-200 dark:border-amber-900/30">
+                <div className="flex gap-3">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-800 dark:text-amber-400 space-y-1">
+                    <p className="font-bold uppercase tracking-tight">Warning: Irreversible Action</p>
+                    <p className="leading-relaxed">Personal notes, private tasks, and all memberships will be wiped. Shared tasks/notes will remain but will no longer be associated with this user.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 ml-1">Confirm with email address</Label>
+                <Input 
+                  value={deleteConfirmEmail}
+                  onChange={e => setDeleteConfirmEmail(e.target.value)}
+                  placeholder={userToDelete?.email}
+                  className="rounded-xl h-11 dark:bg-slate-900 border-none font-medium"
+                  disabled={isDeletingUser}
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="gap-3 flex-row border-t dark:border-slate-800 pt-6">
+              <Button 
+                variant="ghost" 
+                onClick={() => setIsDeleteUserModalOpen(false)} 
+                disabled={isDeletingUser} 
+                className="flex-1 rounded-xl h-12"
+              >
+                Cancel
+              </Button>
+              <Button 
+                variant="destructive" 
+                onClick={handleRealUserDelete} 
+                disabled={isDeletingUser || deleteConfirmEmail.toLowerCase() !== userToDelete?.email.toLowerCase()}
+                className="flex-1 rounded-xl h-12 bg-rose-600 hover:bg-rose-700 shadow-lg shadow-rose-600/20 font-bold"
+              >
+                {isDeletingUser ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                Purge Account
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Review Modal */}
       <Dialog open={isReviewModalOpen} onOpenChange={(open) => { setIsReviewModalOpen(open); if (!open) { setReviewingRequest(null); forceUnlockUI(); } }}>
@@ -881,6 +1011,7 @@ export default function AppUpdatesAdminPage() {
                                       <Avatar className="w-5 h-5"><AvatarImage src={u.avatar_preset ? `/avatars/${u.avatar_preset}.png` : u.avatar_url} /><AvatarFallback>{u.full_name?.[0]}</AvatarFallback></Avatar>
                                       {u.full_name}
                                    </div>
+                                   {u.id === userProfile?.id && <Badge className="ml-2 h-4 text-[8px] bg-primary/20 text-primary">YOU</Badge>}
                                    {updateForm.target_ids.includes(u.id) && <Check className="w-3.5 h-3.5" />}
                                 </button>
                              ))
@@ -970,4 +1101,3 @@ export default function AppUpdatesAdminPage() {
     </div>
   );
 }
-
