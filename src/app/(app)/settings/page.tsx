@@ -24,7 +24,11 @@ import {
   Sparkles,
   Smartphone,
   AlertTriangle,
-  Info
+  Info,
+  Download,
+  Share,
+  PlusSquare,
+  Layout
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { usePushNotifications } from "@/components/providers/PushNotificationProvider";
@@ -48,7 +52,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
 
-type TabType = 'profile' | 'appearance' | 'notifications';
+type TabType = 'profile' | 'appearance' | 'notifications' | 'install';
 
 const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`);
 
@@ -62,6 +66,8 @@ export default function SettingsPage() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
   const [profileForm, setProfileForm] = useState({
     full_name: "",
     username: "",
@@ -84,6 +90,19 @@ export default function SettingsPage() {
       });
     }
   }, [userProfile]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
 
   const fetchStorageUsage = useCallback(async () => {
     if (!activeWorkspace) return;
@@ -208,6 +227,15 @@ export default function SettingsPage() {
     }
   };
 
+  const handleInstallApp = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
+
   const handleNotificationClick = (n: any) => {
     if (n.type === 'app_update' && n.related_app_update_id) {
       router.push(`/app-updates?id=${n.related_app_update_id}`);
@@ -288,6 +316,15 @@ export default function SettingsPage() {
             )}
           >
             <Bell className="w-5 h-5" /> Notifications
+          </button>
+          <button 
+            onClick={() => setActiveTab('install')}
+            className={cn(
+              "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
+              activeTab === 'install' ? "bg-primary/10 text-primary font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400"
+            )}
+          >
+            <Smartphone className="w-5 h-5" /> Install App
           </button>
           
           <Separator className="my-4 dark:border-slate-800" />
@@ -736,6 +773,123 @@ export default function SettingsPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'install' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+              <Card className="border-none shadow-sm overflow-hidden bg-white dark:bg-slate-900 dark:border dark:border-slate-800">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        <Smartphone className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">App Installation</CardTitle>
+                        <CardDescription>Install Workspace Z on your device for the best experience.</CardDescription>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className={cn(
+                      "text-[10px] uppercase font-bold px-2 py-0.5",
+                      isStandalone ? "border-emerald-500 text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10" : "border-slate-200 dark:border-slate-800 text-slate-500"
+                    )}>
+                      {isStandalone ? "Installed" : "Browser Mode"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6 space-y-8">
+                  {isStandalone ? (
+                    <div className="p-12 text-center space-y-4">
+                      <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-emerald-500/20">
+                        <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white">Workspace Z is ready!</h3>
+                      <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                        You are currently using the installed application. You'll get better notifications and faster performance.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="space-y-4">
+                        <h3 className="text-sm font-bold uppercase tracking-widest text-slate-500 flex items-center gap-2">
+                           <Layout className="w-4 h-4" /> Quick Install
+                        </h3>
+                        <div className="p-6 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border dark:border-slate-800 flex flex-col items-center gap-4 text-center">
+                          <div className="p-4 bg-primary/10 rounded-full mb-2">
+                            <Download className="w-8 h-8 text-primary animate-bounce" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="font-bold text-lg text-slate-950 dark:text-slate-100">Add to your device</p>
+                            <p className="text-sm text-muted-foreground max-w-xs">
+                              {deferredPrompt 
+                                ? "One click to install Workspace Z on your desktop or mobile device." 
+                                : "Install instructions are available below for your specific platform."}
+                            </p>
+                          </div>
+                          {deferredPrompt && (
+                            <Button onClick={handleInstallApp} className="w-full sm:w-auto px-12 h-12 rounded-xl shadow-lg shadow-primary/20 gap-2 text-lg">
+                              Install Workspace Z
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">iOS / Safari</h3>
+                          <div className="p-4 bg-white dark:bg-slate-950 rounded-2xl border dark:border-slate-800 space-y-4 shadow-sm">
+                            <div className="flex items-start gap-3">
+                              <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold shrink-0">1</div>
+                              <p className="text-xs leading-relaxed">Open Workspace Z in the <strong>Safari</strong> browser.</p>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold shrink-0">2</div>
+                              <p className="text-xs leading-relaxed flex items-center flex-wrap gap-1.5">
+                                Tap the <Share className="w-3.5 h-3.5 text-blue-500" /> Share button in the bottom menu.
+                              </p>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold shrink-0">3</div>
+                              <p className="text-xs leading-relaxed flex items-center flex-wrap gap-1.5">
+                                Scroll down and tap <PlusSquare className="w-3.5 h-3.5 text-slate-500" /> <strong>Add to Home Screen</strong>.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Android / Windows / macOS</h3>
+                          <div className="p-4 bg-white dark:bg-slate-950 rounded-2xl border dark:border-slate-800 space-y-4 shadow-sm">
+                            <div className="flex items-start gap-3">
+                              <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold shrink-0">1</div>
+                              <p className="text-xs leading-relaxed">Use the <strong>Install</strong> button at the top of this page if available.</p>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold shrink-0">2</div>
+                              <p className="text-xs leading-relaxed">On Desktop, look for the <Download className="w-3.5 h-3.5 text-blue-500" /> icon in your address bar.</p>
+                            </div>
+                            <div className="flex items-start gap-3">
+                              <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px] font-bold shrink-0">3</div>
+                              <p className="text-xs leading-relaxed">On Android, tap <strong>Add Workspace Z to Home Screen</strong> if prompted.</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-amber-50 dark:bg-amber-950/20 rounded-xl border border-amber-100 dark:border-amber-900/30 flex gap-3">
+                        <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                          <p className="text-sm font-bold text-amber-900 dark:text-amber-400">Why install?</p>
+                          <p className="text-xs text-amber-800 dark:text-amber-500 leading-relaxed">
+                            Installed apps get their own icon, run in full-screen without address bars, and support native push notifications for real-time task alerts.
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
