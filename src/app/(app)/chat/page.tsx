@@ -30,10 +30,12 @@ import {
   MessageCircle,
   Info,
   ShieldCheck,
+  ShieldAlert,
   Calendar,
   LogOut,
   Edit2,
-  UserMinus
+  UserMinus,
+  Shield
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -202,6 +204,11 @@ export default function ChatPage() {
   const [isLeavingLoading, setIsLeavingLoading] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<ChatMemberWithProfile | null>(null);
   const [isRemovingLoading, setIsRemovingLoading] = useState(false);
+
+  // Role Management State
+  const [memberToUpdateRole, setMemberToUpdateRole] = useState<ChatMemberWithProfile | null>(null);
+  const [newRoleTarget, setNewRoleTarget] = useState<'admin' | 'member' | null>(null);
+  const [isRoleLoading, setIsRoleLoading] = useState(false);
 
   // Add Members State
   const [isAddMembersOpen, setIsAddMembersOpen] = useState(false);
@@ -825,6 +832,33 @@ export default function ChatPage() {
     }
   };
 
+  const handleUpdateMemberRole = async () => {
+    if (!selectedChatId || !memberToUpdateRole || !newRoleTarget || isRoleLoading) return;
+
+    setIsRoleLoading(true);
+    try {
+      const { error } = await supabase.rpc("set_group_chat_member_role", {
+        p_channel_id: selectedChatId,
+        p_member_user_id: memberToUpdateRole.user_id,
+        p_role: newRoleTarget,
+      });
+
+      if (error) throw error;
+
+      toast({ 
+        title: newRoleTarget === 'admin' ? "Member Promoted" : "Member Demoted", 
+        description: `${memberToUpdateRole.profiles?.full_name} is now a group ${newRoleTarget}.` 
+      });
+      setMemberToUpdateRole(null);
+      setNewRoleTarget(null);
+      await fetchInfoMembers();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update failed", description: err.message });
+    } finally {
+      setIsRoleLoading(false);
+    }
+  };
+
   const handleAddMembersToGroup = async () => {
     if (!selectedChatId || selectedMemberIdsToAdd.length === 0 || isAddingMembersLoading) return;
 
@@ -1124,9 +1158,9 @@ export default function ChatPage() {
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
 
-  // Group Admin Check for Roster Removal UI
+  // Group Admin Check for Management UI
   const currentUserInGroup = infoMembers.find(m => m.user_id === userProfile?.id);
-  const canUserRemove = currentUserInGroup?.role === 'admin' || userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
+  const canUserManageRoster = currentUserInGroup?.role === 'admin' || userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
 
   return (
     <div className="h-[calc(100vh-10rem)] md:h-[calc(100vh-8rem)] flex overflow-hidden bg-white dark:bg-slate-900 border dark:border-slate-800 rounded-[2rem] shadow-2xl animate-in fade-in duration-500 relative">
@@ -1384,15 +1418,30 @@ export default function ChatPage() {
                                   )}>
                                      {member.role}
                                   </Badge>
-                                  {selectedChat?.type === 'group' && canUserRemove && member.user_id !== userProfile?.id && (
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-7 w-7 text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity" 
-                                      onClick={() => setMemberToRemove(member)}
-                                    >
-                                      <UserMinus className="w-3.5 h-3.5" />
-                                    </Button>
+                                  {selectedChat?.type === 'group' && canUserManageRoster && member.user_id !== userProfile?.id && (
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger asChild>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <MoreVertical className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end" className="w-48 dark:bg-slate-900 dark:border-slate-800">
+                                        <DropdownMenuLabel className="text-[10px] uppercase tracking-widest text-slate-500">Manage Member</DropdownMenuLabel>
+                                        {member.role === 'member' ? (
+                                          <DropdownMenuItem onClick={() => { setMemberToUpdateRole(member); setNewRoleTarget('admin'); }} className="gap-2">
+                                            <ShieldCheck className="w-4 h-4 text-primary" /> Promote to Admin
+                                          </DropdownMenuItem>
+                                        ) : (
+                                          <DropdownMenuItem onClick={() => { setMemberToUpdateRole(member); setNewRoleTarget('member'); }} className="gap-2">
+                                            <ShieldAlert className="w-4 h-4 text-amber-500" /> Demote to Member
+                                          </DropdownMenuItem>
+                                        )}
+                                        <DropdownMenuSeparator className="dark:bg-slate-800" />
+                                        <DropdownMenuItem onClick={() => setMemberToRemove(member)} className="text-rose-500 gap-2 dark:hover:bg-rose-500/10">
+                                          <UserMinus className="w-4 h-4" /> Remove from Group
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
                                   )}
                                 </div>
                              </div>
@@ -1464,6 +1513,32 @@ export default function ChatPage() {
             >
               {isRemovingLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Confirm Removal
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!memberToUpdateRole} onOpenChange={(open) => !open && setMemberToUpdateRole(null)}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-white">
+              {newRoleTarget === 'admin' ? 'Promote to Admin?' : 'Demote to Member?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              {newRoleTarget === 'admin' 
+                ? `Are you sure you want to make ${memberToUpdateRole?.profiles?.full_name} an administrator of this group?` 
+                : `Are you sure you want to demote ${memberToUpdateRole?.profiles?.full_name} to a normal member?`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleUpdateMemberRole} 
+              className={cn("bg-primary hover:bg-primary/90 text-white", newRoleTarget === 'member' && "bg-amber-600 hover:bg-amber-700")}
+              disabled={isRoleLoading}
+            >
+              {isRoleLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirm Change
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
