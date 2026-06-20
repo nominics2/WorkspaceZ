@@ -13,7 +13,9 @@ import {
   ShieldCheck,
   Search,
   X,
-  FilterX
+  FilterX,
+  Check,
+  Send
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,10 +27,28 @@ import {
   AccordionItem, 
   AccordionTrigger 
 } from "@/components/ui/accordion";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogDescription 
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AppUpdatesPage() {
   const { activeWorkspace } = useWorkspace();
@@ -36,7 +56,17 @@ export default function AppUpdatesPage() {
   const [loading, setLoading] = useState(true);
   const [isDeveloper, setIsDeveloper] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  
+  const [isSuggestModalOpen, setIsSuggestModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [suggestForm, setSuggestForm] = useState({
+    title: "",
+    details: "",
+    category: "Productivity"
+  });
+
   const supabase = createClient();
+  const { toast } = useToast();
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -51,25 +81,20 @@ export default function AppUpdatesPage() {
 
       if (featuresRes.error) throw featuresRes.error;
 
-      // Sort logic: category, then sort_order ASC, then release_date DESC, then title ASC
       const sortedFeatures = (featuresRes.data || []).sort((a, b) => {
-        // First sort by category alphabetically
         const catA = a.category || "General";
         const catB = b.category || "General";
         if (catA < catB) return -1;
         if (catA > catB) return 1;
 
-        // Then by sort_order ascending
         if (a.sort_order !== b.sort_order) {
           return (a.sort_order || 0) - (b.sort_order || 0);
         }
 
-        // Then by release_date descending
         const dateA = new Date(a.release_date || 0).getTime();
         const dateB = new Date(b.release_date || 0).getTime();
         if (dateB !== dateA) return dateB - dateA;
 
-        // Finally by title
         return (a.title || "").localeCompare(b.title || "");
       });
 
@@ -104,6 +129,38 @@ export default function AppUpdatesPage() {
     return acc;
   }, {});
 
+  const handleSuggestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!suggestForm.title.trim() || !suggestForm.details.trim()) return;
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.rpc("submit_app_feature_request", {
+        p_workspace_id: activeWorkspace?.id || null,
+        p_title: suggestForm.title.trim(),
+        p_details: suggestForm.details.trim(),
+        p_category: suggestForm.category
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Suggestion Received",
+        description: "Your feature request has been sent to our development team for review."
+      });
+      setIsSuggestModalOpen(false);
+      setSuggestForm({ title: "", details: "", category: "Productivity" });
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Submission Failed",
+        description: err.message || "Unable to submit feature request at this time."
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-12 animate-in fade-in duration-700 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -121,7 +178,6 @@ export default function AppUpdatesPage() {
       </div>
 
       <div className="space-y-6">
-        {/* Search Bar */}
         <div className="relative group max-w-md">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 transition-colors group-focus-within:text-primary" />
           <Input 
@@ -234,13 +290,80 @@ export default function AppUpdatesPage() {
                   WorkspaceZ grows through your feedback. Share your ideas for new tools, enhancements, or productivity hacks.
                 </p>
               </div>
-              <Button variant="secondary" className="px-10 rounded-2xl h-12 font-bold text-primary bg-white hover:bg-slate-50 shadow-xl shadow-black/10 border-none">
+              <Button 
+                variant="secondary" 
+                className="px-10 rounded-2xl h-12 font-bold text-primary bg-white hover:bg-slate-50 shadow-xl shadow-black/10 border-none"
+                onClick={() => setIsSuggestModalOpen(true)}
+              >
                 Suggest a Feature
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      <Dialog open={isSuggestModalOpen} onOpenChange={setIsSuggestModalOpen}>
+        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] p-0 overflow-hidden">
+          <div className="p-8">
+            <DialogHeader className="mb-6">
+              <DialogTitle className="text-2xl font-bold">Share your Idea</DialogTitle>
+              <DialogDescription>What functionality would make your team even more productive?</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSuggestSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Feature Title</Label>
+                <Input 
+                  value={suggestForm.title}
+                  onChange={e => setSuggestForm({...suggestForm, title: e.target.value})}
+                  placeholder="e.g. Dark mode themes..."
+                  required
+                  className="rounded-xl h-11 dark:bg-slate-900 border-none"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Category</Label>
+                <Select 
+                  value={suggestForm.category}
+                  onValueChange={v => setSuggestForm({...suggestForm, category: v})}
+                >
+                  <SelectTrigger className="rounded-xl h-11 dark:bg-slate-900 border-none">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900">
+                    <SelectItem value="Chat">Chat</SelectItem>
+                    <SelectItem value="Communication">Communication</SelectItem>
+                    <SelectItem value="Productivity">Productivity</SelectItem>
+                    <SelectItem value="System">System</SelectItem>
+                    <SelectItem value="Workspace">Workspace</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Details</Label>
+                <Textarea 
+                  value={suggestForm.details}
+                  onChange={e => setSuggestForm({...suggestForm, details: e.target.value})}
+                  placeholder="Tell us more about how this would work..."
+                  rows={5}
+                  required
+                  className="rounded-xl dark:bg-slate-900 border-none resize-none"
+                />
+              </div>
+
+              <DialogFooter className="pt-4 border-t dark:border-slate-800">
+                <Button type="button" variant="ghost" onClick={() => setIsSuggestModalOpen(false)} disabled={submitting} className="rounded-xl">Cancel</Button>
+                <Button type="submit" disabled={submitting || !suggestForm.title.trim()} className="rounded-xl shadow-lg shadow-primary/20 px-8">
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                  Submit Suggestion
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

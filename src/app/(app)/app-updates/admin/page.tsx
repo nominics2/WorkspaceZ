@@ -26,7 +26,10 @@ import {
   ChevronRight,
   Globe,
   BellRing,
-  Smartphone
+  Smartphone,
+  MessageSquare,
+  MoreVertical,
+  ClipboardList
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -68,6 +71,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
 import { getWorkspaceIconSrc } from "@/lib/workspace-icons";
 
 export default function AppUpdatesAdminPage() {
@@ -75,6 +84,7 @@ export default function AppUpdatesAdminPage() {
   const [isDeveloper, setIsDeveloper] = useState<boolean | null>(null);
   const [updates, setUpdates] = useState<any[]>([]);
   const [features, setFeatures] = useState<any[]>([]);
+  const [requests, setRequests] = useState<any[]>([]);
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -107,6 +117,13 @@ export default function AppUpdatesAdminPage() {
     sort_order: 0,
     is_active: true,
     release_date: new Date().toISOString().split('T')[0]
+  });
+
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewingRequest, setReviewingRequest] = useState<any>(null);
+  const [reviewForm, setReviewForm] = useState({
+    status: "new",
+    developer_note: ""
   });
 
   const supabase = createClient();
@@ -142,15 +159,17 @@ export default function AppUpdatesAdminPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [updatesRes, featuresRes, wsRes, usersRes] = await Promise.all([
+      const [updatesRes, featuresRes, requestsRes, wsRes, usersRes] = await Promise.all([
         supabase.from('app_updates').select('*').order('published_at', { ascending: false }),
         supabase.from('app_features').select('*').order('category', { ascending: true }).order('sort_order', { ascending: true }),
+        supabase.from('app_feature_requests').select('*, profiles(full_name, email), workspaces(name)').order('created_at', { ascending: false }),
         supabase.from('workspaces').select('id, name, icon_preset').order('name', { ascending: true }),
         supabase.from('profiles').select('id, full_name, username, avatar_url, avatar_preset').order('full_name', { ascending: true }).limit(100)
       ]);
 
       setUpdates(updatesRes.data || []);
       setFeatures(featuresRes.data || []);
+      setRequests(requestsRes.data || []);
       setWorkspaces(wsRes.data || []);
       setUsers(usersRes.data || []);
     } catch (err) {
@@ -298,6 +317,34 @@ export default function AppUpdatesAdminPage() {
     }
   };
 
+  const handleSaveRequestReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewingRequest || submitting) return;
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase
+        .from('app_feature_requests')
+        .update({
+          status: reviewForm.status,
+          developer_note: reviewForm.developer_note,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', reviewingRequest.id);
+
+      if (error) throw error;
+
+      toast({ title: "Request Updated" });
+      setIsReviewModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update Failed", description: err.message });
+    } finally {
+      setSubmitting(false);
+      forceUnlockUI();
+    }
+  };
+
   const handleDeleteUpdate = async (id: string) => {
     try {
       const { error } = await supabase.from('app_updates').delete().eq('id', id);
@@ -362,6 +409,9 @@ export default function AppUpdatesAdminPage() {
       <Tabs defaultValue="features" className="space-y-6">
         <TabsList className="bg-white dark:bg-slate-900 p-1 border dark:border-slate-800 rounded-xl">
           <TabsTrigger value="features" className="rounded-lg px-6 font-bold">Feature Catalog</TabsTrigger>
+          <TabsTrigger value="requests" className="rounded-lg px-6 font-bold flex items-center gap-2">
+            Feedback {requests.filter(r => r.status === 'new').length > 0 && <Badge className="h-4 px-1 bg-rose-500 text-[10px]">{requests.filter(r => r.status === 'new').length}</Badge>}
+          </TabsTrigger>
           <TabsTrigger value="updates" className="rounded-lg px-6 font-bold">Announcements</TabsTrigger>
         </TabsList>
 
@@ -411,6 +461,84 @@ export default function AppUpdatesAdminPage() {
                 </Card>
               ))}
            </div>
+        </TabsContent>
+
+        <TabsContent value="requests" className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            {requests.length === 0 ? (
+              <div className="text-center py-20 text-slate-400 italic bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed dark:border-slate-800">
+                <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p>No feature suggestions received yet.</p>
+              </div>
+            ) : (
+              requests.map((req) => (
+                <Card key={req.id} className="border-none shadow-sm dark:bg-slate-900">
+                  <CardContent className="p-5 flex flex-col md:flex-row gap-6">
+                    <div className="flex-1 space-y-3 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className={cn("text-[9px] font-bold uppercase", 
+                          req.status === 'new' ? "border-rose-500 text-rose-500 bg-rose-50/50" :
+                          req.status === 'reviewing' ? "border-amber-500 text-amber-500 bg-amber-50/50" :
+                          req.status === 'planned' ? "border-blue-500 text-blue-500 bg-blue-50/50" :
+                          req.status === 'released' ? "border-emerald-500 text-emerald-500 bg-emerald-50/50" :
+                          "border-slate-500 text-slate-500"
+                        )}>{req.status}</Badge>
+                        <Badge variant="secondary" className="text-[9px] uppercase dark:bg-slate-800">{req.category || 'General'}</Badge>
+                        <h3 className="font-bold text-base dark:text-slate-100 truncate">{req.title}</h3>
+                      </div>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{req.details}</p>
+                      
+                      <div className="flex items-center gap-4 flex-wrap pt-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-5 w-5"><AvatarFallback className="text-[8px]">{req.profiles?.full_name?.[0]}</AvatarFallback></Avatar>
+                          <span className="text-[11px] font-medium text-slate-500">{req.profiles?.full_name} <span className="opacity-60">({req.profiles?.email})</span></span>
+                        </div>
+                        <span className="text-slate-300 dark:text-slate-800">|</span>
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <Layout className="w-3.5 h-3.5" />
+                          {req.workspaces?.name || 'Global'}
+                        </div>
+                        <span className="text-slate-300 dark:text-slate-800">|</span>
+                        <span className="text-[11px] text-slate-500 font-medium">{format(new Date(req.created_at), "MMM d, yyyy")}</span>
+                      </div>
+
+                      {req.developer_note && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border dark:border-slate-800 mt-2">
+                          <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                            <ShieldCheck className="w-3 h-3" /> Dev Response
+                          </p>
+                          <p className="text-xs italic text-slate-500 dark:text-slate-400">"{req.developer_note}"</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex md:flex-col items-center justify-end gap-2 shrink-0">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="rounded-xl h-9 px-4 gap-2 dark:border-slate-800"
+                        onClick={() => {
+                          setReviewingRequest(req);
+                          setReviewForm({ status: req.status, developer_note: req.developer_note || "" });
+                          setIsReviewModalOpen(true);
+                        }}
+                      >
+                        <ClipboardList className="w-4 h-4" /> Review
+                      </Button>
+                      <DropdownMenu onOpenChange={() => forceUnlockUI()}>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="icon" variant="ghost" className="h-9 w-9 rounded-xl"><MoreVertical className="w-4 h-4" /></Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                           <DropdownMenuItem onClick={() => { /* Toggle archived etc */ }} className="text-rose-500"><Trash2 className="w-4 h-4 mr-2" /> Delete</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="updates" className="space-y-4">
@@ -486,6 +614,55 @@ export default function AppUpdatesAdminPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Review Modal */}
+      <Dialog open={isReviewModalOpen} onOpenChange={(open) => { setIsReviewModalOpen(open); if (!open) { setReviewingRequest(null); forceUnlockUI(); } }}>
+        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] p-0 overflow-hidden">
+          <div className="p-8">
+            <DialogHeader className="mb-6">
+              <DialogTitle className="text-2xl font-bold">Review Suggestion</DialogTitle>
+              <DialogDescription>Update progress or add internal context for this feature request.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSaveRequestReview} className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Update Status</Label>
+                <Select value={reviewForm.status} onValueChange={v => setReviewForm({...reviewForm, status: v})}>
+                  <SelectTrigger className="rounded-xl h-11 dark:bg-slate-900 border-none">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900">
+                    <SelectItem value="new">New / Received</SelectItem>
+                    <SelectItem value="reviewing">Under Review</SelectItem>
+                    <SelectItem value="planned">Planned / In Backlog</SelectItem>
+                    <SelectItem value="released">Released / Live</SelectItem>
+                    <SelectItem value="declined">Declined</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Developer Note</Label>
+                <Textarea 
+                  value={reviewForm.developer_note} 
+                  onChange={e => setReviewForm({...reviewForm, developer_note: e.target.value})} 
+                  placeholder="Record thoughts or explain decision..."
+                  rows={4} 
+                  className="rounded-xl dark:bg-slate-900 border-none resize-none" 
+                />
+                <p className="text-[9px] text-muted-foreground italic">Notes are currently only visible to developers.</p>
+              </div>
+
+              <DialogFooter className="pt-4 border-t dark:border-slate-800">
+                <Button type="button" variant="ghost" onClick={() => setIsReviewModalOpen(false)} disabled={submitting} className="rounded-xl">Cancel</Button>
+                <Button type="submit" disabled={submitting} className="rounded-xl shadow-lg shadow-primary/20 px-8">
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Check className="w-4 h-4 mr-2" />}
+                  Save Status
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Update Modal */}
       <Dialog open={isUpdateModalOpen} onOpenChange={(open) => { setIsUpdateModalOpen(open); if (!open) forceUnlockUI(); }}>
