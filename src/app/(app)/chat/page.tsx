@@ -143,6 +143,7 @@ interface WorkspaceMemberProfile {
   avatar_preset: string;
   email: string;
   role?: string;
+  last_seen_at?: string | null;
 }
 
 interface ChatChannelMember {
@@ -160,6 +161,7 @@ interface ChatMemberWithProfile extends ChatChannelMember {
     avatar_preset: string;
     email: string;
     username: string;
+    last_seen_at: string | null;
   } | null;
 }
 
@@ -403,6 +405,23 @@ export default function ChatPage() {
   /**
    * UTILITIES
    */
+  const formatLastSeen = (dateString: string | null) => {
+    if (!dateString) return "Offline";
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return "Just now";
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+    
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
   const serializeSupabaseError = (error: any) => {
     if (!error) return null;
     return {
@@ -539,7 +558,7 @@ export default function ChatPage() {
           .order('created_at', { ascending: false }),
         supabase
           .from('chat_channel_members')
-          .select('channel_id, user_id, profiles(full_name, avatar_url, avatar_preset)')
+          .select('channel_id, user_id, profiles(full_name, avatar_url, avatar_preset, last_seen_at)')
           .in('channel_id', channelIds),
         fetchUnreadCounts(),
         fetchMuteStates()
@@ -555,6 +574,7 @@ export default function ChatPage() {
         let displayAvatar = null;
         let displayAvatarPreset = null;
         let otherUserId = undefined;
+        let otherUserLastSeen = undefined;
 
         if (channel.type === 'direct') {
           const otherMember = (participants as any[]).find(
@@ -565,6 +585,7 @@ export default function ChatPage() {
             displayAvatar = otherMember.profiles.avatar_url;
             displayAvatarPreset = otherMember.profiles.avatar_preset;
             otherUserId = otherMember.user_id;
+            otherUserLastSeen = otherMember.profiles.last_seen_at;
           }
         }
 
@@ -580,6 +601,7 @@ export default function ChatPage() {
           display_avatar: displayAvatar,
           display_avatar_preset: displayAvatarPreset,
           other_user_id: otherUserId,
+          other_user_last_seen: otherUserLastSeen,
           archived_at: channel.archived_at,
           archived_by: channel.archived_by
         };
@@ -638,7 +660,7 @@ export default function ChatPage() {
       const senderIds = Array.from(new Set(msgData.map(m => m.sender_id)));
       const { data: profilesData } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, avatar_preset')
+        .select('id, full_name, avatar_url, avatar_preset, last_seen_at')
         .in('id', senderIds);
 
       // Enrichment: Load missing original messages for replies
@@ -727,7 +749,7 @@ export default function ChatPage() {
         if (uids.length > 0) {
           const { data: profileData, error: profileError } = await supabase
             .from('profiles')
-            .select('id, full_name, username, avatar_url, avatar_preset, email')
+            .select('id, full_name, username, avatar_url, avatar_preset, email, last_seen_at')
             .in('id', uids);
 
           if (profileError) throw profileError;
@@ -804,7 +826,7 @@ export default function ChatPage() {
       const userIds = memberData.map(m => m.user_id);
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('id, full_name, username, avatar_url, avatar_preset, email')
+        .select('id, full_name, username, avatar_url, avatar_preset, email, last_seen_at')
         .in('id', userIds);
 
       if (profileError) throw profileError;
@@ -1398,7 +1420,7 @@ export default function ChatPage() {
             setTimeout(() => fetchMessages(selectedChatId), 1000);
 
             try {
-              const { data: profileData } = await supabase.from('profiles').select('id, full_name, avatar_url, avatar_preset').eq('id', newMessage.sender_id).single();
+              const { data: profileData } = await supabase.from('profiles').select('id, full_name, avatar_url, avatar_preset, last_seen_at').eq('id', newMessage.sender_id).single();
               setMessages((prev) => 
                 prev.map(m => m.id === newMessage.id ? { ...m, profiles: profileData || null } : m)
                   .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
@@ -1703,7 +1725,13 @@ export default function ChatPage() {
                 <div className="flex items-center gap-3 w-full"><Button variant="ghost" size="icon" aria-label="Close Search" onClick={() => { setIsSearchOpen(false); setInChatSearchQuery(""); setInChatSearchResults([]); }}><ChevronLeft className="w-5 h-5" /></Button><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Filter this thread..." className="pl-10 h-10 bg-slate-100 dark:bg-slate-800 border-none rounded-xl" value={inChatSearchQuery} onChange={(e) => setInChatSearchQuery(e.target.value)} autoFocus />{inChatSearchQuery && <button className="absolute right-3 top-1/2 -translate-y-1/2" aria-label="Clear Query" onClick={() => { setInChatSearchQuery(""); setInChatSearchResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>}</div></div>
               ) : (
                 <>
-                  <div className="flex items-center gap-4 min-w-0"><Button variant="ghost" size="icon" aria-label="Back" className="md:hidden rounded-xl h-10 w-10" onClick={() => setShowConversation(false)}><ChevronLeft className="w-6 h-6" /></Button><Avatar className="w-10 h-10 cursor-pointer" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}><AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} /><AvatarFallback className="bg-primary/10 text-primary font-bold">{selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.type === 'group' ? <Users className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>{isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}</div><p className={cn("text-[10px] md:text-xs font-medium flex items-center gap-1.5", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "text-emerald-500" : "text-slate-400")}><span className={cn("w-1.5 h-1.5 rounded-full", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "bg-emerald-500" : "bg-slate-300")} />{selectedChat.type === 'direct' ? (selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id] ? "Online" : "Offline") : `${onlineCount} online`}</p></div></div>
+                  <div className="flex items-center gap-4 min-w-0"><Button variant="ghost" size="icon" aria-label="Back" className="md:hidden rounded-xl h-10 w-10" onClick={() => setShowConversation(false)}><ChevronLeft className="w-6 h-6" /></Button><Avatar className="w-10 h-10 cursor-pointer" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}><AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} /><AvatarFallback className="bg-primary/10 text-primary font-bold">{selectedChat.name.toLowerCase() === 'general' ? <Hash className="w-4 h-4" /> : selectedChat.type === 'group' ? <Users className="w-4 h-4" /> : (selectedChat.display_name?.[0] || 'C').toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>{isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}</div><p className={cn("text-[10px] md:text-xs font-medium flex items-center gap-1.5", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "text-emerald-500" : "text-slate-400")}>
+                    <span className={cn("w-1.5 h-1.5 rounded-full", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "bg-emerald-500" : "bg-slate-300")} />
+                    {selectedChat.type === 'direct' ? (
+                      selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id] ? "Online" : 
+                      (selectedChat.other_user_last_seen ? `Last seen ${formatLastSeen(selectedChat.other_user_last_seen)}` : "Offline")
+                    ) : `${onlineCount} online`}
+                  </p></div></div>
                   <div className="flex items-center gap-1">
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Chat Info" className="rounded-xl text-slate-400" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}><Info className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Conversation details</TooltipContent></Tooltip></TooltipProvider>
                     <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Detach" className="rounded-xl text-slate-400 hover:text-primary" onClick={() => addBubble(selectedChat)}><MessageCircle className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Open as floating window</TooltipContent></Tooltip></TooltipProvider>
@@ -2066,7 +2094,9 @@ export default function ChatPage() {
                                          <p className="text-sm font-bold truncate dark:text-slate-100">{member.profiles?.full_name}</p>
                                          {member.user_id === userProfile?.id && <Badge variant="secondary" className="text-[8px] h-3.5 px-1 py-0 opacity-60">You</Badge>}
                                       </div>
-                                      <p className="text-[10px] text-slate-500 truncate">@{member.profiles?.username || member.profiles?.email.split('@')[0]}</p>
+                                      <p className="text-[10px] text-slate-500 truncate">
+                                        {onlineUsers[member.user_id] ? "Online" : formatLastSeen(member.profiles?.last_seen_at)}
+                                      </p>
                                    </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -2492,3 +2522,4 @@ export default function ChatPage() {
     </div>
   );
 }
+

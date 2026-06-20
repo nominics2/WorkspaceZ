@@ -184,6 +184,38 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [pathname]);
 
+  // Presence Heartbeat: Call update_my_last_seen periodically
+  useEffect(() => {
+    if (!userProfile) return;
+
+    const updateLastSeen = async () => {
+      try {
+        await supabase.rpc('update_my_last_seen');
+      } catch (err) {
+        console.error("Error updating last seen heartbeat:", err);
+      }
+    };
+
+    // Immediate ping
+    updateLastSeen();
+
+    // Occasional heartbeat every 2 minutes
+    const interval = setInterval(updateLastSeen, 120000);
+
+    // Visibility change triggers (re-focusing tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' || document.visibilityState === 'hidden') {
+        updateLastSeen();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [userProfile, supabase]);
+
   // Listen for system theme changes
   useEffect(() => {
     if (themePreference !== 'system') return;

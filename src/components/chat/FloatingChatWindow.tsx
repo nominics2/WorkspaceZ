@@ -111,6 +111,23 @@ export function FloatingChatWindow({
 
   const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
 
+  const formatLastSeen = (dateString: string | null) => {
+    if (!dateString) return "Offline";
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return "Just now";
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+    
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  };
+
   /**
    * TYPING LOGIC
    */
@@ -214,7 +231,7 @@ export function FloatingChatWindow({
       const senderIds = Array.from(new Set(data?.map(m => m.sender_id) || []));
       const { data: profilesData } = await supabase
         .from('profiles')
-        .select('id, full_name, avatar_url, avatar_preset')
+        .select('id, full_name, avatar_url, avatar_preset, last_seen_at')
         .in('id', senderIds);
 
       // Enrichment: Load missing original messages for replies
@@ -287,7 +304,7 @@ export function FloatingChatWindow({
         setTimeout(() => fetchMessages(), 1000);
 
         try {
-          const { data: profile } = await supabase.from('profiles').select('id, full_name, avatar_url, avatar_preset').eq('id', newMessage.sender_id).single();
+          const { data: profile } = await supabase.from('profiles').select('id, full_name, avatar_url, avatar_preset, last_seen_at').eq('id', newMessage.sender_id).single();
           setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, profiles: profile } : m));
           setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
         } catch (err) {}
@@ -398,7 +415,6 @@ export function FloatingChatWindow({
     const element = document.getElementById(`floating-message-${msgId}`);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Logic for temporary highlighting can be added here if needed
     }
   };
 
@@ -428,7 +444,9 @@ export function FloatingChatWindow({
               {isMuted && <BellOff className="w-3 h-3 text-slate-400" />}
             </p>
             <p className={cn("text-[10px] font-medium", isUserOnline ? "text-emerald-500" : "text-slate-400")}>
-              {chat.type === 'direct' ? (isUserOnline ? "Online" : "Offline") : "Ready"}
+              {chat.type === 'direct' ? (
+                isUserOnline ? "Online" : (chat.other_user_last_seen ? `Last seen ${formatLastSeen(chat.other_user_last_seen)}` : "Offline")
+              ) : "Ready"}
             </p>
           </div>
         </div>
