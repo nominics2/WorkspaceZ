@@ -54,6 +54,7 @@ export default function CalendarPage() {
           .from('my_tasks_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
+          .eq('is_deleted', false)
           .not('due_date', 'is', null)
           .order('due_date', { ascending: true }),
         supabase

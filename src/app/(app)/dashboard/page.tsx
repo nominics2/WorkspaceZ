@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -134,7 +133,7 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const [tasksRes, activityRes, notifsRes, remindersRes, workloadRes, leavesRes, membersRes] = await Promise.all([
-        supabase.from('my_tasks_view').select('*').eq('workspace_id', activeWorkspace.id).order('due_date', { ascending: true }),
+        supabase.from('my_tasks_view').select('*').eq('workspace_id', activeWorkspace.id).eq('is_deleted', false).order('due_date', { ascending: true }),
         supabase.from('recent_activity_view').select('*').eq('workspace_id', activeWorkspace.id).order('created_at', { ascending: false }).limit(6),
         supabase.from('notifications').select('*').eq('user_id', userProfile.id).eq('is_read', false).eq('is_deleted', false).order('created_at', { ascending: false }).limit(5),
         supabase.from('reminders').select('*').eq('remind_to', userProfile.id).eq('is_completed', false).order('remind_at', { ascending: true }).limit(5),
@@ -157,9 +156,9 @@ export default function DashboardPage() {
 
       setStats([
         { label: "Active", count: activeTasks.length, icon: Clock, color: "text-blue-500", bg: "bg-blue-50 dark:bg-blue-500/10" },
-        { label: "Due Soon", count: dueSoonTasks.length, icon: CalendarDays, color: "text-amber-500", bg: "bg-amber-50 dark:bg-amber-500/10" },
-        { label: "Overdue", count: overdueTasks.length, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-50 dark:bg-rose-500/10" },
-        { label: "Completed", count: completedTasks.length, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-500/10" },
+        { label: "Due Soon", count: dueSoonTasks.length, icon: CalendarDays, color: "text-amber-500", bg: "bg-amber-500/10" },
+        { label: "Overdue", count: overdueTasks.length, icon: AlertCircle, color: "text-rose-500", bg: "bg-rose-500/10" },
+        { label: "Completed", count: completedTasks.length, icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500/10" },
       ]);
 
       setTasks(myTasks);

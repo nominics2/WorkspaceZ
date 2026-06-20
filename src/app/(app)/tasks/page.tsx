@@ -157,6 +157,7 @@ function TasksPageContent() {
           .from('my_tasks_view')
           .select('*')
           .eq('workspace_id', activeWorkspace.id)
+          .eq('is_deleted', false)
           .order('created_at', { ascending: false }),
         supabase
           .from('sub_workspaces')
@@ -330,12 +331,17 @@ function TasksPageContent() {
     if (!selectedTask) return;
     setSaving(true);
     try {
+      const deletedTaskId = selectedTask.id;
       const { error } = await supabase.rpc('move_task_to_trash', {
-        p_task_id: selectedTask.id
+        p_task_id: deletedTaskId
       });
       if (error) throw error;
+      
       toast({ title: "Task moved to trash" });
       setIsDetailOpen(false);
+      
+      // Optimistic update
+      setTasks(prev => prev.filter(t => t.id !== deletedTaskId));
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
@@ -477,9 +483,10 @@ function TasksPageContent() {
   };
 
   const filteredTasks = useMemo(() => {
-    const isSuperOrAdmin = userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager' || hasPermission('view_all_tasks');
-
     return tasks.filter(t => {
+      // Soft-delete filter
+      if (t.is_deleted) return false;
+
       // Visibility check
       const assignees = taskAssignees[t.id] || [];
       const isAssigned = assignees.some(a => a.user_id === userProfile?.id);
@@ -514,7 +521,7 @@ function TasksPageContent() {
 
       return true;
     });
-  }, [tasks, searchTerm, filters, userProfile?.id, userRole, hasPermission, taskAssignees]);
+  }, [tasks, searchTerm, filters, userProfile?.id, taskAssignees]);
 
   const sortedTasks = useMemo(() => {
     const t = [...filteredTasks];
