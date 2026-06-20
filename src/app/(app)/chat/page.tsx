@@ -21,7 +21,7 @@ import {
   X,
   FileIcon,
   Download,
-  Image as ImageIcon,
+  ImageIcon,
   ExternalLink,
   Files,
   ArrowDown,
@@ -98,6 +98,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
@@ -259,6 +260,9 @@ export default function ChatPage() {
   const [isUnlinkConfirmOpen, setIsUnlinkConfirmOpen] = useState(false);
   const [messageIdToUnlink, setMessageIdToUnlink] = useState<string | null>(null);
   const [isUnlinking, setIsUnlinking] = useState(false);
+
+  const [isDeleteChatDialogOpen, setIsDeleteChatDialogOpen] = useState(false);
+  const [isDeletingChat, setIsDeletingChat] = useState(false);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [inChatSearchQuery, setInChatSearchQuery] = useState("");
@@ -1021,6 +1025,37 @@ export default function ChatPage() {
     }
   };
 
+  const handleDeleteDirectChat = async () => {
+    if (!selectedChatId || isDeletingChat) return;
+    setIsDeletingChat(true);
+    try {
+      const { error } = await supabase.rpc("delete_direct_chat_for_me", { p_channel_id: selectedChatId });
+      if (error) throw error;
+      
+      toast({ title: "Conversation removed" });
+      setIsDeleteChatDialogOpen(false);
+      removeBubble(selectedChatId);
+      
+      const currentWorkspaceId = chats.find(c => c.id === selectedChatId)?.workspace_id;
+      const generalChat = chats.find(c => c.name.toLowerCase() === 'general' && c.workspace_id === currentWorkspaceId && c.id !== selectedChatId);
+      
+      setSelectedChatId(null);
+      setShowConversation(false);
+      
+      await fetchChats();
+      await fetchUnreadCounts();
+      
+      if (generalChat) {
+        handleSelectChat(generalChat.id);
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Deletion failed", description: err.message });
+    } finally {
+      setIsDeletingChat(false);
+      forceUnlockUI();
+    }
+  };
+
   const handleOpenCreateTask = (msg: Message) => {
     setTaskSourceMessage(msg);
     setTaskForm({
@@ -1481,6 +1516,15 @@ export default function ChatPage() {
                         <DropdownMenuSeparator className="dark:bg-slate-800" />
                         <DropdownMenuLabel className="dark:text-slate-100">Quick Mute</DropdownMenuLabel>
                         {isCurrentChatMuted ? <DropdownMenuItem onClick={handleUnmute} className="gap-2 text-primary font-medium"><Bell className="w-4 h-4" /> Restore Alerts</DropdownMenuItem> : <><DropdownMenuItem onClick={() => handleMute('1h')}>Mute for 1 hour</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('8h')}>Mute for 8 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('24h')}>Mute for 24 hours</DropdownMenuItem><DropdownMenuItem onClick={() => handleMute('forever')} className="text-rose-500">Mute Indefinitely</DropdownMenuItem></>}
+                        {selectedChat.type === 'direct' && (
+                          <>
+                            <DropdownMenuSeparator className="dark:bg-slate-800" />
+                            <DropdownMenuLabel className="dark:text-slate-100">Manage Chat</DropdownMenuLabel>
+                            <DropdownMenuItem onClick={() => setIsDeleteChatDialogOpen(true)} className="text-rose-500 gap-2 dark:hover:bg-rose-500/10">
+                              <Trash2 className="w-4 h-4" /> Delete Chat
+                            </DropdownMenuItem>
+                          </>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -1697,6 +1741,24 @@ export default function ChatPage() {
 
       <AlertDialog open={isUnlinkConfirmOpen} onOpenChange={(open) => { setIsUnlinkConfirmOpen(open); if (!open) { setMessageIdToUnlink(null); forceUnlockUI(); } }}>
         <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800"><AlertDialogHeader><AlertDialogTitle className="dark:text-white">Unlink task?</AlertDialogTitle><AlertDialogDescription className="dark:text-slate-400">This will remove the task link from this message. The task itself will not be deleted.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800" onClick={() => { setIsUnlinkConfirmOpen(false); setMessageIdToUnlink(null); forceUnlockUI(); }}>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleUnlinkTask} className="bg-rose-500 hover:bg-rose-600 text-white" disabled={isUnlinking}>{isUnlinking ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Confirm Unlink</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isDeleteChatDialogOpen} onOpenChange={(open) => { setIsDeleteChatDialogOpen(open); if (!open) forceUnlockUI(); }}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-white">Delete chat?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              This will remove the conversation from your chat list. It will not delete the chat for the other person.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteDirectChat} className="bg-rose-600 hover:bg-rose-700 text-white" disabled={isDeletingChat}>
+              {isDeletingChat ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Delete Conversation
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
       </AlertDialog>
 
       <Dialog open={isAddMembersOpen} onOpenChange={(open) => { setIsAddMembersOpen(open); if (!open) forceUnlockUI(); }}>
