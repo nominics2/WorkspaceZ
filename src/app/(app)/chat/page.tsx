@@ -39,7 +39,8 @@ import {
   Trash2,
   Copy,
   CheckSquare,
-  AlertTriangle
+  AlertTriangle,
+  Link as LinkIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,7 +127,6 @@ interface Message {
   } | null;
   attachments?: Attachment[];
   channel_display_name?: string;
-  // Added for task state detection
   tasks?: {
     is_deleted: boolean;
   } | null;
@@ -157,6 +157,20 @@ interface ChatMemberWithProfile extends ChatChannelMember {
     avatar_preset: string;
     email: string;
     username: string;
+  } | null;
+}
+
+interface TaskSearchResult {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  due_date: string | null;
+  assigned_to: string | null;
+  profiles?: {
+    full_name: string;
+    avatar_url: string;
+    avatar_preset: string;
   } | null;
 }
 
@@ -196,6 +210,14 @@ export default function ChatPage() {
     teamId: ""
   });
   const [isTaskCreating, setIsTaskCreating] = useState(false);
+
+  // Task Linking State
+  const [isLinkTaskOpen, setIsLinkTaskOpen] = useState(false);
+  const [taskSearchQuery, setTaskSearchQuery] = useState("");
+  const [taskSearchResults, setTaskSearchResults] = useState<TaskSearchResult[]>([]);
+  const [selectedTaskToLink, setSelectedTaskToLink] = useState<string | null>(null);
+  const [isSearchingTasks, setIsSearchingTasks] = useState(false);
+  const [isLinkingTask, setIsLinkingTask] = useState(false);
 
   // Search in Chat state (Contextual)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -742,6 +764,35 @@ export default function ChatPage() {
     }
   }, [supabase, chats]);
 
+  const performTaskSearch = useCallback(async (query: string) => {
+    if (!activeWorkspace || query.length < 2) {
+      setTaskSearchResults([]);
+      return;
+    }
+
+    setIsSearchingTasks(true);
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('id, title, status, priority, due_date, assigned_to, profiles:assigned_to(full_name, avatar_url, avatar_preset)')
+        .eq('workspace_id', activeWorkspace.id)
+        .eq('is_deleted', false)
+        .ilike('title', `%${query}%`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setTaskSearchResults((data || []).map(t => ({
+        ...t,
+        profiles: t.profiles as any
+      })));
+    } catch (err: any) {
+      console.error("[Chat] Task Search Error:", serializeSupabaseError(err));
+    } finally {
+      setIsSearchingTasks(false);
+    }
+  }, [activeWorkspace, supabase]);
+
   /**
    * MUTING ACTIONS
    */
@@ -1062,6 +1113,42 @@ export default function ChatPage() {
     }
   };
 
+  const handleOpenLinkTask = (msg: Message) => {
+    setTaskSourceMessage(msg);
+    setTaskSearchQuery("");
+    setTaskSearchResults([]);
+    setSelectedTaskToLink(null);
+    setIsLinkTaskOpen(true);
+  };
+
+  const handleLinkTask = async () => {
+    if (!taskSourceMessage || !selectedTaskToLink || isLinkingTask) return;
+
+    setIsLinkingTask(true);
+    try {
+      const { data: taskId, error } = await supabase.rpc("link_chat_message_to_task", {
+        p_message_id: taskSourceMessage.id,
+        p_task_id: selectedTaskToLink,
+      });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Task Linked", 
+        description: "Message successfully associated with an existing work item.",
+        action: <Button variant="outline" size="sm" onClick={() => router.push(`/tasks?taskId=${taskId}`)}>View Task</Button>
+      });
+
+      setMessages(prev => prev.map(m => m.id === taskSourceMessage.id ? { ...m, created_task_id: taskId } : m));
+      setIsLinkTaskOpen(false);
+      setTaskSourceMessage(null);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Linking Failed", description: err.message });
+    } finally {
+      setIsLinkingTask(false);
+    }
+  };
+
   /**
    * EFFECTS
    */
@@ -1079,6 +1166,13 @@ export default function ChatPage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery, performGlobalSearch]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (taskSearchQuery) performTaskSearch(taskSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [taskSearchQuery, performTaskSearch]);
 
   useEffect(() => {
     fetchChats();
@@ -1562,12 +1656,20 @@ export default function ChatPage() {
                                          <ExternalLink className="h-4 w-4" /> View Task
                                        </DropdownMenuItem>
                                      ) : (
-                                       <DropdownMenuItem 
-                                         onClick={() => handleOpenCreateTask(msg)}
-                                         className="gap-2"
-                                       >
-                                         <CheckSquare className="h-4 w-4" /> Create Task
-                                       </DropdownMenuItem>
+                                       <>
+                                         <DropdownMenuItem 
+                                           onClick={() => handleOpenCreateTask(msg)}
+                                           className="gap-2"
+                                         >
+                                           <CheckSquare className="h-4 w-4" /> Create Task
+                                         </DropdownMenuItem>
+                                         <DropdownMenuItem 
+                                           onClick={() => handleOpenLinkTask(msg)}
+                                           className="gap-2"
+                                         >
+                                           <LinkIcon className="h-4 w-4" /> Link Existing Task
+                                         </DropdownMenuItem>
+                                       </>
                                      )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
@@ -2015,6 +2117,90 @@ export default function ChatPage() {
                 </Button>
               </DialogFooter>
             </form>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isLinkTaskOpen} onOpenChange={setIsLinkTaskOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 rounded-[2rem]">
+          <div className="p-8 pb-4">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold tracking-tight">Link Existing Task</DialogTitle>
+              <DialogDescription>Associate this message with an active work item in the workspace.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-6">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Input 
+                  placeholder="Search tasks by title..." 
+                  className="pl-10 h-11 bg-slate-100 dark:bg-slate-900 border-none rounded-xl" 
+                  value={taskSearchQuery} 
+                  onChange={(e) => setTaskSearchQuery(e.target.value)} 
+                />
+              </div>
+              
+              <ScrollArea className="h-64 rounded-xl border dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/20 p-2">
+                {isSearchingTasks ? (
+                  <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+                    <Loader2 className="w-6 h-6 animate-spin" />
+                    <p className="text-[10px] font-bold uppercase">Scanning Board...</p>
+                  </div>
+                ) : taskSearchResults.length === 0 ? (
+                  <p className="text-center text-sm text-slate-500 py-20 italic">
+                    {taskSearchQuery.length < 2 ? "Type to search tasks..." : "No matching tasks found."}
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {taskSearchResults.map((task) => (
+                      <button
+                        key={task.id}
+                        onClick={() => setSelectedTaskToLink(task.id)}
+                        className={cn(
+                          "w-full text-left p-3 rounded-xl transition-all flex items-start gap-3",
+                          selectedTaskToLink === task.id 
+                            ? "bg-primary/10 ring-1 ring-primary/20 shadow-sm" 
+                            : "hover:bg-white dark:hover:bg-slate-900"
+                        )}
+                      >
+                        <div className={cn(
+                          "w-1.5 h-10 rounded-full shrink-0",
+                          task.priority === 'urgent' ? 'bg-rose-500' : task.priority === 'high' ? 'bg-amber-500' : 'bg-primary'
+                        )} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm truncate dark:text-slate-100">{task.title}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                             <Badge variant="outline" className="text-[8px] h-4 py-0 uppercase opacity-60">{task.status.replace('_', ' ')}</Badge>
+                             {task.profiles && (
+                               <div className="flex items-center gap-1">
+                                 <Avatar className="w-3.5 h-3.5"><AvatarImage src={task.profiles.avatar_preset ? `/avatars/${task.profiles.avatar_preset}.png` : task.profiles.avatar_url} /><AvatarFallback className="text-[6px]">{task.profiles.full_name?.[0]}</AvatarFallback></Avatar>
+                                 <span className="text-[9px] text-slate-500 truncate max-w-[60px]">{task.profiles.full_name?.split(' ')[0]}</span>
+                               </div>
+                             )}
+                          </div>
+                        </div>
+                        {selectedTaskToLink === task.id && (
+                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md animate-in zoom-in">
+                            <Check className="w-3 h-3 text-white" />
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+
+              <DialogFooter className="pt-4 flex-row gap-3">
+                <Button variant="ghost" className="flex-1 rounded-xl" onClick={() => setIsLinkTaskOpen(false)} disabled={isLinkingTask}>Cancel</Button>
+                <Button 
+                  className="flex-1 rounded-xl shadow-lg" 
+                  disabled={isLinkingTask || !selectedTaskToLink} 
+                  onClick={handleLinkTask}
+                >
+                  {isLinkingTask ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <LinkIcon className="w-4 h-4 mr-2" />}
+                  {isLinkingTask ? "Linking..." : "Link Selected"}
+                </Button>
+              </DialogFooter>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
