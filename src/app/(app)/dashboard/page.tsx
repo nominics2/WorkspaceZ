@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
@@ -35,7 +36,8 @@ import {
   MoreHorizontal,
   UserPlus,
   Mail,
-  ExternalLink
+  ExternalLink,
+  Layout
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -352,7 +354,7 @@ export default function DashboardPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return tasks.filter(t => {
-      if (!t.due_date || t.status === 'completed') return false;
+      if (!t.due_date || t.status === 'completed' || t.is_deleted) return false;
       const due = new Date(t.due_date);
       due.setHours(0, 0, 0, 0);
       return due.getTime() === today.getTime();
@@ -638,7 +640,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-4 space-y-10">
           
           {/* Reminders Card */}
-          <Card className="border-none shadow-lg bg-violet-600 dark:bg-violet-700 text-white rounded-[2rem] overflow-hidden overflow-hidden relative group">
+          <Card className="border-none shadow-lg bg-violet-600 dark:bg-violet-700 text-white rounded-[2rem] overflow-hidden relative group">
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl group-hover:scale-150 transition-transform duration-700" />
             <CardHeader className="p-6 pb-2">
               <div className="flex items-center justify-between">
@@ -805,6 +807,7 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Review Modal */}
       <Dialog open={isReviewModalOpen} onOpenChange={(open) => { if (!saving) { setIsReviewModalOpen(open); if (!open) { setReviewingLeave(null); forceUnlockUI(); } } }}>
         <DialogContent className="sm:max-w-md p-8 rounded-[2rem] dark:bg-slate-950 border-none shadow-2xl">
           <DialogHeader>
