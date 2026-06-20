@@ -1,15 +1,15 @@
 /**
- * @fileOverview This file is disabled to resolve a route conflict with src/app/(app)/onboarding/page.tsx.
- * The active onboarding logic is maintained within the (app) route group to inherit workspace providers.
+ * @fileOverview This file is neutralized to resolve a route conflict with src/app/(app)/onboarding/page.tsx.
+ * Next.js does not allow parallel pages to resolve to the same path.
  * 
- * Next.js requires one default export per page path. By removing the default export here,
- * we resolve the "parallel pages" error.
+ * The active onboarding logic is located in the (app) route group.
  */
 
-// This file is no longer a page.
 export const metadata = {
   robots: {
     index: false,
     follow: false,
   },
 };
+
+// No default export here ensures Next.js ignores this as a page route.
