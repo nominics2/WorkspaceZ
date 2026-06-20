@@ -1,10 +1,10 @@
-
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar } from "@/components/ui/calendar";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { 
   Loader2, 
   Calendar as CalendarIcon, 
@@ -460,4 +460,3 @@ export default function CalendarPage() {
     </div>
   );
 }
-
