@@ -36,7 +36,9 @@ import {
   Fingerprint,
   Layers,
   AlertTriangle,
-  ShieldAlert
+  ShieldAlert,
+  BadgeCheck,
+  UserCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -100,6 +102,7 @@ export default function AppUpdatesAdminPage() {
   const [pushingId, setPushingId] = useState<string | null>(null);
   
   const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [userFilter, setUserFilter] = useState<'all' | 'verified' | 'unverified' | 'pending'>('all');
 
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [editingUpdate, setEditingUpdate] = useState<any>(null);
@@ -161,22 +164,14 @@ export default function AppUpdatesAdminPage() {
         return;
       }
 
-      console.log(`[Dev Check] Verifying access for ${user.email} (${user.id})...`);
-
       const { data, error } = await supabase.rpc('is_app_developer', {
         p_user_id: user.id
       });
 
       if (error) {
-        console.error("[Dev Check] RPC Error:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
+        console.error("[Dev Check] RPC Error:", error);
       }
       
-      console.log(`[Dev Check] Result for ${user.email}:`, data);
       setIsDeveloper(!!data);
     } catch (err) {
       console.error("[Dev Check] Failed:", err);
@@ -187,31 +182,19 @@ export default function AppUpdatesAdminPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [updatesRes, featuresRes, requestsRes, wsRes, usersRes, membershipsRes] = await Promise.all([
+      const [updatesRes, featuresRes, requestsRes, wsRes, usersRes] = await Promise.all([
         supabase.from('app_updates').select('*').order('published_at', { ascending: false }),
         supabase.from('app_features').select('*').order('category', { ascending: true }).order('sort_order', { ascending: true }),
         supabase.from('app_feature_requests').select('*, profiles(full_name, email), workspaces(name)').order('created_at', { ascending: false }),
         supabase.from('workspaces').select('id, name, icon_preset').order('name', { ascending: true }),
-        supabase.from('profiles').select('id, full_name, username, avatar_url, avatar_preset, email, created_at, updated_at').order('created_at', { ascending: false }),
-        supabase.from('workspace_members').select('user_id')
+        supabase.rpc('get_developer_global_users')
       ]);
-
-      // Calculate workspace counts per user
-      const membershipCounts: Record<string, number> = {};
-      membershipsRes.data?.forEach(m => {
-        membershipCounts[m.user_id] = (membershipCounts[m.user_id] || 0) + 1;
-      });
-
-      const enrichedUsers = (usersRes.data || []).map(u => ({
-        ...u,
-        workspace_count: membershipCounts[u.id] || 0
-      }));
 
       setUpdates(updatesRes.data || []);
       setFeatures(featuresRes.data || []);
       setRequests(requestsRes.data || []);
       setWorkspaces(wsRes.data || []);
-      setUsers(enrichedUsers);
+      setUsers(usersRes.data || []);
     } catch (err) {
       console.error("[Admin] Fetch failed:", err);
     } finally {
@@ -230,14 +213,24 @@ export default function AppUpdatesAdminPage() {
   }, [isDeveloper, fetchData]);
 
   const filteredUsers = useMemo(() => {
-    if (!userSearchQuery.trim()) return users;
+    let list = users;
+    
+    if (userFilter === 'verified') {
+      list = list.filter(u => u.is_anywhere_verified);
+    } else if (userFilter === 'unverified') {
+      list = list.filter(u => !u.is_anywhere_verified);
+    } else if (userFilter === 'pending') {
+      list = list.filter(u => u.statuses?.includes('pending'));
+    }
+
+    if (!userSearchQuery.trim()) return list;
     const q = userSearchQuery.toLowerCase();
-    return users.filter(u => 
+    return list.filter(u => 
       u.full_name?.toLowerCase().includes(q) ||
       u.username?.toLowerCase().includes(q) ||
       u.email?.toLowerCase().includes(q)
     );
-  }, [users, userSearchQuery]);
+  }, [users, userSearchQuery, userFilter]);
 
   const handleSaveUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -594,7 +587,7 @@ export default function AppUpdatesAdminPage() {
                       <div className="flex items-center gap-4 flex-wrap pt-2">
                         <div className="flex items-center gap-2">
                           <Avatar className="h-5 w-5"><AvatarFallback className="text-[8px]">{req.profiles?.full_name?.[0]}</AvatarFallback></Avatar>
-                          <span className="text-[11px] font-medium text-slate-500">{req.profiles?.full_name} <span className="opacity-60">({req.profiles?.email})</span></span>
+                          <span className="text-11px] font-medium text-slate-500">{req.profiles?.full_name} <span className="opacity-60">({req.profiles?.email})</span></span>
                         </div>
                         <span className="text-slate-300 dark:text-slate-800">|</span>
                         <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
@@ -722,16 +715,45 @@ export default function AppUpdatesAdminPage() {
             <div className="relative w-full md:max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <Input 
-                placeholder="Search users by name, handle, or email..." 
+                placeholder="Search all users..." 
                 className="pl-10 h-10 dark:bg-slate-950 border-none shadow-none"
                 value={userSearchQuery}
                 onChange={(e) => setUserSearchQuery(e.target.value)}
               />
             </div>
-            <div className="flex items-center gap-4 text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              <div className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {users.length} Total</div>
-              <div className="w-px h-4 bg-slate-200 dark:bg-slate-800" />
-              <div className="flex items-center gap-1.5 text-primary"><Check className="w-3.5 h-3.5" /> All Verified</div>
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+              <Button 
+                variant={userFilter === 'all' ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setUserFilter('all')}
+                className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight"
+              >
+                All users
+              </Button>
+              <Button 
+                variant={userFilter === 'verified' ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setUserFilter('verified')}
+                className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight"
+              >
+                Verified
+              </Button>
+              <Button 
+                variant={userFilter === 'unverified' ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setUserFilter('unverified')}
+                className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight"
+              >
+                Unverified
+              </Button>
+              <Button 
+                variant={userFilter === 'pending' ? "secondary" : "ghost"} 
+                size="sm" 
+                onClick={() => setUserFilter('pending')}
+                className="text-[10px] h-7 px-3 font-bold uppercase tracking-tight"
+              >
+                Pending
+              </Button>
             </div>
           </div>
 
@@ -745,20 +767,34 @@ export default function AppUpdatesAdminPage() {
                 <Card key={user.id} className="border-none shadow-sm dark:bg-slate-900 group">
                   <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-6">
                     <div className="flex items-center gap-4 flex-1 min-w-0">
-                      <Avatar className="h-14 w-14 border-2 border-white dark:border-slate-800 shadow-sm">
-                        <AvatarImage src={user.avatar_preset ? `/avatars/${user.avatar_preset}.png` : user.avatar_url} />
-                        <AvatarFallback className="font-bold bg-primary/10 text-primary uppercase text-lg">{user.full_name?.[0]}</AvatarFallback>
-                      </Avatar>
+                      <div className="relative shrink-0">
+                        <Avatar className="h-14 w-14 border-2 border-white dark:border-slate-800 shadow-sm">
+                          <AvatarImage src={user.avatar_preset ? `/avatars/${user.avatar_preset}.png` : user.avatar_url} />
+                          <AvatarFallback className="font-bold bg-primary/10 text-primary uppercase text-lg">{user.full_name?.[0] || 'U'}</AvatarFallback>
+                        </Avatar>
+                        {user.is_anywhere_verified && (
+                          <div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-950 rounded-full p-0.5 shadow-sm border dark:border-slate-800">
+                            <BadgeCheck className="w-4 h-4 text-primary fill-primary/10" />
+                          </div>
+                        )}
+                      </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <h3 className="font-extrabold text-base dark:text-slate-100 truncate">{user.full_name}</h3>
-                          <Badge variant="secondary" className="text-[9px] font-bold py-0 h-4 dark:bg-slate-800">@{user.username}</Badge>
+                          <h3 className="font-extrabold text-base dark:text-slate-100 truncate">{user.full_name || 'Anonymous User'}</h3>
+                          <Badge variant="secondary" className="text-[9px] font-bold py-0 h-4 dark:bg-slate-800">@{user.username || 'no_handle'}</Badge>
+                          {!user.is_anywhere_verified && <Badge variant="outline" className="text-[8px] font-bold py-0 h-4 border-amber-500/20 text-amber-600 bg-amber-50/50">Unverified</Badge>}
                         </div>
                         <p className="text-xs text-slate-500 flex items-center gap-1.5"><Mail className="w-3 h-3" /> {user.email}</p>
                         <div className="flex items-center gap-3 mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
-                           <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Joined {format(new Date(user.created_at), "MMM yyyy")}</span>
+                           <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> Joined {user.created_at ? format(new Date(user.created_at), "MMM yyyy") : 'Unknown'}</span>
                            <span className="w-1 h-1 bg-slate-300 rounded-full" />
-                           <span className="flex items-center gap-1 text-violet-500"><Layers className="w-3 h-3" /> {user.workspace_count} Workspaces</span>
+                           <span className="flex items-center gap-1 text-violet-500"><Layers className="w-3 h-3" /> {user.workspace_count || 0} Workspaces</span>
+                           {user.roles && user.roles.length > 0 && (
+                             <>
+                               <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                               <span className="flex items-center gap-1 text-emerald-500 truncate max-w-[150px]"><ShieldCheck className="w-3 h-3" /> {user.roles.join(', ')}</span>
+                             </>
+                           )}
                            <span className="w-1 h-1 bg-slate-300 rounded-full" />
                            <span className="flex items-center gap-1"><Fingerprint className="w-3 h-3" /> {user.id.slice(0, 8)}...</span>
                         </div>
@@ -768,9 +804,9 @@ export default function AppUpdatesAdminPage() {
                     <div className="flex items-center gap-2 shrink-0 border-t md:border-none pt-3 md:pt-0">
                       <DropdownMenu onOpenChange={() => forceUnlockUI()}>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="h-9 px-4 gap-2 dark:border-slate-800 bg-white dark:bg-slate-900 font-bold">
+                          <Button variant="outline" size="sm" className="h-9 px-4 gap-2 dark:border-slate-800 bg-white dark:bg-slate-900 font-bold text-xs">
                             <MoreVertical className="w-4 h-4" />
-                            Manage User
+                            Manage
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-56 dark:bg-slate-950">
