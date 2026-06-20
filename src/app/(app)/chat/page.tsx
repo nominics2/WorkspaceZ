@@ -508,6 +508,7 @@ export default function ChatPage() {
     setLoadingChats(true);
     setError(null);
     try {
+      // 1. Get user's workspace memberships
       const { data: memberData, error: memberError } = await supabase
         .from('workspace_members')
         .select('workspace_id')
@@ -519,6 +520,16 @@ export default function ChatPage() {
         return;
       }
       const workspaceIds = memberData.map(m => m.workspace_id);
+
+      // 2. Get user's channel memberships to filter valid Direct/Group chats
+      const { data: myMemberships } = await supabase
+        .from('chat_channel_members')
+        .select('channel_id')
+        .eq('user_id', userProfile.id);
+      
+      const memberChannelIds = (myMemberships || []).map(m => m.channel_id);
+
+      // 3. Fetch all active channels in those workspaces
       const { data: channelsData, error: channelsError } = await supabase
         .from('chat_channels')
         .select('id, workspace_id, sub_workspace_id, name, type, created_at, archived_at, archived_by')
@@ -526,7 +537,21 @@ export default function ChatPage() {
         .is('archived_at', null)
         .order('created_at', { ascending: false });
       if (channelsError) throw channelsError;
-      const channelIds = (channelsData || []).map(c => c.id);
+
+      // Filter by prompt rules:
+      // - workspace/general show if user is workspace member (they are, since we filtered workspaceIds)
+      // - group/direct show ONLY if current user is in chat_channel_members
+      const filteredChannels = (channelsData || []).filter(channel => {
+        if (channel.name.toLowerCase() === 'general') return true;
+        return memberChannelIds.includes(channel.id);
+      });
+
+      const channelIds = filteredChannels.map(c => c.id);
+      if (channelIds.length === 0) {
+        setChats([]);
+        return;
+      }
+
       const [messagesRes, participantsRes] = await Promise.all([
         supabase
           .from('chat_messages')
@@ -536,30 +561,37 @@ export default function ChatPage() {
           .order('created_at', { ascending: false }),
         supabase
           .from('chat_channel_members')
-          .select('channel_id, user_id, profiles(full_name, avatar_url, avatar_preset, last_seen_at)')
+          .select('channel_id, user_id, profiles(full_name, username, email, avatar_url, avatar_preset, last_seen_at)')
           .in('channel_id', channelIds),
         fetchUnreadCounts(),
         fetchMuteStates()
       ]);
+
       const lastMessages = messagesRes.data || [];
       const participants = participantsRes.data || [];
-      const formattedChats: Chat[] = (channelsData || []).map(channel => {
+
+      const formattedChats: Chat[] = filteredChannels.map(channel => {
         const lastMsg = lastMessages.find(m => m.channel_id === channel.id);
         let displayName = channel.name;
         let displayAvatar = null;
         let displayAvatarPreset = null;
         let otherUserId = undefined;
         let otherUserLastSeen = undefined;
+
         if (channel.type === 'direct') {
           const otherMember = (participants as any[]).find(p => p.channel_id === channel.id && p.user_id !== userProfile.id);
           if (otherMember?.profiles) {
-            displayName = otherMember.profiles.full_name;
+            displayName = otherMember.profiles.full_name || otherMember.profiles.username || otherMember.profiles.email || 'Unknown User';
             displayAvatar = otherMember.profiles.avatar_url;
             displayAvatarPreset = otherMember.profiles.avatar_preset;
             otherUserId = otherMember.user_id;
             otherUserLastSeen = otherMember.profiles.last_seen_at;
+          } else {
+            // Exclude direct chats that don't have another visible member
+            return null;
           }
         }
+
         return {
           id: channel.id,
           name: channel.name,
@@ -576,7 +608,7 @@ export default function ChatPage() {
           archived_at: channel.archived_at,
           archived_by: channel.archived_by
         };
-      }).sort((a, b) => {
+      }).filter((c): c is Chat => c !== null).sort((a, b) => {
         const isAGeneral = a.name.toLowerCase() === 'general' && (activeWorkspace ? a.workspace_id === activeWorkspace.id : true);
         const isBGeneral = b.name.toLowerCase() === 'general' && (activeWorkspace ? b.workspace_id === activeWorkspace.id : true);
         if (isAGeneral) return -1;
@@ -585,8 +617,14 @@ export default function ChatPage() {
         const timeB = new Date(b.last_message_at || b.created_at || 0).getTime();
         return timeB - timeA;
       });
+
       setChats(formattedChats);
-      if (!selectedChatId && formattedChats.length > 0 && !showConversation) {
+      
+      // If our selected chat is no longer in the list, fallback
+      if (selectedChatId && !formattedChats.some(c => c.id === selectedChatId)) {
+        setSelectedChatId(null);
+        setShowConversation(false);
+      } else if (!selectedChatId && formattedChats.length > 0 && !showConversation) {
         setSelectedChatId(formattedChats[0].id);
       }
     } catch (err: any) {
@@ -1029,19 +1067,29 @@ export default function ChatPage() {
     if (!selectedChatId || isDeletingChat) return;
     setIsDeletingChat(true);
     try {
-      const { error } = await supabase.rpc("delete_direct_chat_for_me", { p_channel_id: selectedChatId });
-      if (error) throw error;
+      // Optimistic cleanup
+      const deletedId = selectedChatId;
+      const currentWorkspaceId = chats.find(c => c.id === deletedId)?.workspace_id;
+      
+      const { error } = await supabase.rpc("delete_direct_chat_for_me", { p_channel_id: deletedId });
+      
+      // If error is "not a member", treat as stale UI success
+      if (error && !error.message.toLowerCase().includes("not a member")) {
+        throw error;
+      }
       
       toast({ title: "Conversation removed" });
       setIsDeleteChatDialogOpen(false);
-      removeBubble(selectedChatId);
+      removeBubble(deletedId);
       
-      const currentWorkspaceId = chats.find(c => c.id === selectedChatId)?.workspace_id;
-      const generalChat = chats.find(c => c.name.toLowerCase() === 'general' && c.workspace_id === currentWorkspaceId && c.id !== selectedChatId);
+      // Select General if possible
+      const generalChat = chats.find(c => c.name.toLowerCase() === 'general' && c.workspace_id === currentWorkspaceId && c.id !== deletedId);
       
       setSelectedChatId(null);
       setShowConversation(false);
       
+      // Force local refresh
+      setChats(prev => prev.filter(c => c.id !== deletedId));
       await fetchChats();
       await fetchUnreadCounts();
       
@@ -1604,11 +1652,11 @@ export default function ChatPage() {
                                       <div className={cn("p-2 rounded-lg", isMe ? "bg-white/20" : "bg-white dark:bg-slate-800 shadow-sm")}>{getFileIcon(att.file_name, att.file_type)}</div>
                                       <div className="flex-1 min-w-0"><p className={cn("text-xs font-bold truncate", isMe ? "text-white" : "text-slate-900 dark:text-slate-100")} title={att.file_name}>{att.file_name}</p><p className={cn("text-[10px] uppercase opacity-70 font-medium", isMe ? "text-white/80" : "text-slate-500")}>{formatBytes(att.file_size_bytes)} • {att.file_name.split('.').pop()?.toUpperCase()}</p></div>
                                       <div className="flex items-center gap-1">
-                                        <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-lg", isMe ? "text-white hover:bg-white/20" : "text-slate-500")} onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button>
+                                        <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-lg", isMe ? "text-white hover:bg-white/20" : "text-slate-50")} onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button>
                                         {canDeleteAttachment && (
                                           <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                                             <DropdownMenuTrigger asChild>
-                                              <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-lg", isMe ? "text-white hover:bg-white/20" : "text-slate-500")}><MoreVertical className="w-4 h-4" /></Button>
+                                              <Button variant="ghost" size="icon" className={cn("h-8 w-8 rounded-lg", isMe ? "text-white hover:bg-white/20" : "text-slate-50")}><MoreVertical className="w-4 h-4" /></Button>
                                             </DropdownMenuTrigger>
                                             <DropdownMenuContent align="end">
                                               <DropdownMenuItem onClick={() => { setAttachmentToDelete(att); setIsAttachmentDeleteDialogOpen(true); }} className="text-rose-500"><Trash2 className="w-4 h-4 mr-2" /> Delete</DropdownMenuItem>
