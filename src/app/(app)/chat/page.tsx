@@ -257,6 +257,8 @@ export default function ChatPage() {
   // Attachment State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
 
   // Gallery State
   const [isMediaSheetOpen, setIsMediaSheetOpen] = useState(false);
@@ -1344,6 +1346,89 @@ export default function ChatPage() {
   };
 
   /**
+   * FILE HANDLERS
+   */
+  const addFilesToSelection = useCallback((files: File[]) => {
+    let newValidFiles: File[] = [];
+    let skippedSize = false;
+    let skippedCount = false;
+
+    const currentTotal = selectedFiles.length;
+    
+    for (const file of files) {
+      if (newValidFiles.length + currentTotal >= 5) {
+        skippedCount = true;
+        break;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        skippedSize = true;
+        continue;
+      }
+      // Avoid exact duplicates
+      const isDuplicate = selectedFiles.some(f => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified);
+      if (!isDuplicate) {
+        newValidFiles.push(file);
+      }
+    }
+
+    if (newValidFiles.length > 0) {
+      setSelectedFiles(prev => [...prev, ...newValidFiles]);
+    }
+
+    if (skippedCount) {
+      toast({ variant: "destructive", title: "Limit reached", description: "You can attach up to 5 files per message." });
+    } else if (skippedSize) {
+      toast({ variant: "destructive", title: "Files skipped", description: "Some files were skipped because they are larger than 5MB." });
+    }
+  }, [selectedFiles, toast]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    addFilesToSelection(files);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selectedChatId || isSending) return;
+    
+    dragCounterRef.current++;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+
+    if (!selectedChatId || isSending) return;
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      addFilesToSelection(Array.from(e.dataTransfer.files));
+      e.dataTransfer.clearData();
+    }
+  };
+
+  /**
    * EFFECTS
    */
   useEffect(() => {
@@ -1384,6 +1469,8 @@ export default function ChatPage() {
       setEditingMessageId(null);
       setReplyingToMessage(null);
       setTypingUsers({});
+      setIsDragging(false);
+      dragCounterRef.current = 0;
     } else {
       setMessages([]);
     }
@@ -1470,45 +1557,6 @@ export default function ChatPage() {
       handleSelectChat(channelId);
     }
     if (window.innerWidth < 768) setShowConversation(true);
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
-
-    let newValidFiles: File[] = [];
-    let skippedSize = false;
-    let skippedCount = false;
-
-    const currentTotal = selectedFiles.length;
-    
-    for (const file of files) {
-      if (newValidFiles.length + currentTotal >= 5) {
-        skippedCount = true;
-        break;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        skippedSize = true;
-        continue;
-      }
-      // Avoid exact duplicates
-      const isDuplicate = selectedFiles.some(f => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified);
-      if (!isDuplicate) {
-        newValidFiles.push(file);
-      }
-    }
-
-    if (newValidFiles.length > 0) {
-      setSelectedFiles(prev => [...prev, ...newValidFiles]);
-    }
-
-    if (skippedCount) {
-      toast({ variant: "destructive", title: "Limit reached", description: "You can attach up to 5 files per message." });
-    } else if (skippedSize) {
-      toast({ variant: "destructive", title: "Files skipped", description: "Some files were skipped because they are larger than 5MB." });
-    }
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSendMessage = async () => {
@@ -1759,7 +1807,13 @@ export default function ChatPage() {
         </ScrollArea>
       </div>
 
-      <div className={cn("flex-1 flex flex-col bg-slate-50/30 dark:bg-slate-950/20 transition-all", !showConversation ? "hidden md:flex" : "flex")}>
+      <div 
+        className={cn("flex-1 flex flex-col bg-slate-50/30 dark:bg-slate-950/20 transition-all relative", !showConversation ? "hidden md:flex" : "flex")}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         {selectedChat ? (
           <>
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-b dark:border-slate-800 flex items-center justify-between">
@@ -1978,6 +2032,22 @@ export default function ChatPage() {
                 <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
+
+            {/* Drag and Drop Overlay */}
+            {isDragging && (
+              <div 
+                className="absolute inset-0 z-[100] bg-primary/10 backdrop-blur-[2px] flex items-center justify-center pointer-events-none border-4 border-dashed border-primary m-4 rounded-[2rem] animate-in fade-in zoom-in duration-200"
+              >
+                <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 border dark:border-slate-800">
+                  <div className="p-4 bg-primary/10 rounded-2xl">
+                    <Plus className="w-10 h-10 text-primary" />
+                  </div>
+                  <p className="text-xl font-bold dark:text-white">Drop files to attach</p>
+                  <p className="text-sm text-muted-foreground uppercase font-bold tracking-widest">Up to 5 files • 5MB each</p>
+                </div>
+              </div>
+            )}
+
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800 relative">
               {/* Typing Indicator */}
               {typingText && (
@@ -2591,3 +2661,4 @@ export default function ChatPage() {
     </div>
   );
 }
+
