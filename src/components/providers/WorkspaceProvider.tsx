@@ -145,8 +145,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           setPermissions(perms?.map(p => p.permission_key) || []);
         }
 
-        // Routing Logic: If already has a workspace, skip onboarding page
-        if (pathname === '/onboarding') {
+        // Routing Logic: If already has a workspace AND has dismissed onboarding, skip onboarding page
+        if (pathname === '/onboarding' && onboarding?.dismissed) {
           router.push('/dashboard');
         }
       } else {

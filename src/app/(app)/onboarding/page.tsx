@@ -33,7 +33,13 @@ import {
   PlusSquare,
   CheckCircle2,
   BellRing,
-  Globe
+  Globe,
+  MessageSquare,
+  StickyNote,
+  Zap,
+  ArrowRight,
+  Plus,
+  LayoutDashboard
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +55,8 @@ const ONBOARDING_STEPS = [
   { id: 'invite', title: 'Invite Members', description: 'Grow your community', icon: Users },
   { id: 'install', title: 'Install App', description: 'Get the best experience', icon: Smartphone },
   { id: 'notifications', title: 'Notifications', description: 'Stay in the loop', icon: Bell },
-  { id: 'finish', title: 'Finish', description: 'You are all set!', icon: Check },
+  { id: 'features', title: 'Learn Features', description: 'Discover capabilities', icon: Zap },
+  { id: 'finish', title: 'Get Started', description: 'You are all set!', icon: Check },
 ];
 
 const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`);
@@ -338,9 +345,51 @@ export default function OnboardingPage() {
         p_current_step: 'features_intro',
         [isSkipping ? 'p_notifications_skipped' : 'p_notifications_completed']: true
       });
+      setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'features'));
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFeaturesNext = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await supabase.rpc('update_my_onboarding', {
+        p_current_step: 'first_action',
+        p_features_intro_completed: true
+      });
       setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'finish'));
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFinalFinish = async (actionPath?: string) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc('update_my_onboarding', {
+        p_current_step: 'complete',
+        p_first_action_completed: true,
+        p_dismissed: true
+      });
+
+      if (error) throw error;
+
+      await refreshWorkspaces(); // Ensure flags are updated in context
+      
+      if (actionPath) {
+        router.push(actionPath);
+      } else {
+        router.push('/dashboard');
+      }
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Unable to finish onboarding", description: err.message });
     } finally {
       setSaving(false);
     }
@@ -367,10 +416,10 @@ export default function OnboardingPage() {
       await handleInstallNext();
     } else if (currentStep.id === 'notifications') {
       await handleNotificationsNext();
-    } else if (currentStepIndex < ONBOARDING_STEPS.length - 1) {
-      setCurrentStepIndex(currentStepIndex + 1);
+    } else if (currentStep.id === 'features') {
+      await handleFeaturesNext();
     } else {
-      router.push('/dashboard');
+      await handleFinalFinish();
     }
   };
 
@@ -906,36 +955,98 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {currentStep.id === 'finish' && (
-                <div className="flex flex-col items-center justify-center text-center">
-                  <div className="p-16 rounded-[4rem] bg-emerald-50 dark:bg-emerald-500/10 mb-12 border-2 border-emerald-500/20 shadow-xl shadow-emerald-500/5 group-hover:scale-105 transition-transform duration-700">
-                    <CheckCircle2 className="w-24 h-24 text-emerald-500" />
+              {currentStep.id === 'features' && (
+                <div className="space-y-10 animate-in slide-in-from-right-4 duration-500">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    {[
+                      { title: "Browse Features", desc: "Understand platform capabilities.", icon: LayoutGrid },
+                      { title: "Read Updates", desc: "Stay informed on new releases.", icon: Zap },
+                      { title: "Suggest Ideas", desc: "Help us shape the future.", icon: MessageSquare }
+                    ].map((item, idx) => (
+                      <div key={idx} className="p-6 rounded-3xl bg-slate-50 dark:bg-slate-800/40 border dark:border-slate-800 flex flex-col items-center text-center gap-4 hover:border-primary/50 transition-colors">
+                        <div className="p-3 bg-white dark:bg-slate-900 rounded-2xl shadow-sm">
+                          <item.icon className="w-6 h-6 text-primary" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="font-bold text-sm dark:text-white">{item.title}</p>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400">{item.desc}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="max-w-md space-y-6">
-                    <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-                      Ready for action!
-                    </h2>
-                    <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-lg font-medium">
-                      Your workspace is ready. You've established your identity, organized your team, and connected your device.
-                    </p>
+
+                  <div className="flex flex-col items-center gap-4 pt-4">
+                    <Button 
+                      variant="outline"
+                      onClick={() => window.open('/app-updates', '_blank')}
+                      className="rounded-xl h-12 px-8 border-primary/20 text-primary hover:bg-primary/5"
+                    >
+                      Open Features Catalog <ExternalLink className="w-4 h-4 ml-2" />
+                    </Button>
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Available anytime from the sidebar</p>
                   </div>
                 </div>
               )}
 
-              {(currentStep.id !== 'welcome' && currentStep.id !== 'profile' && currentStep.id !== 'workspace' && currentStep.id !== 'teams' && currentStep.id !== 'invite' && currentStep.id !== 'install' && currentStep.id !== 'notifications' && currentStep.id !== 'finish') && (
-                <div className="flex flex-col items-center justify-center text-center">
-                  <div className="p-16 rounded-[4rem] bg-slate-50 dark:bg-slate-800/40 mb-12 border dark:border-slate-800 shadow-inner group-hover:scale-105 transition-transform duration-700">
-                    <StepIcon className="w-24 h-20 text-slate-300 dark:text-slate-700 animate-pulse" />
-                  </div>
-                  <div className="max-w-md space-y-6">
-                    <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-200">
-                      Feature Initializing
-                    </h2>
-                    <p className="text-slate-500 dark:text-slate-400 leading-relaxed text-lg">
-                      We're configuring <strong>{currentStep.title}</strong> for your workspace. 
-                      Click "Next Step" to continue the journey.
-                    </p>
-                  </div>
+              {currentStep.id === 'finish' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <button 
+                        onClick={() => handleFinalFinish('/tasks?new=true')}
+                        className="p-6 rounded-[2rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-blue-500 transition-all text-left flex items-center gap-4 group/action"
+                      >
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl group-hover/action:bg-blue-500 group-hover/action:text-white transition-all">
+                          <Plus className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <p className="font-bold dark:text-white">Create first task</p>
+                          <p className="text-[10px] text-slate-500">Start organizing work</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 ml-auto text-slate-300 opacity-0 group-hover/action:opacity-100 transition-all" />
+                      </button>
+
+                      <button 
+                        onClick={() => handleFinalFinish('/notes?new=true')}
+                        className="p-6 rounded-[2rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-amber-500 transition-all text-left flex items-center gap-4 group/action"
+                      >
+                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 rounded-2xl group-hover/action:bg-amber-500 group-hover/action:text-white transition-all">
+                          <StickyNote className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <p className="font-bold dark:text-white">Capture a note</p>
+                          <p className="text-[10px] text-slate-500">Save your initial thoughts</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 ml-auto text-slate-300 opacity-0 group-hover/action:opacity-100 transition-all" />
+                      </button>
+
+                      <button 
+                        onClick={() => handleFinalFinish('/chat')}
+                        className="p-6 rounded-[2rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-emerald-500 transition-all text-left flex items-center gap-4 group/action"
+                      >
+                        <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl group-hover/action:bg-emerald-500 group-hover/action:text-white transition-all">
+                          <MessageSquare className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <p className="font-bold dark:text-white">Say hello</p>
+                          <p className="text-[10px] text-slate-500">Open General Chat</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 ml-auto text-slate-300 opacity-0 group-hover/action:opacity-100 transition-all" />
+                      </button>
+
+                      <button 
+                        onClick={() => handleFinalFinish('/dashboard')}
+                        className="p-6 rounded-[2rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-primary transition-all text-left flex items-center gap-4 group/action"
+                      >
+                        <div className="p-4 bg-primary/10 rounded-2xl group-hover/action:bg-primary group-hover/action:text-white transition-all">
+                          <LayoutDashboard className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <p className="font-bold dark:text-white">Go to Dashboard</p>
+                          <p className="text-[10px] text-slate-500">Full system overview</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 ml-auto text-slate-300 opacity-0 group-hover/action:opacity-100 transition-all" />
+                      </button>
+                   </div>
                 </div>
               )}
             </CardContent>
@@ -951,14 +1062,15 @@ export default function OnboardingPage() {
               </Button>
               
               <div className="flex flex-col sm:flex-row gap-4">
-                {(currentStep.id === 'teams' || currentStep.id === 'invite' || currentStep.id === 'install' || currentStep.id === 'notifications') && (
+                {(currentStep.id === 'teams' || currentStep.id === 'invite' || currentStep.id === 'install' || currentStep.id === 'notifications' || currentStep.id === 'features') && (
                   <Button
                     variant="ghost"
                     onClick={() => {
                       if (currentStep.id === 'teams') handleTeamsSave(true);
                       else if (currentStep.id === 'invite') handleInviteNext();
                       else if (currentStep.id === 'install') handleInstallNext(true);
-                      else handleNotificationsNext(true);
+                      else if (currentStep.id === 'notifications') handleNotificationsNext(true);
+                      else handleFeaturesNext();
                     }}
                     disabled={saving}
                     className="rounded-2xl h-16 px-10 font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
@@ -981,6 +1093,7 @@ export default function OnboardingPage() {
                         currentStep.id === 'teams' ? 'Launch Teams' : 
                         currentStep.id === 'install' ? (isStandalone ? 'Continue' : 'Install App') :
                         currentStep.id === 'notifications' ? (isSubscribed ? 'Continue' : 'Enable Setup') :
+                        currentStep.id === 'features' ? 'Got it, Continue' :
                         'Next Step')}
                       {currentStepIndex !== ONBOARDING_STEPS.length - 1 && <ChevronRight className="w-6 h-6 ml-3 group-hover/btn:translate-x-1 transition-transform" />}
                     </>
