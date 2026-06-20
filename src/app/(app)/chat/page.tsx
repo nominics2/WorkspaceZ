@@ -90,6 +90,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useRouter } from "next/navigation";
 
 /**
  * PRODUCTION TYPES
@@ -108,10 +111,12 @@ interface Attachment {
 interface Message {
   id: string;
   channel_id: string;
+  workspace_id: string;
   sender_id: string;
   message: string;
   created_at: string;
   updated_at?: string;
+  created_task_id?: string | null;
   profiles?: {
     full_name: string;
     avatar_url: string;
@@ -150,18 +155,6 @@ interface ChatMemberWithProfile extends ChatChannelMember {
   } | null;
 }
 
-interface ChatUnreadCount {
-  channel_id: string;
-  unread_count: number;
-  latest_message_at: string;
-}
-
-interface ChatMuteState {
-  channel_id: string;
-  is_muted: boolean;
-  muted_until: string | null;
-}
-
 export default function ChatPage() {
   const { activeWorkspace, userProfile, userRole } = useWorkspace();
   const { addBubble, refreshUnread, removeBubble } = useFloatingChat();
@@ -185,6 +178,19 @@ export default function ChatPage() {
   const [isEditingLoading, setIsEditingLoading] = useState(false);
   const [isMessageDeleteDialogOpen, setIsMessageDeleteDialogOpen] = useState(false);
   const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
+
+  // Task Creation State
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  const [taskSourceMessage, setTaskSourceMessage] = useState<Message | null>(null);
+  const [taskForm, setTaskForm] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+    dueDate: "",
+    assignedTo: "",
+    teamId: ""
+  });
+  const [isTaskCreating, setIsTaskCreating] = useState(false);
 
   // Search in Chat state (Contextual)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -246,6 +252,7 @@ export default function ChatPage() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
   const { toast } = useToast();
+  const router = useRouter();
 
   /**
    * UTILITIES
@@ -305,7 +312,7 @@ export default function ChatPage() {
       if (error) throw error;
       
       const counts: Record<string, number> = {};
-      (data as ChatUnreadCount[]).forEach(item => {
+      (data as any[]).forEach(item => {
         counts[item.channel_id] = item.unread_count;
       });
       setUnreadCounts(counts);
@@ -321,7 +328,7 @@ export default function ChatPage() {
       if (error) throw error;
 
       const mutes: Record<string, { is_muted: boolean, muted_until: string | null }> = {};
-      (data as ChatMuteState[]).forEach(item => {
+      (data as any[]).forEach(item => {
         mutes[item.channel_id] = { 
           is_muted: item.is_muted, 
           muted_until: item.muted_until 
@@ -444,7 +451,7 @@ export default function ChatPage() {
         setSelectedChatId(formattedChats[0].id);
       }
     } catch (err: any) {
-      console.error("[Chat] Load Error:", serializeSupabaseError(err));
+      console.error("[Chat) Load Error:", serializeSupabaseError(err));
       setError(err.message || "An unexpected error occurred while loading chats.");
     } finally {
       setLoadingChats(false);
@@ -457,7 +464,7 @@ export default function ChatPage() {
       const [msgDataRes, attachDataRes] = await Promise.all([
         supabase
           .from('chat_messages')
-          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted')
+          .select('id, channel_id, workspace_id, sender_id, message, created_at, updated_at, is_deleted, created_task_id')
           .eq('channel_id', channelId)
           .eq('is_deleted', false)
           .order('created_at', { ascending: true }),
@@ -652,7 +659,7 @@ export default function ChatPage() {
     try {
       const { data, error } = await supabase
         .from('chat_messages')
-        .select('id, channel_id, workspace_id, sender_id, message, created_at')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at, created_task_id')
         .eq('channel_id', selectedChatId)
         .eq('is_deleted', false)
         .ilike('message', `%${query}%`)
@@ -695,7 +702,7 @@ export default function ChatPage() {
 
       const { data, error } = await supabase
         .from('chat_messages')
-        .select('id, channel_id, workspace_id, sender_id, message, created_at')
+        .select('id, channel_id, workspace_id, sender_id, message, created_at, created_task_id')
         .in('channel_id', channelIds)
         .eq('is_deleted', false)
         .ilike('message', `%${query}%`)
@@ -999,6 +1006,54 @@ export default function ChatPage() {
     } finally {
       setIsMessageDeleteDialogOpen(false);
       setMessageIdToDelete(null);
+    }
+  };
+
+  const handleOpenCreateTask = (msg: Message) => {
+    setTaskSourceMessage(msg);
+    setTaskForm({
+      title: msg.message ? msg.message.slice(0, 100) : "Task from chat attachment",
+      description: msg.message || "Action item originating from a chat conversation.",
+      priority: "medium",
+      dueDate: "",
+      assignedTo: userProfile?.id || "",
+      teamId: chats.find(c => c.id === selectedChatId)?.sub_workspace_id || ""
+    });
+    setIsCreateTaskOpen(true);
+    fetchMembers();
+  };
+
+  const handleCreateTaskFromMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!taskSourceMessage || isTaskCreating) return;
+
+    setIsTaskCreating(true);
+    try {
+      const { data: taskId, error } = await supabase.rpc("create_task_from_chat_message", {
+        p_message_id: taskSourceMessage.id,
+        p_title: taskForm.title.trim(),
+        p_description: taskForm.description.trim() || null,
+        p_assigned_to: taskForm.assignedTo || null,
+        p_due_date: taskForm.dueDate || null,
+        p_priority: taskForm.priority,
+        p_sub_workspace_id: taskForm.teamId || null
+      });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Task Linked", 
+        description: "Your message has been converted to an action item.",
+        action: <Button variant="outline" size="sm" onClick={() => router.push(`/tasks?taskId=${taskId}`)}>View Task</Button>
+      });
+
+      setMessages(prev => prev.map(m => m.id === taskSourceMessage.id ? { ...m, created_task_id: taskId } : m));
+      setIsCreateTaskOpen(false);
+      setTaskSourceMessage(null);
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Creation Failed", description: err.message });
+    } finally {
+      setIsTaskCreating(false);
     }
   };
 
@@ -1423,6 +1478,22 @@ export default function ChatPage() {
                                 })}
                               </div>
                             )}
+
+                            {/* Task Chip */}
+                            {msg.created_task_id && (
+                              <div className="mt-3 pt-2 border-t border-white/20 dark:border-slate-700">
+                                <button 
+                                  onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
+                                  className={cn(
+                                    "flex items-center gap-1.5 text-[10px] font-bold uppercase hover:opacity-80 transition-opacity",
+                                    isMe ? "text-white" : "text-primary"
+                                  )}
+                                >
+                                  <CheckSquare className="w-3 h-3" /> Linked Task Created
+                                </button>
+                              </div>
+                            )}
+
                             <div className={cn("flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold", isMe ? "text-white/80" : "text-slate-400")}>
                               {wasEdited && <span className="italic mr-1">(edited)</span>}
                               <span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -1466,7 +1537,21 @@ export default function ChatPage() {
                                        </DropdownMenuItem>
                                      )}
                                      <DropdownMenuSeparator className="dark:bg-slate-800" />
-                                     <DropdownMenuItem disabled className="gap-2"><CheckSquare className="h-4 w-4" /> Create Task</DropdownMenuItem>
+                                     {msg.created_task_id ? (
+                                       <DropdownMenuItem 
+                                         onClick={() => router.push(`/tasks?taskId=${msg.created_task_id}`)}
+                                         className="gap-2"
+                                       >
+                                         <ExternalLink className="h-4 w-4" /> View Task
+                                       </DropdownMenuItem>
+                                     ) : (
+                                       <DropdownMenuItem 
+                                         onClick={() => handleOpenCreateTask(msg)}
+                                         className="gap-2"
+                                       >
+                                         <CheckSquare className="h-4 w-4" /> Create Task
+                                       </DropdownMenuItem>
+                                     )}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>
@@ -1841,6 +1926,79 @@ export default function ChatPage() {
               {isAddingMembersLoading ? 'Enrolling...' : `Add Selected (${selectedMemberIdsToAdd.length})`}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
+        <DialogContent className="max-w-md p-0 overflow-hidden dark:bg-slate-950 rounded-[2rem]">
+          <div className="p-8 pb-4">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold">Create Task from Message</DialogTitle>
+              <DialogDescription>Convert this conversation point into a trackable workspace assignment.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleCreateTaskFromMessage} className="space-y-4 mt-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Task Title</Label>
+                <Input 
+                  value={taskForm.title} 
+                  onChange={e => setTaskForm({...taskForm, title: e.target.value})} 
+                  placeholder="Summarize the action item..." 
+                  required 
+                  className="rounded-xl dark:bg-slate-900 border-none" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Description</Label>
+                <Textarea 
+                  value={taskForm.description} 
+                  onChange={e => setTaskForm({...taskForm, description: e.target.value})} 
+                  placeholder="Additional context..." 
+                  rows={4}
+                  className="rounded-xl dark:bg-slate-900 border-none" 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Priority</Label>
+                  <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})}>
+                    <SelectTrigger className="rounded-xl dark:bg-slate-900 border-none"><SelectValue /></SelectTrigger>
+                    <SelectContent className="dark:bg-slate-950">
+                      <SelectItem value="low">Low</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Due Date</Label>
+                  <Input 
+                    type="date" 
+                    value={taskForm.dueDate} 
+                    onChange={e => setTaskForm({...taskForm, dueDate: e.target.value})} 
+                    className="rounded-xl dark:bg-slate-900 border-none" 
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Assign To</Label>
+                <Select value={taskForm.assignedTo} onValueChange={v => setTaskForm({...taskForm, assignedTo: v})}>
+                  <SelectTrigger className="rounded-xl dark:bg-slate-900 border-none"><SelectValue placeholder="Unassigned" /></SelectTrigger>
+                  <SelectContent className="dark:bg-slate-950">
+                    <SelectItem value={userProfile?.id || "me"}>Me ({userProfile?.full_name})</SelectItem>
+                    {workspaceMembers.map(m => <SelectItem key={m.id} value={m.id}>{m.full_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <DialogFooter className="pt-4 flex-row gap-3">
+                <Button type="button" variant="ghost" className="flex-1 rounded-xl" onClick={() => setIsCreateTaskOpen(false)}>Cancel</Button>
+                <Button type="submit" className="flex-1 rounded-xl shadow-lg" disabled={isTaskCreating}>
+                  {isTaskCreating ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckSquare className="w-4 h-4 mr-2" />}
+                  {isTaskCreating ? "Creating..." : "Create Task"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
