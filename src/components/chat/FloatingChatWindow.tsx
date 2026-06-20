@@ -67,6 +67,12 @@ interface Message {
   reply_to?: Message | null;
 }
 
+interface TypingUser {
+  id: string;
+  full_name: string;
+  lastSeen: number;
+}
+
 export function FloatingChatWindow({ 
   chat, 
   onMinimize, 
@@ -89,6 +95,12 @@ export function FloatingChatWindow({
   const router = useRouter();
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Typing State
+  const [typingUsers, setTypingUsers] = useState<Record<string, TypingUser>>({});
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastBroadcastRef = useRef<number>(0);
+  const typingChannelRef = useRef<any>(null);
+
   // Message Actions state
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -98,6 +110,94 @@ export function FloatingChatWindow({
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
 
   const isAdminOrSuper = userRole === 'superadmin' || userRole === 'admin' || userRole === 'manager';
+
+  /**
+   * TYPING LOGIC
+   */
+  const sendTypingStatus = useCallback((isTyping: boolean) => {
+    if (!typingChannelRef.current || !userProfile) return;
+
+    const now = Date.now();
+    if (isTyping && now - lastBroadcastRef.current < 2000) return;
+
+    if (isTyping) lastBroadcastRef.current = now;
+
+    typingChannelRef.current.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: {
+        id: userProfile.id,
+        full_name: userProfile.full_name,
+        is_typing: isTyping,
+        timestamp: now
+      }
+    });
+  }, [userProfile]);
+
+  useEffect(() => {
+    if (!chat.id || !userProfile) return;
+
+    setTypingUsers({});
+    const channel = supabase.channel(`chat-typing:${chat.id}`);
+    typingChannelRef.current = channel;
+
+    channel
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload.id === userProfile.id) return;
+        setTypingUsers(prev => {
+          const next = { ...prev };
+          if (payload.is_typing) {
+            next[payload.id] = { id: payload.id, full_name: payload.full_name, lastSeen: Date.now() };
+          } else {
+            delete next[payload.id];
+          }
+          return next;
+        });
+      })
+      .subscribe();
+
+    const interval = setInterval(() => {
+      setTypingUsers(prev => {
+        const now = Date.now();
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(uid => {
+          if (now - next[uid].lastSeen > 5000) {
+            delete next[uid];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 2000);
+
+    return () => {
+      sendTypingStatus(false);
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+      typingChannelRef.current = null;
+    };
+  }, [chat.id, userProfile, supabase, sendTypingStatus]);
+
+  const handleInputChange = (val: string) => {
+    setInput(val);
+    if (val.trim().length > 0) {
+      sendTypingStatus(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => sendTypingStatus(false), 3000);
+    } else {
+      sendTypingStatus(false);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    }
+  };
+
+  const typingText = useMemo(() => {
+    const list = Object.values(typingUsers);
+    if (list.length === 0) return null;
+    if (list.length === 1) return `${list[0].full_name} is typing...`;
+    if (list.length === 2) return `${list[0].full_name} and ${list[1].full_name} are typing...`;
+    return "Several people are typing...";
+  }, [typingUsers]);
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
@@ -210,6 +310,9 @@ export function FloatingChatWindow({
     if (!text || isSending || !userProfile) return;
 
     setIsSending(true);
+    sendTypingStatus(false);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
     try {
       const { error } = await supabase.from('chat_messages').insert({
         channel_id: chat.id,
@@ -498,6 +601,22 @@ export function FloatingChatWindow({
       </ScrollArea>
 
       <div className="p-3 border-t dark:border-slate-800 bg-white dark:bg-slate-900 relative">
+        {/* Typing Indicator */}
+        {typingText && (
+          <div className="absolute bottom-full left-0 right-0 px-4 py-1 animate-in fade-in slide-in-from-bottom-1 duration-200 pointer-events-none">
+            <div className="flex items-center gap-1.5">
+              <div className="flex gap-0.5">
+                <span className="w-0.5 h-0.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-0.5 h-0.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-0.5 h-0.5 bg-primary rounded-full animate-bounce" />
+              </div>
+              <span className="text-[8px] font-medium text-slate-500 italic truncate">
+                {typingText}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Reply Preview Bar */}
         {replyingToMessage && (
           <div className="absolute bottom-full left-0 right-0 bg-slate-50 dark:bg-slate-950 border-t dark:border-slate-800 p-2 animate-in slide-in-from-bottom-2 duration-200">
@@ -519,7 +638,7 @@ export function FloatingChatWindow({
         <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-950 p-1.5 rounded-xl border dark:border-slate-800">
           <Input 
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => handleInputChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
             placeholder="Type..."
             className="border-none shadow-none focus-visible:ring-0 h-8 text-xs bg-transparent dark:text-white"

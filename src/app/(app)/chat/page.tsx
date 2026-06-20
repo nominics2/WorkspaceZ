@@ -177,6 +177,12 @@ interface TaskSearchResult {
   } | null;
 }
 
+interface TypingUser {
+  id: string;
+  full_name: string;
+  lastSeen: number;
+}
+
 export default function ChatPage() {
   const { activeWorkspace, userProfile, userRole } = useWorkspace();
   const { addBubble, refreshUnread, removeBubble, onlineUsers } = useFloatingChat();
@@ -193,6 +199,12 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Typing State
+  const [typingUsers, setTypingUsers] = useState<Record<string, TypingUser>>({});
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastBroadcastRef = useRef<number>(0);
+  const typingChannelRef = useRef<any>(null);
 
   // Message Actions State
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -289,6 +301,104 @@ export default function ChatPage() {
   const supabase = createClient();
   const { toast } = useToast();
   const router = useRouter();
+
+  /**
+   * TYPING LOGIC
+   */
+  const sendTypingStatus = useCallback((isTyping: boolean) => {
+    if (!typingChannelRef.current || !userProfile) return;
+
+    const now = Date.now();
+    if (isTyping && now - lastBroadcastRef.current < 2000) return; // Throttle broadcasts
+
+    if (isTyping) lastBroadcastRef.current = now;
+
+    typingChannelRef.current.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: {
+        id: userProfile.id,
+        full_name: userProfile.full_name,
+        is_typing: isTyping,
+        timestamp: now
+      }
+    });
+  }, [userProfile]);
+
+  useEffect(() => {
+    if (!selectedChatId || !userProfile) return;
+
+    // Reset typing state for new channel
+    setTypingUsers({});
+    
+    const channel = supabase.channel(`chat-typing:${selectedChatId}`);
+    typingChannelRef.current = channel;
+
+    channel
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload.id === userProfile.id) return;
+
+        setTypingUsers(prev => {
+          const next = { ...prev };
+          if (payload.is_typing) {
+            next[payload.id] = { 
+              id: payload.id, 
+              full_name: payload.full_name, 
+              lastSeen: Date.now() 
+            };
+          } else {
+            delete next[payload.id];
+          }
+          return next;
+        });
+      })
+      .subscribe();
+
+    // Local expiry timer to clear stale indicators
+    const interval = setInterval(() => {
+      setTypingUsers(prev => {
+        const now = Date.now();
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(uid => {
+          if (now - next[uid].lastSeen > 5000) {
+            delete next[uid];
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 2000);
+
+    return () => {
+      sendTypingStatus(false);
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+      typingChannelRef.current = null;
+    };
+  }, [selectedChatId, userProfile, supabase, sendTypingStatus]);
+
+  const handleInputChange = (val: string) => {
+    setMessageInput(val);
+    if (!selectedChatId) return;
+
+    if (val.trim().length > 0) {
+      sendTypingStatus(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => sendTypingStatus(false), 3000);
+    } else {
+      sendTypingStatus(false);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    }
+  };
+
+  const typingUsersList = useMemo(() => Object.values(typingUsers), [typingUsers]);
+  const typingText = useMemo(() => {
+    if (typingUsersList.length === 0) return null;
+    if (typingUsersList.length === 1) return `${typingUsersList[0].full_name} is typing...`;
+    if (typingUsersList.length === 2) return `${typingUsersList[0].full_name} and ${typingUsersList[1].full_name} are typing...`;
+    return "Several people are typing...";
+  }, [typingUsersList]);
 
   /**
    * UTILITIES
@@ -1251,6 +1361,7 @@ export default function ChatPage() {
       setIsRenamingGroup(false);
       setEditingMessageId(null);
       setReplyingToMessage(null);
+      setTypingUsers({});
     } else {
       setMessages([]);
     }
@@ -1356,6 +1467,9 @@ export default function ChatPage() {
     if (!chatObj || !userProfile || (!text && !selectedFile) || isSending) return;
 
     setIsSending(true);
+    sendTypingStatus(false);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    
     let messageId: string | null = null;
     try {
       const { data: msgData, error: sendError } = await supabase
@@ -1790,6 +1904,22 @@ export default function ChatPage() {
               </div>
             </ScrollArea>
             <div className="p-4 md:p-6 bg-white dark:bg-slate-900 border-t dark:border-slate-800 relative">
+              {/* Typing Indicator */}
+              {typingText && (
+                <div className="absolute bottom-full left-0 right-0 px-6 py-2 animate-in fade-in slide-in-from-bottom-1 duration-200 pointer-events-none">
+                  <div className="flex items-center gap-2 max-w-4xl mx-auto">
+                    <div className="flex gap-1">
+                      <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-1 h-1 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-1 h-1 bg-primary rounded-full animate-bounce" />
+                    </div>
+                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 italic">
+                      {typingText}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Reply Preview Bar */}
               {replyingToMessage && (
                 <div className="absolute bottom-full left-0 right-0 bg-slate-50 dark:bg-slate-950 border-t dark:border-slate-800 p-3 px-6 animate-in slide-in-from-bottom-2 duration-200">
@@ -1814,7 +1944,7 @@ export default function ChatPage() {
               <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
                 <Button variant="ghost" size="icon" aria-label="Attach File" className="text-slate-400 hover:text-primary rounded-xl shrink-0" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip className="w-5 h-5" /></Button>
-                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder="Compose message..." value={messageInput} onChange={(e) => setMessageInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
+                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder="Compose message..." value={messageInput} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
                 <Button size="icon" aria-label="Send" onClick={handleSendMessage} className={cn("rounded-xl transition-all", (messageInput.trim() || selectedFile) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && !selectedFile) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
               </div>
             </div>
