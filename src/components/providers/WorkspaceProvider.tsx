@@ -38,7 +38,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [isVerified, setIsVerified] = useState(false);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [themePreference, setThemePreferenceState] = useState<ThemePreference>('system');
+  const [themePreference, setThemePreferenceState] = useState<ThemePreference>('light');
   const supabase = createClient();
   const router = useRouter();
   const pathname = usePathname();
@@ -66,6 +66,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (!session?.user) {
+        // Apply default theme even when not logged in
+        applyTheme(themePreference);
         if (pathname !== '/' && pathname !== '/setup' && pathname !== '/workspace-setup') {
           router.push('/');
         }
@@ -87,6 +89,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       if (profile?.theme_preference) {
         setThemePreferenceState(profile.theme_preference as ThemePreference);
         applyTheme(profile.theme_preference as ThemePreference);
+      } else {
+        applyTheme('light');
       }
 
       // Parallel fetch for Onboarding state and Workspace memberships
@@ -163,7 +167,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   };
 
   const setThemePreference = async (theme: ThemePreference) => {
-    if (!userProfile) return;
+    if (!userProfile) {
+      setThemePreferenceState(theme);
+      applyTheme(theme);
+      return;
+    }
     
     setThemePreferenceState(theme);
     applyTheme(theme);
@@ -193,6 +201,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         setUserRole(null);
         setIsVerified(false);
         setPermissions([]);
+        applyTheme('light'); // Revert to light mode on sign out
         router.push('/');
       }
     });
