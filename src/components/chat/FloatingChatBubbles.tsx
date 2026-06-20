@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Hash, Users, MessageCircle, BellOff } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
-import { useFloatingChat, Chat } from "./FloatingChatProvider";
+import { useFloatingChat, Chat, StackPosition } from "./FloatingChatProvider";
 import { FloatingChatWindow } from "./FloatingChatWindow";
 
 const BUBBLE_COLORS = [
@@ -35,10 +35,31 @@ const getChannelBubbleColor = (id: string) => {
 };
 
 export function FloatingChatBubbles() {
-  const { floatingBubbles, expandedChannelId, toggleExpand, removeBubble } = useFloatingChat();
+  const { 
+    floatingBubbles, 
+    expandedChannelId, 
+    toggleExpand, 
+    removeBubble, 
+    stackPosition, 
+    updateStackPosition 
+  } = useFloatingChat();
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [muteStates, setMuteStates] = useState<Record<string, boolean>>({});
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragY, setDragY] = useState(stackPosition.bottomOffset);
+  const [dragSide, setDragSide] = useState(stackPosition.side);
+  
+  const startPosRef = useRef({ x: 0, y: 0, bottom: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
+
+  // Sync drag state with provider when not dragging
+  useEffect(() => {
+    if (!isDragging) {
+      setDragY(stackPosition.bottomOffset);
+      setDragSide(stackPosition.side);
+    }
+  }, [stackPosition, isDragging]);
 
   const fetchStates = useCallback(async () => {
     try {
@@ -62,14 +83,106 @@ export function FloatingChatBubbles() {
 
   useEffect(() => {
     fetchStates();
-    const interval = setInterval(fetchStates, 30000); // Periodically sync unreads
+    const interval = setInterval(fetchStates, 30000);
     return () => clearInterval(interval);
   }, [fetchStates]);
 
+  /**
+   * DRAG LOGIC
+   */
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    // Only drag if minimized
+    if (expandedChannelId) return;
+
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    startPosRef.current = {
+      x: clientX,
+      y: clientY,
+      bottom: dragY
+    };
+
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+      
+      const deltaY = startPosRef.current.y - clientY;
+      let newBottom = startPosRef.current.bottom + deltaY;
+      
+      // Boundary check
+      const padding = 20;
+      const maxHeight = window.innerHeight - 100;
+      if (newBottom < padding) newBottom = padding;
+      if (newBottom > maxHeight) newBottom = maxHeight;
+
+      setDragY(newBottom);
+
+      // Visual side switch while dragging
+      if (clientX < window.innerWidth / 2) {
+        setDragSide('left');
+      } else {
+        setDragSide('right');
+      }
+    };
+
+    const handleMouseUp = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? (e as TouchEvent).changedTouches[0].clientX : (e as MouseEvent).clientX;
+      const clientY = 'touches' in e ? (e as TouchEvent).changedTouches[0].clientY : (e as MouseEvent).clientY;
+
+      const dist = Math.sqrt(
+        Math.pow(clientX - startPosRef.current.x, 2) + 
+        Math.pow(clientY - startPosRef.current.y, 2)
+      );
+
+      setIsDragging(false);
+
+      // If moved more than threshold, save position
+      if (dist > 10) {
+        const side = clientX < window.innerWidth / 2 ? 'left' : 'right';
+        updateStackPosition({ side, bottomOffset: dragY });
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleMouseMove);
+    window.addEventListener('touchend', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleMouseMove);
+      window.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isDragging, dragY, updateStackPosition]);
+
   if (floatingBubbles.length === 0) return null;
 
+  const stackStyle: React.CSSProperties = {
+    bottom: `calc(${dragY}px + env(safe-area-inset-bottom))`,
+    [dragSide]: `calc(24px + env(safe-area-inset-${dragSide}))`,
+    position: 'fixed',
+    zIndex: 100,
+    transition: isDragging ? 'none' : 'all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28)',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: dragSide === 'right' ? 'flex-end' : 'flex-start',
+    gap: '12px'
+  };
+
   return (
-    <div className="fixed bottom-6 right-6 flex flex-col items-end gap-3 z-[100] pointer-events-none">
+    <div 
+      ref={containerRef}
+      style={stackStyle}
+      className="pointer-events-none"
+    >
       {floatingBubbles.map((chat) => {
         const isExpanded = expandedChannelId === chat.id;
         const unreadCount = unreadCounts[chat.id] || 0;
@@ -78,13 +191,14 @@ export function FloatingChatBubbles() {
         const avatarSrc = chat.display_avatar_preset ? `/avatars/${chat.display_avatar_preset}.png` : chat.display_avatar;
 
         return (
-          <div key={`floating-${chat.id}`} className="flex flex-col items-end gap-3 pointer-events-auto">
+          <div key={`floating-${chat.id}`} className="flex flex-col pointer-events-auto">
             {isExpanded && (
               <FloatingChatWindow 
                 chat={chat} 
                 onMinimize={() => toggleExpand(null)}
                 onClose={() => removeBubble(chat.id)}
                 isMuted={isMuted}
+                side={dragSide}
               />
             )}
             {!isExpanded && (
@@ -92,9 +206,11 @@ export function FloatingChatBubbles() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => toggleExpand(chat.id)}
+                      onMouseDown={handleDragStart}
+                      onTouchStart={handleDragStart}
+                      onClick={() => !isDragging && toggleExpand(chat.id)}
                       className={cn(
-                        "w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group relative ring-2 ring-offset-2 dark:ring-offset-slate-900",
+                        "w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group relative ring-2 ring-offset-2 dark:ring-offset-slate-900 cursor-grab active:cursor-grabbing",
                         bubbleColor.split(' ')[0]
                       )}
                     >
@@ -122,14 +238,17 @@ export function FloatingChatBubbles() {
                         </div>
                       )}
 
-                      <div className="absolute -left-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity -translate-x-full pr-4 pointer-events-none">
+                      <div className={cn(
+                        "absolute top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-none",
+                        dragSide === 'right' ? "-translate-x-full pr-4 left-[-8px]" : "translate-x-full pl-4 right-[-8px]"
+                      )}>
                         <Badge variant="secondary" className="whitespace-nowrap bg-white dark:bg-slate-800 shadow-xl border dark:border-slate-700 py-1 px-3 text-xs font-bold">
                           {chat.display_name}
                         </Badge>
                       </div>
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="left">{chat.display_name}</TooltipContent>
+                  <TooltipContent side={dragSide === 'right' ? 'left' : 'right'}>{chat.display_name}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             )}

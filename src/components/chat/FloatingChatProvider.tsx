@@ -39,6 +39,11 @@ export interface ChatNotificationPreferences {
   updated_at: string;
 }
 
+export interface StackPosition {
+  side: 'left' | 'right';
+  bottomOffset: number;
+}
+
 interface FloatingChatContextType {
   floatingBubbles: Chat[];
   expandedChannelId: string | null;
@@ -46,9 +51,11 @@ interface FloatingChatContextType {
   onlineUsers: Record<string, PresenceUser>;
   notificationPrefs: ChatNotificationPreferences | null;
   muteStates: Record<string, { is_muted: boolean, muted_until: string | null }>;
+  stackPosition: StackPosition;
   addBubble: (chat: Chat) => void;
   removeBubble: (chatId: string) => void;
   toggleExpand: (chatId: string | null) => void;
+  updateStackPosition: (pos: StackPosition) => void;
   refreshUnread: () => Promise<void>;
   refreshNotificationPrefs: () => Promise<void>;
   updateNotificationPrefs: (prefs: Partial<ChatNotificationPreferences>) => Promise<void>;
@@ -58,6 +65,7 @@ interface FloatingChatContextType {
 const FloatingChatContext = createContext<FloatingChatContextType | undefined>(undefined);
 
 const BUBBLE_STORAGE_KEY = 'workspacez_floating_chat_bubbles';
+const POSITION_STORAGE_KEY = 'workspacez_floating_chat_position';
 
 export function FloatingChatProvider({ children }: { children: React.ReactNode }) {
   const { activeWorkspace, userProfile } = useWorkspace();
@@ -67,6 +75,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
   const [onlineUsers, setOnlineUsers] = useState<Record<string, PresenceUser>>({});
   const [notificationPrefs, setNotificationPrefs] = useState<ChatNotificationPreferences | null>(null);
   const [muteStates, setMuteStates] = useState<Record<string, { is_muted: boolean, muted_until: string | null }>>({});
+  const [stackPosition, setStackPosition] = useState<StackPosition>({ side: 'right', bottomOffset: 24 });
   
   const lastSoundPlayRef = useRef<number>(0);
   const isHydratedRef = useRef<boolean>(false);
@@ -145,7 +154,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
 
       setTotalUnreadCount(total);
     } catch (err) {
-      // Silently handle errors in background refresh
+      // Silently handle errors
     }
   }, [supabase]);
 
@@ -168,18 +177,24 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     }
   }, [notificationPrefs]);
 
-  // PERSISTENCE: Hydrate from localStorage
+  // PERSISTENCE: Hydrate
   useEffect(() => {
     if (typeof window === 'undefined' || !userProfile) return;
 
     try {
-      const saved = localStorage.getItem(BUBBLE_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const savedBubbles = localStorage.getItem(BUBBLE_STORAGE_KEY);
+      if (savedBubbles) {
+        const parsed = JSON.parse(savedBubbles);
         if (Array.isArray(parsed)) {
-          // Basic validation to ignore malformed data
-          const validBubbles = parsed.filter(b => b && b.id && b.workspace_id);
-          setFloatingBubbles(validBubbles);
+          setFloatingBubbles(parsed.filter(b => b && b.id));
+        }
+      }
+
+      const savedPos = localStorage.getItem(POSITION_STORAGE_KEY);
+      if (savedPos) {
+        const parsed = JSON.parse(savedPos);
+        if (parsed && typeof parsed.bottomOffset === 'number') {
+          setStackPosition(parsed);
         }
       }
     } catch (err) {
@@ -189,14 +204,18 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     }
   }, [userProfile]);
 
-  // PERSISTENCE: Sync changes to localStorage
+  // PERSISTENCE: Sync
   useEffect(() => {
     if (typeof window === 'undefined' || !userProfile || !isHydratedRef.current) return;
-    
     localStorage.setItem(BUBBLE_STORAGE_KEY, JSON.stringify(floatingBubbles));
   }, [floatingBubbles, userProfile]);
 
-  // Presence logic
+  useEffect(() => {
+    if (typeof window === 'undefined' || !userProfile || !isHydratedRef.current) return;
+    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(stackPosition));
+  }, [stackPosition, userProfile]);
+
+  // Presence
   useEffect(() => {
     if (!activeWorkspace || !userProfile) {
       setOnlineUsers({});
@@ -248,19 +267,6 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     fetchUnreadData();
     fetchNotificationPrefs();
 
-    const channel = supabase
-      .channel('chat_global_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, () => {
-        fetchUnreadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_channel_read_states' }, () => {
-        fetchUnreadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_channel_mutes' }, () => {
-        fetchUnreadData();
-      })
-      .subscribe();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') {
         setTotalUnreadCount(0);
@@ -271,6 +277,7 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
         setMuteStates({});
         if (typeof window !== 'undefined') {
           localStorage.removeItem(BUBBLE_STORAGE_KEY);
+          localStorage.removeItem(POSITION_STORAGE_KEY);
         }
       } else {
         fetchUnreadData();
@@ -279,7 +286,6 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     });
 
     return () => {
-      supabase.removeChannel(channel);
       subscription.unsubscribe();
     };
   }, [supabase, fetchUnreadData, fetchNotificationPrefs]);
@@ -301,6 +307,10 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     setExpandedChannelId(prev => prev === chatId ? null : chatId);
   }, []);
 
+  const updateStackPosition = useCallback((pos: StackPosition) => {
+    setStackPosition(pos);
+  }, []);
+
   return (
     <FloatingChatContext.Provider value={{
       floatingBubbles,
@@ -309,9 +319,11 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
       onlineUsers,
       notificationPrefs,
       muteStates,
+      stackPosition,
       addBubble,
       removeBubble,
       toggleExpand,
+      updateStackPosition,
       refreshUnread: fetchUnreadData,
       refreshNotificationPrefs: fetchNotificationPrefs,
       updateNotificationPrefs,
