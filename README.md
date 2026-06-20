@@ -5,6 +5,7 @@ A modern, full-stack team productivity suite built with Next.js, Supabase, and S
 ## Features
 - **Intelligent Dashboard**: Real-time overview of tasks, workload, and activity logs.
 - **Task Management**: Robust system with subtasks, due dates, priority levels, and member assignment.
+- **PWA Support**: Installable application with offline capabilities and real-time push notifications.
 - **Trash & Recovery**: Secure deletion and restoration for tasks, notes, and notifications.
 - **Collaboration**: Real-time workspace chat and shared notes (knowledge base).
 - **Admin Control**: Granular role-based permissions, member management, and audit logs.
@@ -18,6 +19,22 @@ A modern, full-stack team productivity suite built with Next.js, Supabase, and S
 - **UI Components**: [Shadcn UI](https://ui.shadcn.com/)
 - **Icons**: [Lucide React](https://lucide.dev/)
 - **AI Integration**: [Genkit](https://github.com/firebase/genkit)
+
+## Push Notifications Setup
+
+To enable PWA Push Notifications, you must configure VAPID keys:
+
+1. Generate keys:
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+
+2. Add the following to your `.env.local`:
+   - `NEXT_PUBLIC_VAPID_PUBLIC_KEY`: (The public key generated above)
+   - `VAPID_PRIVATE_KEY`: (The private key generated above)
+   - `VAPID_SUBJECT`: `mailto:your-email@example.com`
+
+3. Ensure the `public/sw.js` file exists.
 
 ## Getting Started
 

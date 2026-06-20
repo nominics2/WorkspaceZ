@@ -21,9 +21,13 @@ import {
   Moon,
   Monitor,
   Palette,
-  Sparkles
+  Sparkles,
+  Smartphone,
+  AlertTriangle,
+  Info
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
+import { usePushNotifications } from "@/components/providers/PushNotificationProvider";
 import { createClient } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +45,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { useRouter } from "next/navigation";
 
 type TabType = 'profile' | 'appearance' | 'notifications';
@@ -49,6 +54,7 @@ const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`
 
 export default function SettingsPage() {
   const { activeWorkspace, userProfile, refreshWorkspaces, themePreference, setThemePreference } = useWorkspace();
+  const { isSupported, isSubscribed, permissionState, isIOS, isStandalone, isLoading: pushLoading, enablePush, disablePush } = usePushNotifications();
   const [activeTab, setActiveTab] = useState<TabType>('profile');
   const [storageUsage, setStorageUsage] = useState({ used: 0, limit: 1024 * 1024 * 1024 }); 
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -548,6 +554,55 @@ export default function SettingsPage() {
 
           {activeTab === 'notifications' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+              <Card className="border-none shadow-sm bg-white dark:bg-slate-900">
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <Smartphone className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">Push Notifications</CardTitle>
+                      <CardDescription>Stay updated even when Workspace Z is closed.</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {!isSupported ? (
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-900/30 flex gap-3">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-bold text-amber-900 dark:text-amber-400">Push Not Supported</p>
+                        <p className="text-xs text-amber-700 dark:text-amber-500 leading-relaxed">
+                          {isIOS && !isStandalone 
+                            ? "Install Workspace Z to your Home Screen, then open it from the app icon to enable push notifications." 
+                            : "Your browser does not support standard Web Push notifications. Try using a modern browser like Chrome, Edge, or Safari."}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border dark:border-slate-800">
+                        <div className="space-y-0.5">
+                          <Label className="text-sm font-bold">Browser Alerts</Label>
+                          <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-tight">Status: {isSubscribed ? 'Enabled' : permissionState === 'denied' ? 'Permission Blocked' : 'Disabled'}</p>
+                        </div>
+                        <Switch 
+                          checked={isSubscribed} 
+                          onCheckedChange={(checked) => checked ? enablePush() : disablePush()}
+                          disabled={pushLoading}
+                        />
+                      </div>
+                      
+                      {permissionState === 'denied' && (
+                        <p className="text-[10px] text-rose-500 font-bold flex items-center gap-1.5 px-1">
+                          <Info className="w-3 h-3" /> Notifications are blocked in your browser settings.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-bold text-slate-950 dark:text-slate-100">Notification History</h2>
