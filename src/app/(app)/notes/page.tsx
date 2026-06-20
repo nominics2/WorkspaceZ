@@ -145,7 +145,10 @@ function NotesPageContent() {
       await fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
-    } finally { setSaving(false); forceUnlockUI(); }
+    } finally { 
+      setSaving(false); 
+      forceUnlockUI(); 
+    }
   };
 
   const handleMoveToTrash = async (note: any) => {
@@ -161,7 +164,10 @@ function NotesPageContent() {
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
-    } finally { setSaving(false); forceUnlockUI(); }
+    } finally { 
+      setSaving(false); 
+      forceUnlockUI(); 
+    }
   };
 
   const handleOpenEdit = (note: any) => {
@@ -254,7 +260,7 @@ function NotesPageContent() {
           </div>
           <div>
             <p className="font-extrabold text-xl text-slate-900 dark:text-slate-100">Your Knowledge Base is Empty</p>
-            <p className="text-muted-foreground text-sm max-w-xs mx-auto mt-1">Start capturing ideas, instructions, or meeting minutes here.</p>
+            <p className="text-muted-foreground text-sm max-w-xs mx-auto mt-1">Start capturing ideas, instructions, or meeting summaries here.</p>
           </div>
           <Button variant="outline" className="mt-4 rounded-xl border-slate-200 dark:border-slate-800" onClick={() => setIsModalOpen(true)}>Create First Note</Button>
         </div>
@@ -276,11 +282,11 @@ function NotesPageContent() {
                     </Badge>
                     <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                       <DropdownMenuTrigger asChild>
-                        <button className="text-slate-300 hover:text-primary transition-colors p-1"><MoreVertical className="w-4 h-4" /></button>
+                        <button className="text-slate-300 hover:text-primary transition-colors p-1 focus:outline-none"><MoreVertical className="w-4 h-4" /></button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="dark:bg-slate-900 dark:border-slate-800 rounded-xl">
-                        <DropdownMenuItem onClick={() => handleOpenEdit(note)} className="gap-2"><Layout className="w-4 h-4" /> Edit Details</DropdownMenuItem>
-                        <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10 gap-2" onClick={() => handleMoveToTrash(note)}><Trash2 className="w-4 h-4" /> Remove to Trash</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleOpenEdit(note)} className="gap-2 focus:bg-slate-100 dark:focus:bg-slate-800"><Layout className="w-4 h-4" /> Edit Details</DropdownMenuItem>
+                        <DropdownMenuItem className="text-rose-500 dark:hover:bg-rose-500/10 gap-2 focus:bg-rose-50 dark:focus:bg-rose-500/10" onClick={() => handleMoveToTrash(note)}><Trash2 className="w-4 h-4" /> Remove to Trash</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -314,7 +320,7 @@ function NotesPageContent() {
       )}
 
       <Dialog open={isModalOpen} onOpenChange={(open) => { setIsModalOpen(open); if (!open) { setEditingNote(null); forceUnlockUI(); } }}>
-        <DialogContent className="max-w-2xl p-0 overflow-hidden dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] shadow-2xl">
+        <DialogContent className="max-w-2xl p-0 overflow-hidden dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] shadow-2xl border-none">
           <div className={cn("h-2 w-full", NOTE_COLORS.find(c => c.id === form.color)?.bg || 'bg-primary')} />
           <div className="p-8">
             <DialogHeader className="mb-6">
@@ -323,14 +329,14 @@ function NotesPageContent() {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label className="text-[11px] font-extrabold uppercase tracking-widest text-slate-400 ml-1">Title</Label>
-                <Input value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Give your note a clear heading..." required disabled={saving} className="h-12 text-base font-bold dark:bg-slate-900 dark:border-slate-800 rounded-xl focus-visible:ring-primary/20" />
+                <Input value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Give your note a clear heading..." required disabled={saving} className="h-12 text-base font-bold dark:bg-slate-900 dark:border-slate-800 rounded-xl focus-visible:ring-primary/20 border-none bg-slate-50 dark:bg-slate-900 shadow-none" />
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label className="text-[11px] font-extrabold uppercase tracking-widest text-slate-400 ml-1">Visibility</Label>
                   <Select value={form.visibility} onValueChange={(v: any) => setForm({...form, visibility: v})}>
-                    <SelectTrigger className="h-11 dark:bg-slate-900 dark:border-slate-800 rounded-xl">
+                    <SelectTrigger className="h-11 dark:bg-slate-900 dark:border-slate-800 rounded-xl border-none shadow-none bg-slate-50">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="dark:bg-slate-900 dark:border-slate-800">
@@ -350,7 +356,7 @@ function NotesPageContent() {
                         className={cn(
                           "w-7 h-7 rounded-full transition-all hover:scale-110 shadow-sm flex items-center justify-center relative",
                           c.bg,
-                          form.color === c.id ? "ring-2 ring-primary ring-offset-2 dark:ring-offset-slate-950" : "opacity-80"
+                          form.color === c.id ? "ring-2 ring-primary ring-offset-2 dark:ring-offset-slate-950 scale-110" : "opacity-80"
                         )}
                         title={c.label}
                       >
@@ -363,10 +369,10 @@ function NotesPageContent() {
 
               <div className="space-y-2">
                 <Label className="text-[11px] font-extrabold uppercase tracking-widest text-slate-400 ml-1">Content</Label>
-                <Textarea value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Detailed insights, documentation, or meeting summaries..." rows={10} required disabled={saving} className="text-base leading-relaxed dark:bg-slate-900 dark:border-slate-800 rounded-2xl resize-none focus-visible:ring-primary/20" />
+                <Textarea value={form.content} onChange={e => setForm({...form, content: e.target.value})} placeholder="Detailed insights, documentation, or meeting summaries..." rows={10} required disabled={saving} className="text-base leading-relaxed dark:bg-slate-900 dark:border-slate-800 rounded-2xl resize-none focus-visible:ring-primary/20 border-none bg-slate-50 shadow-none" />
               </div>
 
-              <DialogFooter className="gap-3 pt-4 border-t dark:border-slate-800 mt-4">
+              <DialogFooter className="gap-3 pt-6 border-t dark:border-slate-800 mt-4">
                 <Button type="button" variant="ghost" onClick={() => { setIsModalOpen(false); forceUnlockUI(); }} disabled={saving} className="rounded-xl h-11 px-6 font-bold text-slate-500">Cancel</Button>
                 <Button type="submit" disabled={saving || !form.title.trim()} className="rounded-xl h-11 px-8 shadow-lg shadow-primary/20 font-bold min-w-[140px]">
                   {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : editingNote ? 'Update Note' : 'Create Note'}
