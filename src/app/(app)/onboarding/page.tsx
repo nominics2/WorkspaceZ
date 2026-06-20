@@ -20,24 +20,42 @@ import {
   Bell, 
   Flag,
   UserCircle,
-  AlertCircle
+  AlertCircle,
+  PlusCircle,
+  Users,
+  Info
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { WORKSPACE_ICON_PRESETS, getWorkspaceIconSrc } from "@/lib/workspace-icons";
 
 const ONBOARDING_STEPS = [
   { id: 'welcome', title: 'Welcome', description: 'Welcome to WorkspaceZ', icon: Sparkles },
   { id: 'profile', title: 'Profile', description: 'Set up your identity', icon: User },
   { id: 'workspace', title: 'Workspace', description: 'Create or join a team', icon: Layout },
+  { id: 'teams', title: 'Setup Teams', description: 'Organize your focus', icon: Flag },
   { id: 'install', title: 'Install App', description: 'Get the best experience', icon: Smartphone },
   { id: 'notifications', title: 'Notifications', description: 'Stay in the loop', icon: Bell },
-  { id: 'features', title: 'Updates & Features', description: 'Explore what is new', icon: Flag },
   { id: 'finish', title: 'Finish', description: 'You are all set!', icon: Check },
 ];
 
 const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`);
+
+/**
+ * Normalizes the join status returned from the Supabase RPC.
+ */
+function normalizeJoinStatus(result: unknown): string | null {
+  if (typeof result === "string") return result;
+  if (result && typeof result === "object") {
+    const value = result as Record<string, unknown>;
+    if (typeof value.status === "string") return value.status;
+    if (typeof value.join_status === "string") return value.join_status;
+    if (typeof value.member_status === "string") return value.member_status;
+  }
+  return null;
+}
 
 export default function OnboardingPage() {
   const { loading, workspaces, userProfile, refreshWorkspaces } = useWorkspace();
@@ -54,6 +72,14 @@ export default function OnboardingPage() {
     avatar_preset: "" as string | null
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Workspace Choice State
+  const [workspaceMode, setWorkspaceMode] = useState<"choice" | "create" | "join">("choice");
+  const [workspaceForm, setWorkspaceForm] = useState({
+    name: "",
+    icon_preset: "preset_1",
+    join_code: ""
+  });
 
   // Initialize form from userProfile
   useEffect(() => {
@@ -91,7 +117,6 @@ export default function OnboardingPage() {
     } else if (!/^[a-z0-9_]{3,20}$/.test(username)) {
       newErrors.username = "3-20 characters, lowercase, numbers, or underscores only";
     } else {
-      // Uniqueness check
       const { data, error } = await supabase
         .from('profiles')
         .select('id')
@@ -116,7 +141,6 @@ export default function OnboardingPage() {
       const isValid = await validateProfile();
       if (!isValid) return;
 
-      // 1. Update Profile in DB
       const { error: profileError } = await supabase
         .from('profiles')
         .update({
@@ -129,7 +153,6 @@ export default function OnboardingPage() {
 
       if (profileError) throw profileError;
 
-      // 2. Update Onboarding Progress
       const { error: onboardingError } = await supabase.rpc('update_my_onboarding', {
         p_current_step: 'workspace_choice',
         p_profile_completed: true
@@ -137,10 +160,7 @@ export default function OnboardingPage() {
 
       if (onboardingError) throw onboardingError;
 
-      // Refresh global state so providers know profile is updated
       await refreshWorkspaces();
-      
-      // Advance to next step
       setCurrentStepIndex(currentStepIndex + 1);
     } catch (err: any) {
       toast({
@@ -153,9 +173,114 @@ export default function OnboardingPage() {
     }
   };
 
+  const handleWorkspaceCreate = async () => {
+    if (saving || !workspaceForm.name.trim()) return;
+    setSaving(true);
+    try {
+      // 1. Create workspace
+      const { data: wsId, error } = await supabase.rpc("create_workspace", {
+        p_name: workspaceForm.name.trim(),
+      });
+
+      if (error) {
+        console.error("[Workspace Create] RPC Error:", error);
+        throw error;
+      }
+
+      // 2. Set icon preset
+      if (wsId) {
+        const { error: iconError } = await supabase.rpc("update_workspace_icon_preset", {
+          p_workspace_id: wsId,
+          p_icon_preset: workspaceForm.icon_preset
+        });
+        if (iconError) console.error("[Icon Setup] Failed to set preset:", iconError);
+      }
+
+      // 3. Mark Onboarding
+      const { error: onboardingError } = await supabase.rpc('update_my_onboarding', {
+        p_current_step: 'teams',
+        p_workspace_completed: true
+      });
+
+      if (onboardingError) throw onboardingError;
+
+      await refreshWorkspaces();
+      toast({ title: "Workspace Created", description: `Welcome to ${workspaceForm.name}!` });
+      setCurrentStepIndex(currentStepIndex + 1);
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Creation Failed", 
+        description: err.message || "Unable to establish new workspace." 
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleWorkspaceJoin = async () => {
+    if (saving || !workspaceForm.join_code.trim()) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.rpc('request_join_workspace_by_code', {
+        p_join_code: workspaceForm.join_code.trim().toUpperCase()
+      });
+
+      if (error) {
+        console.error("[Workspace Join] RPC Error:", error);
+        throw error;
+      }
+
+      const joinStatus = normalizeJoinStatus(data);
+      const successStatuses = ['joined', 'active', 'already_member', 'success', 'approved'];
+
+      if (successStatuses.includes(joinStatus || '')) {
+        // Mark Onboarding
+        const { error: onboardingError } = await supabase.rpc('update_my_onboarding', {
+          p_current_step: 'install_app',
+          p_workspace_completed: true
+        });
+
+        if (onboardingError) throw onboardingError;
+
+        await refreshWorkspaces();
+        
+        toast({ 
+          title: "Connection Established", 
+          description: "You have successfully joined the team workspace." 
+        });
+
+        // Skip Teams step if joining an existing one
+        setCurrentStepIndex(ONBOARDING_STEPS.findIndex(s => s.id === 'install'));
+      } else {
+        toast({ 
+          variant: "destructive", 
+          title: "Invalid Code", 
+          description: "Please check your workspace code and try again." 
+        });
+      }
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Join Error", 
+        description: err.message || "An error occurred while connecting to the workspace." 
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleNext = async () => {
     if (currentStep.id === 'profile') {
       await handleProfileSave();
+    } else if (currentStep.id === 'workspace') {
+      if (workspaceMode === 'choice') {
+        toast({ title: "Workspace Required", description: "Please create or join a workspace to continue." });
+      } else if (workspaceMode === 'create') {
+        await handleWorkspaceCreate();
+      } else {
+        await handleWorkspaceJoin();
+      }
     } else if (currentStepIndex < ONBOARDING_STEPS.length - 1) {
       setCurrentStepIndex(currentStepIndex + 1);
     } else {
@@ -164,6 +289,10 @@ export default function OnboardingPage() {
   };
 
   const handleBack = () => {
+    if (currentStep.id === 'workspace' && workspaceMode !== 'choice') {
+      setWorkspaceMode('choice');
+      return;
+    }
     if (currentStepIndex > 0) {
       setCurrentStepIndex(currentStepIndex - 1);
     }
@@ -346,7 +475,113 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {currentStepIndex > 1 && (
+              {currentStep.id === 'workspace' && (
+                <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+                  {workspaceMode === 'choice' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <button 
+                        onClick={() => setWorkspaceMode('create')}
+                        className="p-8 rounded-[2.5rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-primary transition-all flex flex-col items-center text-center gap-6 group/choice shadow-xl"
+                      >
+                        <div className="p-6 bg-primary/10 rounded-[2rem] group-hover/choice:bg-primary group-hover/choice:text-white transition-all">
+                          <PlusCircle className="w-12 h-12" />
+                        </div>
+                        <div className="space-y-2">
+                          <h3 className="text-xl font-bold dark:text-white">Create New</h3>
+                          <p className="text-sm text-slate-500 leading-relaxed">Establish a dedicated space for your team projects.</p>
+                        </div>
+                      </button>
+
+                      <button 
+                        onClick={() => setWorkspaceMode('join')}
+                        className="p-8 rounded-[2.5rem] bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 hover:border-accent transition-all flex flex-col items-center text-center gap-6 group/choice shadow-xl"
+                      >
+                        <div className="p-6 bg-accent/10 rounded-[2rem] group-hover/choice:bg-accent group-hover/choice:text-white transition-all">
+                          <Users className="w-12 h-12" />
+                        </div>
+                        <div className="space-y-2">
+                          <h3 className="text-xl font-bold dark:text-white">Join Existing</h3>
+                          <p className="text-sm text-slate-500 leading-relaxed">Enter a workspace code provided by your administrator.</p>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+
+                  {workspaceMode === 'create' && (
+                    <div className="space-y-8 animate-in slide-in-from-right-4">
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Workspace Name</Label>
+                          <Input 
+                            placeholder="e.g. Acme Creative Agency"
+                            value={workspaceForm.name}
+                            onChange={e => setWorkspaceForm(f => ({ ...f, name: e.target.value }))}
+                            className="h-12 text-lg rounded-xl border-none bg-slate-50 dark:bg-slate-800"
+                            disabled={saving}
+                          />
+                        </div>
+
+                        <div className="space-y-4">
+                          <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 ml-1">Workspace Identity</Label>
+                          <div className="grid grid-cols-5 gap-4">
+                            {WORKSPACE_ICON_PRESETS.map((preset) => (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                onClick={() => setWorkspaceForm(f => ({ ...f, icon_preset: preset.id }))}
+                                className={cn(
+                                  "aspect-square rounded-2xl overflow-hidden border-4 transition-all hover:scale-105 relative bg-white",
+                                  workspaceForm.icon_preset === preset.id 
+                                    ? "border-primary ring-4 ring-primary/20 shadow-xl scale-105" 
+                                    : "border-slate-100 dark:border-slate-800 opacity-60 grayscale-[0.5]"
+                                )}
+                              >
+                                <img src={preset.src} alt={preset.label} className="w-full h-full object-cover" />
+                                {workspaceForm.icon_preset === preset.id && (
+                                  <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
+                                    <Check className="w-6 h-6 text-primary" />
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {workspaceMode === 'join' && (
+                    <div className="space-y-8 animate-in slide-in-from-right-4">
+                      <div className="space-y-6">
+                        <div className="space-y-2 text-center max-w-sm mx-auto">
+                          <Label className="text-xs font-bold uppercase tracking-widest text-slate-500 block mb-4">Workspace Code</Label>
+                          <Input 
+                            placeholder="ABC-12345"
+                            value={workspaceForm.join_code}
+                            onChange={e => setWorkspaceForm(f => ({ ...f, join_code: e.target.value }))}
+                            className="h-16 text-2xl font-mono text-center tracking-widest rounded-2xl border-none bg-slate-50 dark:bg-slate-800 uppercase"
+                            disabled={saving}
+                            maxLength={10}
+                          />
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight mt-3">Enter the unique code shared by your admin</p>
+                        </div>
+
+                        <div className="p-6 bg-amber-50 dark:bg-amber-950/20 rounded-[2rem] border border-amber-100 dark:border-amber-900/30 flex gap-4 max-w-md mx-auto">
+                          <Info className="w-6 h-6 text-amber-500 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <p className="text-sm font-bold text-amber-900 dark:text-amber-400">Join Request Status</p>
+                            <p className="text-xs text-amber-700 dark:text-amber-500 leading-relaxed">
+                              You will join the workspace immediately. Some features may be restricted until an admin verifies your account.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {currentStepIndex > 1 && currentStep.id !== 'workspace' && (
                 <div className="flex flex-col items-center justify-center text-center">
                   <div className="p-16 rounded-[4rem] bg-slate-50 dark:bg-slate-800/40 mb-12 border dark:border-slate-800 shadow-inner group-hover:scale-105 transition-transform duration-700">
                     <StepIcon className="w-24 h-20 text-slate-300 dark:text-slate-700 animate-pulse" />
@@ -376,14 +611,16 @@ export default function OnboardingPage() {
               
               <Button 
                 onClick={handleNext}
-                disabled={saving}
+                disabled={saving || (currentStep.id === 'workspace' && workspaceMode === 'choice')}
                 className="rounded-2xl h-16 px-16 shadow-2xl shadow-primary/30 font-black text-xl transition-all active:scale-95 group/btn"
               >
                 {saving ? (
                   <Loader2 className="w-6 h-6 animate-spin" />
                 ) : (
                   <>
-                    {currentStepIndex === ONBOARDING_STEPS.length - 1 ? 'Go to Dashboard' : 'Next Step'}
+                    {currentStepIndex === ONBOARDING_STEPS.length - 1 ? 'Go to Dashboard' : 
+                     (currentStep.id === 'workspace' && workspaceMode === 'join' ? 'Join Workspace' : 
+                      currentStep.id === 'workspace' && workspaceMode === 'create' ? 'Create Workspace' : 'Next Step')}
                     {currentStepIndex !== ONBOARDING_STEPS.length - 1 && <ChevronRight className="w-6 h-6 ml-3 group-hover/btn:translate-x-1 transition-transform" />}
                   </>
                 )}
