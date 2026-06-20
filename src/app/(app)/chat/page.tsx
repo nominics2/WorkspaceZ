@@ -256,7 +256,7 @@ export default function ChatPage() {
 
   // Attachment State
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   // Gallery State
   const [isMediaSheetOpen, setIsMediaSheetOpen] = useState(false);
@@ -1376,7 +1376,7 @@ export default function ChatPage() {
     if (selectedChatId) {
       fetchMessages(selectedChatId);
       markAsRead(selectedChatId);
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setIsSearchOpen(false);
       setInChatSearchQuery("");
       setInChatSearchResults([]);
@@ -1473,26 +1473,56 @@ export default function ChatPage() {
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ variant: "destructive", title: "File too large", description: "Maximum size is 5MB." });
-      return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    let newValidFiles: File[] = [];
+    let skippedSize = false;
+    let skippedCount = false;
+
+    const currentTotal = selectedFiles.length;
+    
+    for (const file of files) {
+      if (newValidFiles.length + currentTotal >= 5) {
+        skippedCount = true;
+        break;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        skippedSize = true;
+        continue;
+      }
+      // Avoid exact duplicates
+      const isDuplicate = selectedFiles.some(f => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified);
+      if (!isDuplicate) {
+        newValidFiles.push(file);
+      }
     }
-    setSelectedFile(file);
+
+    if (newValidFiles.length > 0) {
+      setSelectedFiles(prev => [...prev, ...newValidFiles]);
+    }
+
+    if (skippedCount) {
+      toast({ variant: "destructive", title: "Limit reached", description: "You can attach up to 5 files per message." });
+    } else if (skippedSize) {
+      toast({ variant: "destructive", title: "Files skipped", description: "Some files were skipped because they are larger than 5MB." });
+    }
+
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleSendMessage = async () => {
     const text = messageInput.trim();
     const chatObj = chats.find(c => c.id === selectedChatId);
-    if (!chatObj || !userProfile || (!text && !selectedFile) || isSending) return;
+    if (!chatObj || !userProfile || (!text && selectedFiles.length === 0) || isSending) return;
 
     setIsSending(true);
     sendTypingStatus(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     
     let messageId: string | null = null;
+    const uploadedPaths: string[] = [];
+
     try {
       const { data: msgData, error: sendError } = await supabase
         .from('chat_messages')
@@ -1509,40 +1539,52 @@ export default function ChatPage() {
       if (sendError) throw sendError;
       messageId = msgData.id;
 
-      if (selectedFile) {
-        const safeName = sanitizeFileName(selectedFile.name);
-        const storagePath = `${chatObj.workspace_id}/${chatObj.id}/${messageId}/${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from('chat-attachments')
-          .upload(storagePath, selectedFile, { upsert: false, contentType: selectedFile.type });
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const safeName = sanitizeFileName(file.name);
+          const storagePath = `${chatObj.workspace_id}/${chatObj.id}/${messageId}/${safeName}`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('chat-attachments')
+            .upload(storagePath, file, { upsert: false, contentType: file.type });
 
-        if (uploadError) {
-          await supabase.from('chat_messages').delete().eq('id', messageId);
-          throw uploadError;
-        }
+          if (uploadError) {
+            // Cleanup: remove what we uploaded so far and the message
+            if (uploadedPaths.length > 0) {
+              await supabase.storage.from('chat-attachments').remove(uploadedPaths);
+            }
+            await supabase.from('chat_messages').delete().eq('id', messageId);
+            throw uploadError;
+          }
+          
+          uploadedPaths.push(storagePath);
 
-        const { error: attachError } = await supabase
-          .from('chat_message_attachments')
-          .insert({
-            workspace_id: chatObj.workspace_id,
-            channel_id: chatObj.id,
-            message_id: messageId,
-            uploaded_by: userProfile.id,
-            file_name: selectedFile.name,
-            file_path: storagePath,
-            file_type: selectedFile.type || null,
-            file_size_bytes: selectedFile.size
-          });
+          const { error: attachError } = await supabase
+            .from('chat_message_attachments')
+            .insert({
+              workspace_id: chatObj.workspace_id,
+              channel_id: chatObj.id,
+              message_id: messageId,
+              uploaded_by: userProfile.id,
+              file_name: file.name,
+              file_path: storagePath,
+              file_type: file.type || null,
+              file_size_bytes: file.size
+            });
 
-        if (attachError) {
-          await supabase.storage.from('chat-attachments').remove([storagePath]);
-          await supabase.from('chat_messages').delete().eq('id', messageId);
-          throw attachError;
+          if (attachError) {
+            // Cleanup
+            if (uploadedPaths.length > 0) {
+              await supabase.storage.from('chat-attachments').remove(uploadedPaths);
+            }
+            await supabase.from('chat_messages').delete().eq('id', messageId);
+            throw attachError;
+          }
         }
       }
       
       setMessageInput("");
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setReplyingToMessage(null);
       await fetchMessages(chatObj.id);
       fetchUnreadCounts();
@@ -1786,7 +1828,12 @@ export default function ChatPage() {
                              </div>
                           </div>
                         ) : (
-                          <div className={cn("px-4 py-3 rounded-2xl shadow-sm text-sm leading-relaxed border-2 border-transparent transition-all relative", isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700", isHighlighted && "border-primary ring-4 ring-primary/20")}>
+                          <div className={cn(
+                            "rounded-2xl shadow-sm text-sm leading-relaxed border-2 border-transparent transition-all relative", 
+                            isMe ? "bg-primary text-white rounded-tr-none" : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border dark:border-slate-700", 
+                            isHighlighted && "border-primary ring-4 ring-primary/20",
+                            msg.message ? "px-4 py-3" : "p-1"
+                          )}>
                             {/* Reply Preview inside Bubble */}
                             {msg.reply_to && (
                               <div 
@@ -1803,9 +1850,9 @@ export default function ChatPage() {
                               </div>
                             )}
 
-                            {msg.message}
+                            {msg.message && <p className={cn(msg.attachments?.length ? "mb-3" : "")}>{msg.message}</p>}
                             {msg.attachments && msg.attachments.length > 0 && (
-                              <div className="space-y-3 mt-4">
+                              <div className={cn("space-y-3", msg.message ? "mt-2" : "mt-0")}>
                                 {msg.attachments.map(att => {
                                   const isImage = att.file_type?.startsWith('image/');
                                   return (
@@ -1966,14 +2013,36 @@ export default function ChatPage() {
                 </div>
               )}
 
-              {selectedFile && <div className="mb-4 flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border dark:border-slate-800">
-                <div className="flex items-center gap-3 overflow-hidden"><div className="p-2 bg-primary/10 rounded-lg"><Paperclip className="w-4 h-4 text-primary" /></div><div className="min-w-0"><p className="text-sm font-bold truncate">{selectedFile.name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(selectedFile.size)}</p></div></div><Button variant="ghost" size="icon" aria-label="Remove Attachment" onClick={() => setSelectedFile(null)}><X className="w-4 h-4" /></Button>
-              </div>}
+              {selectedFiles.length > 0 && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {selectedFiles.map((file, idx) => (
+                    <div key={`${file.name}-${idx}`} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border dark:border-slate-800 animate-in zoom-in-95 duration-200 group">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        <Paperclip className="w-4 h-4 text-primary" />
+                      </div>
+                      <div className="min-w-0 max-w-[150px]">
+                        <p className="text-xs font-bold truncate">{file.name}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase">{formatBytes(file.size)}</p>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        aria-label="Remove Attachment" 
+                        className="h-7 w-7 rounded-full hover:bg-rose-500/10 hover:text-rose-500" 
+                        onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
-                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
+                <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} multiple />
                 <Button variant="ghost" size="icon" aria-label="Attach File" className="text-slate-400 hover:text-primary rounded-xl shrink-0" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip className="w-5 h-5" /></Button>
                 <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder="Compose message..." value={messageInput} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} />
-                <Button size="icon" aria-label="Send" onClick={handleSendMessage} className={cn("rounded-xl transition-all", (messageInput.trim() || selectedFile) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && !selectedFile) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
+                <Button size="icon" aria-label="Send" onClick={handleSendMessage} className={cn("rounded-xl transition-all", (messageInput.trim() || selectedFiles.length > 0) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && selectedFiles.length === 0) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
               </div>
             </div>
           </>
@@ -2522,4 +2591,3 @@ export default function ChatPage() {
     </div>
   );
 }
-
