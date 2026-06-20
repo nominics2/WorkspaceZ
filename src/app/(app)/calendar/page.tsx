@@ -80,8 +80,12 @@ export default function CalendarPage() {
 
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
-      document.body.style.pointerEvents = "";
-      document.body.style.overflow = "";
+      document.body.style.pointerEvents = "auto";
+      document.body.style.overflow = "auto";
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+        document.body.style.overflow = "";
+      }, 300);
     }
   }, []);
 
@@ -241,7 +245,7 @@ export default function CalendarPage() {
 
           {/* Quick Filters */}
           <div className="flex items-center gap-2">
-            <Select value={filters.teamId} onValueChange={v => setFilters(f => ({...f, teamId: v}))}>
+            <Select value={filters.teamId} onValueChange={v => setFilters(f => ({...f, teamId: v}))} onOpenChange={(open) => !open && forceUnlockUI()}>
               <SelectTrigger className="w-[140px] h-9 rounded-xl border dark:border-slate-800 text-xs font-bold bg-white dark:bg-slate-950 shadow-none">
                 <Layout className="w-3.5 h-3.5 mr-2 text-primary" />
                 <SelectValue placeholder="Team" />

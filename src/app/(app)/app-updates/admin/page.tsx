@@ -150,8 +150,12 @@ export default function AppUpdatesAdminPage() {
 
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
-      document.body.style.pointerEvents = "";
-      document.body.style.overflow = "";
+      document.body.style.pointerEvents = "auto";
+      document.body.style.overflow = "auto";
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+        document.body.style.overflow = "";
+      }, 300);
     }
   }, []);
 
@@ -909,7 +913,7 @@ export default function AppUpdatesAdminPage() {
             <form onSubmit={handleSaveRequestReview} className="space-y-6">
               <div className="space-y-2">
                 <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Update Status</Label>
-                <Select value={reviewForm.status} onValueChange={v => setReviewForm({...reviewForm, status: v})}>
+                <Select value={reviewForm.status} onValueChange={v => setReviewForm({...reviewForm, status: v})} onOpenChange={(open) => !open && forceUnlockUI()}>
                   <SelectTrigger className="rounded-xl h-11 dark:bg-slate-900 border-none">
                     <SelectValue />
                   </SelectTrigger>
@@ -963,7 +967,7 @@ export default function AppUpdatesAdminPage() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Type</Label>
-                  <Select value={updateForm.update_type} onValueChange={v => setUpdateForm({...updateForm, update_type: v})}>
+                  <Select value={updateForm.update_type} onValueChange={v => setUpdateForm({...updateForm, update_type: v})} onOpenChange={(open) => !open && forceUnlockUI()}>
                     <SelectTrigger className="rounded-xl h-11 dark:bg-slate-900 border-none">
                       <SelectValue />
                     </SelectTrigger>
@@ -1013,7 +1017,7 @@ export default function AppUpdatesAdminPage() {
               <div className="space-y-4">
                  <div className="flex items-center justify-between">
                     <Label className="text-xs font-bold uppercase tracking-widest text-slate-500">Audience Targeting</Label>
-                    <Select value={updateForm.audience_type} onValueChange={v => setUpdateForm({...updateForm, audience_type: v, target_ids: []})}>
+                    <Select value={updateForm.audience_type} onValueChange={v => setUpdateForm({...updateForm, audience_type: v, target_ids: []})} onOpenChange={(open) => !open && forceUnlockUI()}>
                        <SelectTrigger className="w-48 h-9 rounded-xl dark:bg-slate-900 border-none text-xs">
                           <SelectValue />
                        </SelectTrigger>

@@ -117,8 +117,15 @@ export default function WorkspaceAdminPage() {
 
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
-      document.body.style.pointerEvents = "";
-      document.body.style.overflow = "";
+      // Immediate reset to override any active locks
+      document.body.style.pointerEvents = "auto";
+      document.body.style.overflow = "auto";
+      
+      // Secondary cleanup after delay to catch Radix exit transitions
+      setTimeout(() => {
+        document.body.style.pointerEvents = "";
+        document.body.style.overflow = "";
+      }, 300);
     }
   }, []);
 
@@ -200,12 +207,6 @@ export default function WorkspaceAdminPage() {
         title: "Unable to update workspace icon", 
         description: err.message 
       });
-      console.error("[Workspace Icon] Update Error:", {
-        message: err.message,
-        details: err.details,
-        hint: err.hint,
-        code: err.code
-      });
     } finally {
       setIconSubmitting(false);
     }
@@ -213,7 +214,7 @@ export default function WorkspaceAdminPage() {
 
   const handleCopyJoinCode = () => {
     if (activeWorkspace?.join_code) {
-      navigator.clipboard.maskText(activeWorkspace.join_code);
+      navigator.clipboard.writeText(activeWorkspace.join_code);
       toast({ title: "Join code copied!" });
     }
   };
@@ -502,7 +503,7 @@ export default function WorkspaceAdminPage() {
   return (
     <div className="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4"><div><h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3 text-slate-950 dark:text-slate-100"><Layers className="w-6 h-6 md:w-8 md:h-8 text-primary" />Admin Panel</h1><p className="text-sm text-muted-foreground">Manage workspace settings, members, and access.</p></div>{isAdminOrSuper && (<div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 pr-4 rounded-xl border dark:border-slate-800 shadow-sm w-full md:w-auto"><div className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-bold font-mono text-primary flex-1 text-center">{activeWorkspace?.join_code}</div><Button variant="ghost" size="icon" onClick={handleCopyJoinCode} title="Copy Join Code" className="shrink-0 dark:text-slate-400"><Copy className="w-4 h-4" /></Button></div>)}</div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6"><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4"><div className="p-2 md:p-3 bg-blue-50 dark:bg-blue-500/10 rounded-xl"><Users className="w-4 h-4 md:w-6 md:h-6 text-blue-500" /></div><div><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Members</p><p className="text-lg md:text-2xl font-bold dark:text-slate-100">{members.filter(m => m.status === 'active').length}</p></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4"><div className="p-2 md:p-3 bg-violet-50 dark:bg-violet-500/10 rounded-xl"><Layout className="w-4 h-4 md:w-6 md:h-6 text-violet-500" /></div><div><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Teams</p><p className="text-lg md:text-2xl font-bold dark:text-slate-100">{subWorkspaces.length}</p></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6 flex items-center gap-3 md:gap-4"><div className="p-2 md:p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl"><Briefcase className="w-4 h-4 md:w-6 md:h-6 text-emerald-500" /></div><div><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Allocations</p><p className="text-lg md:text-2xl font-bold dark:text-slate-100">{allocations.length}</p></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><HardDrive className="w-3 h-3 md:w-4 md:h-4 text-amber-500" /><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Storage</p></div><p className="text-[10px] font-bold text-muted-foreground">{((storage?.total_bytes_used || 0) / (1024 * 1024)).toFixed(0) || 0}MB</p></div><Progress value={((storage?.total_bytes_used || 0) / (1024 * 1024 * 1024)) * 100} className="h-1.5" /></CardContent></Card></div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6"><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6 flex items-center justify-between"><div><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Members</p><p className="text-lg md:text-2xl font-bold dark:text-slate-100">{members.filter(m => m.status === 'active').length}</p></div><div className="p-2 md:p-3 bg-blue-50 dark:bg-blue-500/10 rounded-xl"><Users className="w-4 h-4 md:w-6 md:h-6 text-blue-500" /></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6 flex items-center justify-between"><div><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Teams</p><p className="text-lg md:text-2xl font-bold dark:text-slate-100">{subWorkspaces.length}</p></div><div className="p-2 md:p-3 bg-violet-50 dark:bg-violet-500/10 rounded-xl"><Layout className="w-4 h-4 md:w-6 md:h-6 text-violet-500" /></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6 flex items-center justify-between"><div><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Allocations</p><p className="text-lg md:text-2xl font-bold dark:text-slate-100">{allocations.length}</p></div><div className="p-2 md:p-3 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl"><Briefcase className="w-4 h-4 md:w-6 md:h-6 text-emerald-500" /></div></CardContent></Card><Card className="border-none shadow-sm dark:bg-slate-900"><CardContent className="p-4 md:p-6"><div className="flex items-center justify-between mb-2"><div className="flex items-center gap-2"><HardDrive className="w-3 h-3 md:w-4 md:h-4 text-amber-500" /><p className="text-[10px] md:text-sm text-muted-foreground font-medium uppercase md:capitalize">Storage</p></div><p className="text-[10px] font-bold text-muted-foreground">{((storage?.total_bytes_used || 0) / (1024 * 1024)).toFixed(0) || 0}MB</p></div><Progress value={((storage?.total_bytes_used || 0) / (1024 * 1024 * 1024)) * 100} className="h-1.5" /></CardContent></Card></div>
       <Tabs defaultValue="members" className="space-y-6"><TabsList className="bg-white dark:bg-slate-900 border dark:border-slate-800 p-1 rounded-xl w-full flex overflow-x-auto h-auto no-scrollbar"><TabsTrigger value="members" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Members</TabsTrigger><TabsTrigger value="teams" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Teams</TabsTrigger><TabsTrigger value="allocations" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Allocations</TabsTrigger><TabsTrigger value="permissions" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Permissions</TabsTrigger>{canViewAuditLog && <TabsTrigger value="audit" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Audit</TabsTrigger>}{isAdminOrSuper && <TabsTrigger value="settings" className="rounded-lg px-4 flex-1 md:flex-none dark:data-[state=active]:bg-slate-800 dark:text-slate-400 dark:data-[state=active]:text-slate-100">Settings</TabsTrigger>}</TabsList>
         <TabsContent value="members" className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2"><h2 className="text-xl font-bold dark:text-slate-100">Workspace Members</h2><div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg overflow-x-auto no-scrollbar"><Button variant={statusFilter === "all" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("all")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">All</Button><Button variant={statusFilter === "active" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("active")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">Active</Button><Button variant={statusFilter === "pending" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("pending")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">Pending {members.filter(m => m.status === 'pending').length > 0 && <span className="ml-1 w-1.5 h-1.5 bg-primary rounded-full" />}</Button><Button variant={statusFilter === "inactive" ? "secondary" : "ghost"} size="sm" onClick={() => setStatusFilter("inactive")} className="text-xs h-7 px-3 dark:text-slate-400 dark:hover:text-slate-100">Inactive</Button></div></div>
