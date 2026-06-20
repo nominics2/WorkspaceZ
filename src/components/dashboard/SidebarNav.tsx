@@ -19,7 +19,8 @@ import {
   User,
   PanelLeft,
   ChevronLeft,
-  Plus
+  Plus,
+  Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ const navItems = [
   { label: "Chat", icon: MessageSquare, href: "/chat" },
   { label: "Calendar", icon: Calendar, href: "/calendar" },
   { label: "Notes", icon: StickyNote, href: "/notes" },
+  { label: "Updates", icon: Sparkles, href: "/app-updates" },
 ];
 
 export function SidebarNav() {

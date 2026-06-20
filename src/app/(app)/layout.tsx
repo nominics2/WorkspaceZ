@@ -7,6 +7,7 @@ import { FloatingChatProvider } from "@/components/chat/FloatingChatProvider";
 import { FloatingChatBubbles } from "@/components/chat/FloatingChatBubbles";
 import { GlobalSearch } from "@/components/dashboard/GlobalSearch";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
+import { AppUpdateBanner } from "@/components/dashboard/AppUpdateBanner";
 import { Menu, Bell } from "lucide-react";
 import { 
   Sheet, 
@@ -38,6 +39,9 @@ export default function AppLayout({
           </div>
 
           <div className="flex-1 flex flex-col min-w-0">
+            {/* Global Announcement Banner */}
+            <AppUpdateBanner />
+
             <header className="h-16 border-b bg-white/80 dark:bg-slate-950/80 backdrop-blur-md dark:border-slate-800 flex items-center justify-between px-4 md:px-8 shrink-0 z-20 sticky top-0 safe-top shadow-sm">
               <div className="flex items-center gap-4 flex-1 min-w-0">
                 {/* Mobile Sidebar Trigger */}
