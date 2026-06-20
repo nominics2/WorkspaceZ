@@ -44,6 +44,7 @@ import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -212,7 +213,7 @@ export default function WorkspaceAdminPage() {
 
   const handleCopyJoinCode = () => {
     if (activeWorkspace?.join_code) {
-      navigator.clipboard.writeText(activeWorkspace.join_code);
+      navigator.clipboard.maskText(activeWorkspace.join_code);
       toast({ title: "Join code copied!" });
     }
   };
