@@ -108,8 +108,12 @@ interface Attachment {
   file_type: string;
   file_size_bytes: number;
   message_id: string;
+  uploaded_by: string;
   created_at: string;
   signed_url?: string;
+  chat_messages?: {
+    sender_id: string;
+  };
 }
 
 interface Message {
@@ -221,6 +225,11 @@ export default function ChatPage() {
   const [isMessageDeleteDialogOpen, setIsMessageDeleteDialogOpen] = useState(false);
   const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<Message | null>(null);
+
+  // Attachment Actions State
+  const [isAttachmentDeleteDialogOpen, setIsAttachmentDeleteDialogOpen] = useState(false);
+  const [attachmentToDelete, setAttachmentToDelete] = useState<Attachment | null>(null);
+  const [isDeletingAttachment, setIsDeletingAttachment] = useState(false);
 
   // Task Creation State
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
@@ -784,7 +793,7 @@ export default function ChatPage() {
     try {
       const { data: attachData, error: attachError } = await supabase
         .from('chat_message_attachments')
-        .select('*, chat_messages!inner(is_deleted)')
+        .select('*, chat_messages!inner(is_deleted, sender_id)')
         .eq('channel_id', selectedChatId)
         .eq('chat_messages.is_deleted', false)
         .order('created_at', { ascending: false });
@@ -1242,6 +1251,45 @@ export default function ChatPage() {
     } finally {
       setIsMessageDeleteDialogOpen(false);
       setMessageIdToDelete(null);
+    }
+  };
+
+  const handleDeleteAttachment = async () => {
+    if (!attachmentToDelete || isDeletingAttachment) return;
+
+    setIsDeletingAttachment(true);
+    try {
+      const { error } = await supabase.rpc("delete_chat_message_attachment", {
+        p_attachment_id: attachmentToDelete.id
+      });
+
+      if (error) throw error;
+
+      // Update Local Messages
+      setMessages(prev => prev.map(m => {
+        if (m.id === attachmentToDelete.message_id) {
+          const nextAttachments = m.attachments?.filter(a => a.id !== attachmentToDelete.id) || [];
+          // If message is now empty (no text and no attachments), the RPC soft-deletes it.
+          // We could either filter it out or mark it as deleted.
+          if (!m.message && nextAttachments.length === 0) {
+             return { ...m, is_deleted: true, attachments: [] };
+          }
+          return { ...m, attachments: nextAttachments };
+        }
+        return m;
+      }).filter(m => !m.is_deleted));
+
+      // Update Gallery if open
+      setAllMedia(prev => prev.filter(a => a.id !== attachmentToDelete.id));
+
+      toast({ title: "Attachment deleted" });
+    } catch (err: any) {
+      console.error("[Chat] Attachment Delete Error:", serializeSupabaseError(err));
+      toast({ variant: "destructive", title: "Delete failed", description: err.message });
+    } finally {
+      setIsDeletingAttachment(false);
+      setAttachmentToDelete(null);
+      setIsAttachmentDeleteDialogOpen(false);
     }
   };
 
@@ -1938,9 +1986,45 @@ export default function ChatPage() {
                               <div className={cn("space-y-3", msg.message ? "mt-2" : "mt-0")}>
                                 {msg.attachments.map(att => {
                                   const isImage = att.file_type?.startsWith('image/');
+                                  const canDeleteAttachment = (att.uploaded_by === userProfile?.id) || (msg.sender_id === userProfile?.id) || isAdminOrSuper;
+
                                   return (
-                                    <div key={att.id} className="max-w-xs">
-                                      {isImage && att.signed_url ? <img src={att.signed_url} alt={att.file_name} className="w-full rounded-xl cursor-pointer" onClick={() => window.open(att.signed_url, '_blank')} /> : <div className="flex items-center gap-4 p-3 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900"><FileIcon className="w-5 h-5" /><div className="flex-1 min-w-0"><p className="text-xs font-bold truncate">{att.file_name}</p><p className="text-[10px] opacity-60 uppercase">{formatBytes(att.file_size_bytes)}</p></div><Button variant="ghost" size="icon" aria-label="Download" className="h-8 w-8" onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>}
+                                    <div key={att.id} className="max-w-xs group/att relative">
+                                      {isImage && att.signed_url ? (
+                                        <img src={att.signed_url} alt={att.file_name} className="w-full rounded-xl cursor-pointer" onClick={() => window.open(att.signed_url, '_blank')} />
+                                      ) : (
+                                        <div className="flex items-center gap-4 p-3 rounded-xl border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+                                          <FileIcon className="w-5 h-5" />
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-bold truncate">{att.file_name}</p>
+                                            <p className="text-[10px] opacity-60 uppercase">{formatBytes(att.file_size_bytes)}</p>
+                                          </div>
+                                          <Button variant="ghost" size="icon" aria-label="Download" className="h-8 w-8" onClick={() => window.open(att.signed_url, '_blank')}>
+                                            <Download className="w-4 h-4" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                      
+                                      {/* Attachment Action Menu */}
+                                      <div className="absolute top-2 right-2 opacity-0 group-hover/att:opacity-100 transition-opacity">
+                                        <DropdownMenu onOpenChange={(open) => !open && (typeof document !== 'undefined' ? document.body.style.pointerEvents = "" : null)}>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button variant="secondary" size="icon" className="h-6 w-6 rounded-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm shadow-lg">
+                                              <MoreVertical className="h-3 w-3" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end" className="w-40 dark:bg-slate-900 dark:border-slate-800">
+                                            <DropdownMenuItem onClick={() => window.open(att.signed_url, '_blank')} className="gap-2">
+                                              <Download className="h-3.5 w-3.5" /> Download
+                                            </DropdownMenuItem>
+                                            {canDeleteAttachment && (
+                                              <DropdownMenuItem onClick={() => { setAttachmentToDelete(att); setIsAttachmentDeleteDialogOpen(true); }} className="gap-2 text-rose-500">
+                                                <Trash2 className="h-3.5 w-3.5" /> Delete
+                                              </DropdownMenuItem>
+                                            )}
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -2183,7 +2267,34 @@ export default function ChatPage() {
       </Dialog>
 
       <Sheet open={isMediaSheetOpen} onOpenChange={setIsMediaSheetOpen}>
-        <SheetContent className="w-full sm:max-w-lg p-0 flex flex-col dark:bg-slate-950 overflow-hidden"><div className="p-6 pb-0"><SheetHeader><div className="flex items-center gap-2 mb-1"><Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Asset Manager</Badge></div><SheetTitle className="text-2xl font-bold">Media & Files</SheetTitle><SheetDescription>All attachments shared in {selectedChat?.display_name}.</SheetDescription></SheetHeader><Tabs defaultValue="media" className="mt-8 flex-1 flex flex-col"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900/50 mb-6"><TabsTrigger value="media" className="gap-2"><ImageIcon className="w-3.5 h-3.5" /> Gallery</TabsTrigger><TabsTrigger value="files" className="gap-2"><FileIcon className="w-3.5 h-3.5" /> Documents</TabsTrigger></TabsList><ScrollArea className="flex-1 -mx-6 px-6"><TabsContent value="media" className="m-0 pb-8">{loadingMedia ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin" /></div> : allMedia.filter(m => m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No images shared yet.</p> : <div className="grid grid-cols-2 gap-4">{allMedia.filter(m => m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">{item.signed_url && <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover" />}<div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2"><Button size="icon" variant="secondary" aria-label="Download" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button></div></div>))}</div>}</TabsContent><TabsContent value="files" className="m-0 pb-8">{allMedia.filter(m => !m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No files shared yet.</p> : allMedia.filter(m => !m.file_type?.startsWith('image/')).map((item) => (<div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 transition-colors group"><div className="p-2.5 bg-primary/10 rounded-xl"><FileIcon className="w-5 h-5 text-primary" /></div><div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div><Button size="icon" variant="ghost" aria-label="Download" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-4 h-4" /></Button></div>))}</TabsContent></ScrollArea></Tabs></div></SheetContent>
+        <SheetContent className="w-full sm:max-w-lg p-0 flex flex-col dark:bg-slate-950 overflow-hidden"><div className="p-6 pb-0"><SheetHeader><div className="flex items-center gap-2 mb-1"><Badge variant="secondary" className="bg-primary/5 text-primary border-none text-[10px] h-4">Asset Manager</Badge></div><SheetTitle className="text-2xl font-bold">Media & Files</SheetTitle><SheetDescription>All attachments shared in {selectedChat?.display_name}.</SheetDescription></SheetHeader><Tabs defaultValue="media" className="mt-8 flex-1 flex flex-col"><TabsList className="grid w-full grid-cols-2 bg-slate-100 dark:bg-slate-900/50 mb-6"><TabsTrigger value="media" className="gap-2"><ImageIcon className="w-3.5 h-3.5" /> Gallery</TabsTrigger><TabsTrigger value="files" className="gap-2"><FileIcon className="w-3.5 h-3.5" /> Documents</TabsTrigger></TabsList><ScrollArea className="flex-1 -mx-6 px-6"><TabsContent value="media" className="m-0 pb-8">{loadingMedia ? <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin" /></div> : allMedia.filter(m => m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No images shared yet.</p> : <div className="grid grid-cols-2 gap-4">{allMedia.filter(m => m.file_type?.startsWith('image/')).map((item) => {
+          const canDeleteFromGallery = (item.uploaded_by === userProfile?.id) || (item.chat_messages?.sender_id === userProfile?.id) || isAdminOrSuper;
+          return (
+            <div key={item.id} className="group relative aspect-square rounded-2xl overflow-hidden border dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
+              {item.signed_url && <img src={item.signed_url} alt={item.file_name} className="w-full h-full object-cover" />}
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                <Button size="icon" variant="secondary" aria-label="Download" className="h-8 w-8 rounded-full" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-3.5 h-3.5" /></Button>
+                {canDeleteFromGallery && (
+                  <Button size="icon" variant="destructive" aria-label="Delete" className="h-8 w-8 rounded-full" onClick={() => { setAttachmentToDelete(item); setIsAttachmentDeleteDialogOpen(true); }}><Trash2 className="w-3.5 h-3.5" /></Button>
+                )}
+              </div>
+            </div>
+          );
+        })}</div>}</TabsContent><TabsContent value="files" className="m-0 pb-8">{allMedia.filter(m => !m.file_type?.startsWith('image/')).length === 0 ? <p className="text-center text-sm text-slate-400 py-20">No files shared yet.</p> : allMedia.filter(m => !m.file_type?.startsWith('image/')).map((item) => {
+          const canDeleteFromGallery = (item.uploaded_by === userProfile?.id) || (item.chat_messages?.sender_id === userProfile?.id) || isAdminOrSuper;
+          return (
+            <div key={item.id} className="flex items-center gap-4 p-3 rounded-2xl border dark:border-slate-800 bg-white dark:bg-slate-900/50 hover:bg-slate-50 transition-colors group">
+              <div className="p-2.5 bg-primary/10 rounded-xl"><FileIcon className="w-5 h-5 text-primary" /></div>
+              <div className="flex-1 min-w-0"><p className="text-sm font-bold truncate">{item.file_name}</p><p className="text-[10px] text-muted-foreground uppercase">{formatBytes(item.file_size_bytes)}</p></div>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button size="icon" variant="ghost" aria-label="Download" onClick={() => window.open(item.signed_url, '_blank')}><Download className="w-4 h-4" /></Button>
+                {canDeleteFromGallery && (
+                  <Button size="icon" variant="ghost" className="text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10" aria-label="Delete" onClick={() => { setAttachmentToDelete(item); setIsAttachmentDeleteDialogOpen(true); }}><Trash2 className="w-4 h-4" /></Button>
+                )}
+              </div>
+            </div>
+          );
+        })}</TabsContent></ScrollArea></Tabs></div></SheetContent>
       </Sheet>
 
       <Sheet open={isInfoSheetOpen} onOpenChange={(open) => { setIsInfoSheetOpen(open); if (!open) { setIsRenamingGroup(false); } }}>
@@ -2475,6 +2586,28 @@ export default function ChatPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog open={isAttachmentDeleteDialogOpen} onOpenChange={(open) => !open && setIsAttachmentDeleteDialogOpen(false)}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-white">Delete attachment?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              This file will be removed from the chat for everyone. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteAttachment} 
+              className="bg-rose-500 hover:bg-rose-600 text-white"
+              disabled={isDeletingAttachment}
+            >
+              {isDeletingAttachment ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Confirm Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={isUnlinkConfirmOpen} onOpenChange={setIsUnlinkConfirmOpen}>
         <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
           <AlertDialogHeader>
@@ -2522,11 +2655,11 @@ export default function ChatPage() {
                 ) : addableMembers.length === 0 ? (
                   <p className="text-center text-sm text-slate-400 py-10 italic">No eligible members found.</p>
                 ) : addableMembers.map((member) => {
-                  const isSelected = selectedMemberIdsToAdd.includes(member.id);
+                  const isSelected = chatMode === 'group' ? selectedMemberIdsToAdd.includes(member.id) : selectedMemberId === member.id;
                   return (
                     <button 
                       key={member.id} 
-                      onClick={() => setSelectedMemberIdsToAdd(prev => prev.includes(member.id) ? prev.filter(x => x !== member.id) : [...prev, member.id])} 
+                      onClick={() => chatMode === 'group' ? (setSelectedMemberIdsToAdd(prev => prev.includes(member.id) ? prev.filter(x => x !== member.id) : [...prev, member.id])) : setSelectedMemberId(member.id)} 
                       className={cn("w-full flex items-center gap-4 p-3 rounded-2xl transition-all", isSelected ? "bg-primary/10 ring-1 ring-primary/20 shadow-sm" : "hover:bg-slate-50 dark:hover:bg-slate-900")}
                     >
                       <Avatar className="w-10 h-10"><AvatarImage src={member.avatar_preset ? `/avatars/${member.avatar_preset}.png` : member.avatar_url} /><AvatarFallback>{member.full_name[0]}</AvatarFallback></Avatar>
