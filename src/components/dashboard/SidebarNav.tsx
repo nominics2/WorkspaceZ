@@ -20,7 +20,8 @@ import {
   PanelLeft,
   ChevronLeft,
   Plus,
-  Sparkles
+  Sparkles,
+  ShieldCheck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -53,11 +54,24 @@ export function SidebarNav() {
   const { totalUnreadCount } = useFloatingChat();
   const [mounted, setMounted] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isDeveloper, setIsDeveloper] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (mounted && userProfile) {
+      const checkDev = async () => {
+        const { data } = await supabase.rpc('is_app_developer', {
+          p_user_id: userProfile.id
+        });
+        setIsDeveloper(!!data);
+      };
+      checkDev();
+    }
+  }, [mounted, userProfile, supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -76,7 +90,6 @@ export function SidebarNav() {
         "flex flex-col h-full bg-white dark:bg-slate-950 transition-all duration-300 border-r dark:border-slate-800 shadow-sm relative group",
         isCollapsed ? "w-20" : "w-64"
       )}>
-        {/* Collapse Toggle - Only visible on hover for clean look */}
         <button 
           onClick={() => setIsCollapsed(!isCollapsed)}
           className="absolute -right-3 top-10 w-6 h-6 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center text-slate-400 hover:text-primary z-50 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
@@ -84,7 +97,6 @@ export function SidebarNav() {
           {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
         </button>
 
-        {/* Branding Section */}
         <div className={cn("px-6 pt-8 pb-6 flex items-center", isCollapsed ? "justify-center" : "justify-start")}>
           <div className="shrink-0">
              <img src="/brand/logomark.png" alt="WorkspaceZ" className="w-9 h-9 object-contain dark:hidden" />
@@ -97,7 +109,6 @@ export function SidebarNav() {
           )}
         </div>
 
-        {/* Workspace Switcher */}
         <div className={cn("px-4 pb-4", isCollapsed ? "flex justify-center" : "")}>
           {!mounted ? (
             <div className="w-full h-12 rounded-xl bg-slate-100 dark:bg-slate-900 animate-pulse" />
@@ -148,7 +159,6 @@ export function SidebarNav() {
           )}
         </div>
 
-        {/* Navigation */}
         <nav className="flex-1 px-3 space-y-1.5 pt-4">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
@@ -162,7 +172,6 @@ export function SidebarNav() {
                 <item.icon className={cn("w-5 h-5", isActive ? "scale-110" : "")} />
                 {!isCollapsed && <span className="flex-1 truncate">{item.label}</span>}
                 
-                {/* Chat Unread Badge */}
                 {item.label === "Chat" && totalUnreadCount > 0 && (
                   <>
                     {!isCollapsed ? (
@@ -227,9 +236,22 @@ export function SidebarNav() {
               </span>
             </Link>
           )}
+
+          {isDeveloper && (
+            <Link href="/app-updates/admin">
+               <span className={cn(
+                "flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm transition-all relative overflow-hidden",
+                pathname === "/app-updates/admin"
+                  ? "bg-amber-500 text-white font-bold shadow-lg shadow-amber-500/20" 
+                  : "text-slate-600 dark:text-slate-400 hover:bg-amber-500/10 dark:hover:bg-amber-500/20 hover:text-amber-600 dark:hover:text-amber-400"
+              )}>
+                <ShieldCheck className="w-5 h-5" />
+                {!isCollapsed && <span className="flex-1 truncate">Developer</span>}
+              </span>
+            </Link>
+          )}
         </nav>
 
-        {/* User Profile & Actions */}
         <div className="p-4 border-t dark:border-slate-800 space-y-3 mb-safe bg-slate-50/30 dark:bg-slate-900/10">
           {userProfile && (
             <Link href="/settings">

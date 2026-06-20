@@ -109,11 +109,27 @@ export default function AppUpdatesAdminPage() {
   const { toast } = useToast();
 
   const checkDev = useCallback(async () => {
-    const { data, error } = await supabase.rpc('is_app_developer');
-    if (error) {
-      setIsDeveloper(false);
-    } else {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setIsDeveloper(false);
+        return;
+      }
+
+      console.log("[Dev Check] User ID:", user.id);
+      console.log("[Dev Check] User Email:", user.email);
+
+      const { data, error } = await supabase.rpc('is_app_developer', {
+        p_user_id: user.id
+      });
+
+      console.log("[Dev Check] RPC Result:", data);
+      if (error) console.error("[Dev Check] RPC Error:", error);
+
       setIsDeveloper(!!data);
+    } catch (err) {
+      console.error("[Dev Check] Failed:", err);
+      setIsDeveloper(false);
     }
   }, [supabase]);
 
@@ -143,7 +159,7 @@ export default function AppUpdatesAdminPage() {
   }, [checkDev]);
 
   useEffect(() => {
-    if (isDeveloper) {
+    if (isDeveloper === true) {
       fetchData();
     }
   }, [isDeveloper, fetchData]);
@@ -178,12 +194,9 @@ export default function AppUpdatesAdminPage() {
         toast({ title: "Update published" });
       }
 
-      // Handle targeting
       if (updateId && updateForm.audience_type !== 'all_users') {
-        // Clear old targets
         await supabase.from('app_update_targets').delete().eq('update_id', updateId);
         
-        // Insert new targets
         if (updateForm.target_ids.length > 0) {
           const targetRows = updateForm.target_ids.map(id => ({
             update_id: updateId,
@@ -264,17 +277,25 @@ export default function AppUpdatesAdminPage() {
     }
   };
 
-  if (isDeveloper === false) {
+  if (isDeveloper === null) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
-        <X className="w-12 h-12 text-rose-500" />
-        <h1 className="text-xl font-bold">Access Denied</h1>
-        <p className="text-muted-foreground">Only platform developers can access this page.</p>
+      <div className="flex flex-col items-center justify-center h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <p className="text-muted-foreground mt-4 font-medium">Verifying credentials...</p>
       </div>
     );
   }
 
-  if (loading && !isDeveloper) return <div className="flex h-screen items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (isDeveloper === false) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[60vh] space-y-4">
+        <ShieldCheck className="w-12 h-12 text-rose-500 opacity-20" />
+        <h1 className="text-xl font-bold">Developer Access Required</h1>
+        <p className="text-muted-foreground text-center max-w-xs">You do not have the necessary permissions to manage platform-wide features.</p>
+        <Button variant="outline" onClick={() => window.location.href = '/dashboard'}>Return to Dashboard</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
