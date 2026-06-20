@@ -102,11 +102,19 @@ export default function AppUpdatesAdminPage() {
     details: "",
     category: "General",
     sort_order: 0,
-    is_active: true
+    is_active: true,
+    release_date: new Date().toISOString().split('T')[0]
   });
 
   const supabase = createClient();
   const { toast } = useToast();
+
+  const forceUnlockUI = useCallback(() => {
+    if (typeof document !== 'undefined') {
+      document.body.style.pointerEvents = "";
+      document.body.style.overflow = "";
+    }
+  }, []);
 
   const checkDev = useCallback(async () => {
     try {
@@ -116,16 +124,11 @@ export default function AppUpdatesAdminPage() {
         return;
       }
 
-      console.log("[Dev Check] User ID:", user.id);
-      console.log("[Dev Check] User Email:", user.email);
-
       const { data, error } = await supabase.rpc('is_app_developer', {
         p_user_id: user.id
       });
 
-      console.log("[Dev Check] RPC Result:", data);
       if (error) console.error("[Dev Check] RPC Error:", error);
-
       setIsDeveloper(!!data);
     } catch (err) {
       console.error("[Dev Check] Failed:", err);
@@ -214,6 +217,7 @@ export default function AppUpdatesAdminPage() {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
       setSubmitting(false);
+      forceUnlockUI();
     }
   };
 
@@ -245,6 +249,11 @@ export default function AppUpdatesAdminPage() {
 
   const handleSaveFeature = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!featureForm.feature_key || !featureForm.title || !featureForm.details || !featureForm.category || !featureForm.release_date) {
+      toast({ variant: "destructive", title: "Validation Error", description: "All required fields must be filled." });
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (editingFeature) {
@@ -252,25 +261,44 @@ export default function AppUpdatesAdminPage() {
         if (error) throw error;
         toast({ title: "Feature updated" });
       } else {
-        const { error } = await supabase.from('app_features').insert(featureForm);
+        const { error } = await supabase.from('app_features').insert({
+          ...featureForm,
+          created_by: (await supabase.auth.getUser()).data.user?.id
+        });
         if (error) throw error;
         toast({ title: "Feature added" });
       }
       setIsFeatureModalOpen(false);
       fetchData();
     } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
+      console.error("[Admin] Feature save error:", err);
+      toast({ 
+        variant: "destructive", 
+        title: "Save Failed", 
+        description: `Error: ${err.message}. ${err.details || ''}` 
+      });
     } finally {
       setSubmitting(false);
+      forceUnlockUI();
     }
   };
 
   const handleDeleteUpdate = async (id: string) => {
-    if (!confirm("Delete this update?")) return;
     try {
       const { error } = await supabase.from('app_updates').delete().eq('id', id);
       if (error) throw error;
       toast({ title: "Deleted" });
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    }
+  };
+
+  const handleDeleteFeature = async (id: string) => {
+    try {
+      const { error } = await supabase.from('app_features').delete().eq('id', id);
+      if (error) throw error;
+      toast({ title: "Feature removed" });
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
@@ -304,28 +332,76 @@ export default function AppUpdatesAdminPage() {
           <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
             <ShieldCheck className="w-8 h-8 text-primary" /> Developer Console
           </h1>
-          <p className="text-muted-foreground font-medium mt-1">Manage platform-wide communication and features.</p>
+          <p className="text-muted-foreground font-medium mt-1">Manage platform-wide communication and feature roadmap.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={() => { setEditingFeature(null); setFeatureForm({ feature_key: "", title: "", short_description: "", details: "", category: "General", sort_order: features.length, is_active: true }); setIsFeatureModalOpen(true); }} variant="outline" className="rounded-xl h-10 border-amber-500/20 hover:bg-amber-500/5 text-amber-600">
+          <Button onClick={() => { setEditingFeature(null); setFeatureForm({ feature_key: "", title: "", short_description: "", details: "", category: "General", sort_order: features.length, is_active: true, release_date: new Date().toISOString().split('T')[0] }); setIsFeatureModalOpen(true); }} variant="outline" className="rounded-xl h-10 border-amber-500/20 hover:bg-amber-500/5 text-amber-600">
             <Zap className="w-4 h-4 mr-2" /> New Feature
           </Button>
           <Button onClick={() => { setEditingUpdate(null); setUpdateForm({ title: "", summary: "", details: "", update_type: "update", banner_enabled: false, banner_title: "", banner_message: "", audience_type: "all_users", status: "published", target_ids: [] }); setIsUpdateModalOpen(true); }} className="rounded-xl h-10 shadow-lg shadow-primary/20">
-            <Plus className="w-4 h-4 mr-2" /> Publish Update
+            <Plus className="w-4 h-4 mr-2" /> Publish Announcement
           </Button>
         </div>
       </div>
 
-      <Tabs defaultValue="updates" className="space-y-6">
+      <Tabs defaultValue="features" className="space-y-6">
         <TabsList className="bg-white dark:bg-slate-900 p-1 border dark:border-slate-800 rounded-xl">
-          <TabsTrigger value="updates" className="rounded-lg px-6 font-bold">Platform Updates</TabsTrigger>
-          <TabsTrigger value="features" className="rounded-lg px-6 font-bold">Feature Matrix</TabsTrigger>
+          <TabsTrigger value="features" className="rounded-lg px-6 font-bold">Feature Catalog</TabsTrigger>
+          <TabsTrigger value="updates" className="rounded-lg px-6 font-bold">Announcements</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="features" className="space-y-4">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {features.map((f) => (
+                <Card key={f.id} className={cn("border-none shadow-md dark:bg-slate-900 group", !f.is_active && "opacity-60")}>
+                   <CardHeader className="p-4 pb-2">
+                      <div className="flex items-center justify-between">
+                         <Badge variant="secondary" className="text-[9px] uppercase dark:bg-slate-800">{f.category}</Badge>
+                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingFeature(f); setFeatureForm({...f, release_date: f.release_date ? f.release_date.split('T')[0] : new Date().toISOString().split('T')[0]}); setIsFeatureModalOpen(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-500"><Trash2 className="w-3.5 h-3.5" /></Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Remove Feature?</AlertDialogTitle>
+                                  <AlertDialogDescription>This will permanently delete "{f.title}" from the catalog. This cannot be undone.</AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel onClick={() => forceUnlockUI()}>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteFeature(f.id)} className="bg-rose-600 hover:bg-rose-700">Delete Permanently</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                         </div>
+                      </div>
+                      <CardTitle className="text-base mt-2 flex items-center gap-2">
+                         <Zap className="w-4 h-4 text-amber-500" />
+                         {f.title}
+                      </CardTitle>
+                   </CardHeader>
+                   <CardContent className="p-4 pt-0 space-y-3">
+                      <p className="text-xs text-muted-foreground line-clamp-2 min-h-[2.5rem]">{f.short_description}</p>
+                      <div className="pt-3 border-t dark:border-slate-800 flex items-center justify-between">
+                         <div className="flex flex-col">
+                           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Key: {f.feature_key}</span>
+                           <span className="text-[9px] font-medium text-slate-500">{f.release_date ? format(new Date(f.release_date), "PP") : "No Date"}</span>
+                         </div>
+                         <Badge variant={f.is_active ? "default" : "outline"} className="text-[8px] h-4">
+                            {f.is_active ? "Active" : "Hidden"}
+                         </Badge>
+                      </div>
+                   </CardContent>
+                </Card>
+              ))}
+           </div>
+        </TabsContent>
 
         <TabsContent value="updates" className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             {updates.length === 0 ? (
-              <p className="text-center py-20 text-slate-400 italic bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed dark:border-slate-800">No updates published yet.</p>
+              <p className="text-center py-20 text-slate-400 italic bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed dark:border-slate-800">No announcements published yet.</p>
             ) : (
               updates.map((up) => (
                 <Card key={up.id} className="border-none shadow-sm dark:bg-slate-900 overflow-hidden">
@@ -373,7 +449,7 @@ export default function AppUpdatesAdminPage() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+                              <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800" onClick={() => forceUnlockUI()}>Cancel</AlertDialogCancel>
                               <AlertDialogAction onClick={() => handlePushToNotifications(up.id)} className="bg-primary hover:bg-primary/90 text-white">
                                 Confirm & Push
                               </AlertDialogAction>
@@ -394,46 +470,15 @@ export default function AppUpdatesAdminPage() {
             )}
           </div>
         </TabsContent>
-
-        <TabsContent value="features" className="space-y-4">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {features.map((f) => (
-                <Card key={f.id} className={cn("border-none shadow-md dark:bg-slate-900 group", !f.is_active && "opacity-60")}>
-                   <CardHeader className="p-4 pb-2">
-                      <div className="flex items-center justify-between">
-                         <Badge variant="secondary" className="text-[9px] uppercase dark:bg-slate-800">{f.category}</Badge>
-                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingFeature(f); setFeatureForm(f); setIsFeatureModalOpen(true); }}><Edit2 className="w-3.5 h-3.5" /></Button>
-                            <Button variant="ghost" size="icon" className="h-7 w-7 text-rose-500"><Trash2 className="w-3.5 h-3.5" /></Button>
-                         </div>
-                      </div>
-                      <CardTitle className="text-base mt-2 flex items-center gap-2">
-                         <Zap className="w-4 h-4 text-amber-500" />
-                         {f.title}
-                      </CardTitle>
-                   </CardHeader>
-                   <CardContent className="p-4 pt-0 space-y-3">
-                      <p className="text-xs text-muted-foreground line-clamp-2 min-h-[2.5rem]">{f.short_description}</p>
-                      <div className="pt-3 border-t dark:border-slate-800 flex items-center justify-between">
-                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Key: {f.feature_key}</span>
-                         <Badge variant={f.is_active ? "default" : "outline"} className="text-[8px] h-4">
-                            {f.is_active ? "Active" : "Hidden"}
-                         </Badge>
-                      </div>
-                   </CardContent>
-                </Card>
-              ))}
-           </div>
-        </TabsContent>
       </Tabs>
 
       {/* Update Modal */}
-      <Dialog open={isUpdateModalOpen} onOpenChange={setIsUpdateModalOpen}>
+      <Dialog open={isUpdateModalOpen} onOpenChange={(open) => { setIsUpdateModalOpen(open); if (!open) forceUnlockUI(); }}>
         <DialogContent className="max-w-2xl dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] p-0 overflow-hidden">
           <div className="p-8">
             <DialogHeader className="mb-6">
-              <DialogTitle className="text-2xl font-bold">{editingUpdate ? 'Refine Announcement' : 'Publish New Update'}</DialogTitle>
-              <DialogDescription>Content will be visible on the "Updates" page for targeted users.</DialogDescription>
+              <DialogTitle className="text-2xl font-bold">{editingUpdate ? 'Refine Announcement' : 'Publish New Announcement'}</DialogTitle>
+              <DialogDescription>Content will be visible to targeted users on their dashboard and notifications.</DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSaveUpdate} className="space-y-6">
               <div className="grid grid-cols-2 gap-6">
@@ -448,11 +493,11 @@ export default function AppUpdatesAdminPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="dark:bg-slate-900">
-                      <SelectItem value="update">Update</SelectItem>
-                      <SelectItem value="feature">Feature</SelectItem>
+                      <SelectItem value="update">System Update</SelectItem>
+                      <SelectItem value="feature">New Feature</SelectItem>
                       <SelectItem value="maintenance">Maintenance</SelectItem>
                       <SelectItem value="announcement">Announcement</SelectItem>
-                      <SelectItem value="memo">Memo</SelectItem>
+                      <SelectItem value="memo">Internal Memo</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -471,8 +516,8 @@ export default function AppUpdatesAdminPage() {
               <div className="p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border dark:border-slate-800 space-y-4">
                  <div className="flex items-center justify-between">
                     <div>
-                       <p className="text-sm font-bold">System Banner</p>
-                       <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Show sticky banner on top of workspace</p>
+                       <p className="text-sm font-bold">Sticky Banner</p>
+                       <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Show high-visibility banner on workspace top</p>
                     </div>
                     <Switch checked={updateForm.banner_enabled} onCheckedChange={c => setUpdateForm({...updateForm, banner_enabled: c})} />
                  </div>
@@ -498,7 +543,7 @@ export default function AppUpdatesAdminPage() {
                           <SelectValue />
                        </SelectTrigger>
                        <SelectContent className="dark:bg-slate-900">
-                          <SelectItem value="all_users">All Platform Users</SelectItem>
+                          <SelectItem value="all_users">All Users</SelectItem>
                           <SelectItem value="selected_workspaces">Specific Workspaces</SelectItem>
                           <SelectItem value="selected_users">Specific Users</SelectItem>
                        </SelectContent>
@@ -535,10 +580,10 @@ export default function AppUpdatesAdminPage() {
               </div>
 
               <DialogFooter className="pt-4 border-t dark:border-slate-800">
-                <Button type="button" variant="ghost" onClick={() => setIsUpdateModalOpen(false)} disabled={submitting} className="rounded-xl">Cancel</Button>
+                <Button type="button" variant="ghost" onClick={() => { setIsUpdateModalOpen(false); forceUnlockUI(); }} disabled={submitting} className="rounded-xl">Cancel</Button>
                 <Button type="submit" disabled={submitting || !updateForm.title.trim()} className="rounded-xl shadow-lg shadow-primary/20 px-8">
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                  {editingUpdate ? 'Update Announcement' : 'Publish to Platform'}
+                  {editingUpdate ? 'Update Announcement' : 'Publish Announcement'}
                 </Button>
               </DialogFooter>
             </form>
@@ -547,50 +592,68 @@ export default function AppUpdatesAdminPage() {
       </Dialog>
 
       {/* Feature Modal */}
-      <Dialog open={isFeatureModalOpen} onOpenChange={setIsFeatureModalOpen}>
-        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800 rounded-[2rem]">
-          <DialogHeader>
-            <DialogTitle>{editingFeature ? 'Edit Feature' : 'Add Feature Catalog'}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSaveFeature} className="space-y-4 py-4">
-             <div className="space-y-1">
-                <Label className="text-xs uppercase font-bold text-slate-500">Unique Key</Label>
-                <Input value={featureForm.feature_key} onChange={e => setFeatureForm({...featureForm, feature_key: e.target.value})} placeholder="e.g. mobile_app" required className="rounded-xl dark:bg-slate-900 border-none" />
-             </div>
-             <div className="space-y-1">
-                <Label className="text-xs uppercase font-bold text-slate-500">Title</Label>
-                <Input value={featureForm.title} onChange={e => setFeatureForm({...featureForm, title: e.target.value})} placeholder="Mobile Optimized" required className="rounded-xl dark:bg-slate-900 border-none" />
-             </div>
-             <div className="space-y-1">
-                <Label className="text-xs uppercase font-bold text-slate-500">Short Description</Label>
-                <Input value={featureForm.short_description} onChange={e => setFeatureForm({...featureForm, short_description: e.target.value})} placeholder="A quick summary for the card" required className="rounded-xl dark:bg-slate-900 border-none" />
-             </div>
-             <div className="space-y-1">
-                <Label className="text-xs uppercase font-bold text-slate-500">Full Details</Label>
-                <Textarea value={featureForm.details} onChange={e => setFeatureForm({...featureForm, details: e.target.value})} placeholder="Detailed instructions or benefits..." rows={4} className="rounded-xl dark:bg-slate-900 border-none" />
-             </div>
-             <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                   <Label className="text-xs uppercase font-bold text-slate-500">Category</Label>
-                   <Input value={featureForm.category} onChange={e => setFeatureForm({...featureForm, category: e.target.value})} placeholder="Mobile" className="rounded-xl dark:bg-slate-900 border-none" />
-                </div>
-                <div className="space-y-1">
-                   <Label className="text-xs uppercase font-bold text-slate-500">Sort Order</Label>
-                   <Input type="number" value={featureForm.sort_order} onChange={e => setFeatureForm({...featureForm, sort_order: parseInt(e.target.value)})} className="rounded-xl dark:bg-slate-900 border-none" />
-                </div>
-             </div>
-             <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
-                <Label className="text-xs uppercase font-bold text-slate-500">Public Visibility</Label>
-                <Switch checked={featureForm.is_active} onCheckedChange={c => setFeatureForm({...featureForm, is_active: c})} />
-             </div>
-             <DialogFooter className="pt-4">
-                <Button type="button" variant="ghost" onClick={() => setIsFeatureModalOpen(false)} className="rounded-xl">Cancel</Button>
-                <Button type="submit" disabled={submitting} className="rounded-xl shadow-lg">
-                   {submitting ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <Check className="w-3 h-3 mr-2" />}
-                   {editingFeature ? 'Update Catalog' : 'Add to Catalog'}
-                </Button>
-             </DialogFooter>
-          </form>
+      <Dialog open={isFeatureModalOpen} onOpenChange={(open) => { setIsFeatureModalOpen(open); if (!open) { setEditingFeature(null); forceUnlockUI(); } }}>
+        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] p-0 overflow-hidden">
+          <div className="p-8">
+            <DialogHeader className="mb-4">
+              <DialogTitle className="text-2xl font-bold">{editingFeature ? 'Edit Feature' : 'Add to Feature Catalog'}</DialogTitle>
+              <DialogDescription>Features are grouped by category and shown in the user roadmap.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSaveFeature} className="space-y-4">
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                     <Label className="text-[10px] uppercase font-bold text-slate-500">Unique Key</Label>
+                     <Input value={featureForm.feature_key} onChange={e => setFeatureForm({...featureForm, feature_key: e.target.value})} placeholder="e.g. mobile_app" required className="rounded-xl h-10 dark:bg-slate-900 border-none text-xs" />
+                  </div>
+                  <div className="space-y-1">
+                     <Label className="text-[10px] uppercase font-bold text-slate-500">Release Date</Label>
+                     <Input type="date" value={featureForm.release_date} onChange={e => setFeatureForm({...featureForm, release_date: e.target.value})} required className="rounded-xl h-10 dark:bg-slate-900 border-none text-xs" />
+                  </div>
+               </div>
+               
+               <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-bold text-slate-500">Title</Label>
+                  <Input value={featureForm.title} onChange={e => setFeatureForm({...featureForm, title: e.target.value})} placeholder="Feature Title" required className="rounded-xl h-10 dark:bg-slate-900 border-none text-sm" />
+               </div>
+
+               <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-bold text-slate-500">Summary (Short)</Label>
+                  <Input value={featureForm.short_description} onChange={e => setFeatureForm({...featureForm, short_description: e.target.value})} placeholder="Brief overview for the card..." required className="rounded-xl h-10 dark:bg-slate-900 border-none text-sm" />
+               </div>
+
+               <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-bold text-slate-500">Full Details</Label>
+                  <Textarea value={featureForm.details} onChange={e => setFeatureForm({...featureForm, details: e.target.value})} placeholder="In-depth explanation and usage guide..." rows={6} required className="rounded-xl dark:bg-slate-900 border-none text-sm" />
+               </div>
+
+               <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                     <Label className="text-[10px] uppercase font-bold text-slate-500">Category</Label>
+                     <Input value={featureForm.category} onChange={e => setFeatureForm({...featureForm, category: e.target.value})} placeholder="e.g. Workflow" required className="rounded-xl h-10 dark:bg-slate-900 border-none text-xs" />
+                  </div>
+                  <div className="space-y-1">
+                     <Label className="text-[10px] uppercase font-bold text-slate-500">Sort Order</Label>
+                     <Input type="number" value={featureForm.sort_order} onChange={e => setFeatureForm({...featureForm, sort_order: parseInt(e.target.value) || 0})} className="rounded-xl h-10 dark:bg-slate-900 border-none text-xs" />
+                  </div>
+               </div>
+
+               <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-2xl border dark:border-slate-800">
+                  <div>
+                    <Label className="text-sm font-bold">Public Visibility</Label>
+                    <p className="text-[9px] text-muted-foreground uppercase">Visible to all workspace members</p>
+                  </div>
+                  <Switch checked={featureForm.is_active} onCheckedChange={c => setFeatureForm({...featureForm, is_active: c})} />
+               </div>
+
+               <DialogFooter className="pt-4 gap-3 flex-row">
+                  <Button type="button" variant="ghost" onClick={() => { setIsFeatureModalOpen(false); forceUnlockUI(); }} className="flex-1 rounded-xl">Cancel</Button>
+                  <Button type="submit" disabled={submitting} className="flex-1 rounded-xl shadow-lg shadow-primary/20">
+                     {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Check className="w-4 h-4 mr-2" />}
+                     {editingFeature ? 'Update Catalog' : 'Add to Catalog'}
+                  </Button>
+               </DialogFooter>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
