@@ -179,10 +179,12 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Message Editing State
+  // Message Actions State
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editMessageInput, setEditMessageInput] = useState("");
   const [isEditingLoading, setIsEditingLoading] = useState(false);
+  const [isMessageDeleteDialogOpen, setIsMessageDeleteDialogOpen] = useState(false);
+  const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
 
   // Search in Chat state (Contextual)
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -461,8 +463,9 @@ export default function ChatPage() {
           .order('created_at', { ascending: true }),
         supabase
           .from('chat_message_attachments')
-          .select('*')
+          .select('*, chat_messages!inner(is_deleted)')
           .eq('channel_id', channelId)
+          .eq('chat_messages.is_deleted', false)
       ]);
 
       if (msgDataRes.error) throw msgDataRes.error;
@@ -567,8 +570,9 @@ export default function ChatPage() {
     try {
       const { data: attachData, error: attachError } = await supabase
         .from('chat_message_attachments')
-        .select('*')
+        .select('*, chat_messages!inner(is_deleted)')
         .eq('channel_id', selectedChatId)
+        .eq('chat_messages.is_deleted', false)
         .order('created_at', { ascending: false });
 
       if (attachError) throw attachError;
@@ -974,6 +978,32 @@ export default function ChatPage() {
       toast({ variant: "destructive", title: "Edit failed", description: err.message });
     } finally {
       setIsEditingLoading(false);
+    }
+  };
+
+  const handleDeleteMessage = async () => {
+    if (!messageIdToDelete || !userProfile) return;
+
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({
+          is_deleted: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', messageIdToDelete)
+        .eq('sender_id', userProfile.id);
+
+      if (error) throw error;
+
+      setMessages(prev => prev.filter(m => m.id !== messageIdToDelete));
+      toast({ title: "Message deleted" });
+    } catch (err: any) {
+      console.error("[Chat] Delete Error:", err);
+      toast({ variant: "destructive", title: "Unable to delete message", description: err.message });
+    } finally {
+      setIsMessageDeleteDialogOpen(false);
+      setMessageIdToDelete(null);
     }
   };
 
@@ -1428,9 +1458,16 @@ export default function ChatPage() {
                                          <Edit2 className="h-4 w-4" /> Edit Message
                                        </DropdownMenuItem>
                                      )}
+                                     {isMe && (
+                                       <DropdownMenuItem 
+                                         onClick={() => { setMessageIdToDelete(msg.id); setIsMessageDeleteDialogOpen(true); }}
+                                         className="gap-2 text-rose-500"
+                                       >
+                                         <Trash2 className="h-4 w-4" /> Delete Message
+                                       </DropdownMenuItem>
+                                     )}
                                      <DropdownMenuSeparator className="dark:bg-slate-800" />
                                      <DropdownMenuItem disabled className="gap-2"><CheckSquare className="h-4 w-4" /> Create Task</DropdownMenuItem>
-                                     <DropdownMenuItem disabled className="gap-2 text-rose-500"><Trash2 className="h-4 w-4" /> Delete</DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                               </div>
@@ -1725,6 +1762,26 @@ export default function ChatPage() {
             >
               {isRoleLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
               Confirm Change
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isMessageDeleteDialogOpen} onOpenChange={(open) => !open && setIsMessageDeleteDialogOpen(false)}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-white">Delete this message?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              This message will be removed from the chat for everyone. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteMessage} 
+              className="bg-rose-500 hover:bg-rose-600 text-white"
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

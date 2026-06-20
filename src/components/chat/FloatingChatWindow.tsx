@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Send, X, Minus, Loader2, BellOff, MoreVertical, Copy, Edit2, Trash2, CheckSquare } from "lucide-react";
+import { Send, X, Minus, Loader2, BellOff, MoreVertical, Copy, Edit2, Trash2, CheckSquare, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -19,6 +19,16 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Message {
   id: string;
@@ -56,10 +66,12 @@ export function FloatingChatWindow({
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Editing state
+  // Message Actions state
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [isEditingLoading, setIsEditingLoading] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [messageIdToDelete, setMessageIdToDelete] = useState<string | null>(null);
 
   const fetchMessages = useCallback(async () => {
     setLoading(true);
@@ -192,6 +204,31 @@ export function FloatingChatWindow({
     }
   };
 
+  const handleDeleteMessage = async () => {
+    if (!messageIdToDelete || !userProfile) return;
+
+    try {
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({
+          is_deleted: true,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', messageIdToDelete)
+        .eq('sender_id', userProfile.id);
+
+      if (error) throw error;
+
+      setMessages(prev => prev.filter(m => m.id !== messageIdToDelete));
+      toast({ title: "Deleted" });
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setMessageIdToDelete(null);
+    }
+  };
+
   const handleCopyMessage = (text: string) => {
     if (!text || text.trim().length === 0) return;
     navigator.clipboard.writeText(text).then(() => {
@@ -305,8 +342,16 @@ export function FloatingChatWindow({
                                    <Edit2 className="h-3 w-3" /> Edit
                                  </DropdownMenuItem>
                                )}
+                               {isMe && (
+                                 <DropdownMenuItem 
+                                   onClick={() => { setMessageIdToDelete(msg.id); setIsDeleteDialogOpen(true); }}
+                                   className="text-xs gap-2 text-rose-500"
+                                 >
+                                   <Trash2 className="h-3 w-3" /> Delete
+                                 </DropdownMenuItem>
+                               )}
                                <DropdownMenuSeparator className="dark:bg-slate-800" />
-                               <DropdownMenuItem disabled className="text-xs gap-2 text-rose-500"><Trash2 className="h-3 w-3" /> Delete</DropdownMenuItem>
+                               <DropdownMenuItem disabled className="text-xs gap-2"><CheckSquare className="h-3 w-3" /> Task</DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -335,6 +380,26 @@ export function FloatingChatWindow({
           </Button>
         </div>
       </div>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => !open && setIsDeleteDialogOpen(false)}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800 p-6 rounded-2xl w-[90vw] max-w-sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-lg font-bold">Delete message?</AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-slate-500">
+              This message will be removed for everyone in this chat.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-row gap-2 mt-4">
+            <AlertDialogCancel className="flex-1 h-9 text-xs rounded-xl mt-0">Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteMessage} 
+              className="flex-1 h-9 text-xs rounded-xl bg-rose-500 hover:bg-rose-600"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
