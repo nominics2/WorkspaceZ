@@ -28,7 +28,8 @@ import {
   Download,
   Share,
   PlusSquare,
-  Layout
+  Layout,
+  MessageSquare
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { usePushNotifications } from "@/components/providers/PushNotificationProvider";
@@ -218,10 +219,9 @@ export default function SettingsPage() {
   const handleNotificationClick = (n: any) => {
     if (n.type === 'app_update' && n.related_app_update_id) {
       router.push(`/app-updates?id=${n.related_app_update_id}`);
-      return;
-    }
-    
-    if (n.related_task_id) {
+    } else if (n.type === 'chat_message' || !!n.related_message_id) {
+      router.push(`/chat`);
+    } else if (n.related_task_id) {
       router.push(`/tasks?taskId=${n.related_task_id}`);
     } else if (n.related_note_id) {
       router.push(`/notes?noteId=${n.related_note_id}`);
@@ -409,7 +409,7 @@ export default function SettingsPage() {
                           onChange={(e) => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
                           placeholder="Your real name"
                           disabled={savingProfile}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:border-slate-800"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:border-slate-800"
                         />
                       </div>
                       <div className="space-y-2">
@@ -420,7 +420,7 @@ export default function SettingsPage() {
                           onChange={(e) => setProfileForm(f => ({ ...f, username: e.target.value }))}
                           placeholder="unique_handle"
                           disabled={savingProfile}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:border-slate-800"
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 dark:border-slate-800"
                         />
                         <p className="text-[10px] text-muted-foreground">3-20 characters, lowercase, numbers, or underscores.</p>
                       </div>
@@ -700,24 +700,22 @@ export default function SettingsPage() {
                           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
                           !n.is_read ? "bg-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
                         )}>
-                          {n.type === 'app_update' ? <Sparkles className="w-5 h-5" /> : n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                          {n.type === 'app_update' ? <Sparkles className="w-5 h-5" /> : (n.type === 'chat_message' || !!n.related_message_id) ? <MessageSquare className="w-5 h-5" /> : n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
                         </div>
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-2">
                             <h4 className={cn("text-sm font-bold truncate", !n.is_read ? "text-slate-900 dark:text-slate-100" : "text-slate-500 dark:text-slate-400")}>
                               {n.title}
                             </h4>
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
+                            <span className="text-[9px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
                               <Clock className="w-3 h-3" /> {new Date(n.created_at).toLocaleDateString()}
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed line-clamp-2">{n.message}</p>
                           <div className="flex items-center gap-3 pt-1">
-                            {n.type && (
-                              <Badge variant="secondary" className="text-[9px] h-4 py-0 px-1.5 uppercase font-bold tracking-wider dark:bg-slate-800 dark:text-slate-400">
-                                {n.type.replace('_', ' ')}
-                              </Badge>
-                            )}
+                            <Badge variant="secondary" className="text-[9px] h-4 py-0 px-1.5 uppercase font-bold tracking-wider dark:bg-slate-800 dark:text-slate-400">
+                              {n.type === 'chat_message' ? 'Chat' : (n.type || 'System').replace('_', ' ')}
+                            </Badge>
                             {n.read_at && (
                               <span className="text-[9px] text-muted-foreground">
                                 Read {new Date(n.read_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

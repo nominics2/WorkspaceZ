@@ -184,7 +184,12 @@ export function SidebarNav() {
                 {item.label === "Chat" && totalUnreadCount > 0 && (
                   <>
                     {!isCollapsed ? (
-                      <Badge className="ml-auto bg-white/20 text-white dark:bg-primary-foreground/20 border-none text-[10px] font-bold h-5 px-1.5 rounded-full ring-1 ring-white/30">
+                      <Badge className={cn(
+                        "ml-auto border-none text-[10px] font-bold h-5 px-1.5 rounded-full transition-colors",
+                        isActive 
+                          ? "bg-white text-primary ring-1 ring-white/30" 
+                          : "bg-primary text-white shadow-sm"
+                      )}>
                         {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
                       </Badge>
                     ) : (

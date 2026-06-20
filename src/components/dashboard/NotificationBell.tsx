@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Bell, Loader2, Check } from "lucide-react";
+import { Bell, Loader2, Check, MessageSquare, Sparkles } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,6 +39,7 @@ export function NotificationBell() {
         .from("notifications")
         .select("*")
         .eq("user_id", userProfile.id)
+        .eq("is_deleted", false)
         .order("created_at", { ascending: false })
         .limit(10);
 
@@ -86,7 +87,7 @@ export function NotificationBell() {
           const newNotif = payload.new;
           const belongsToWorkspace = !newNotif.workspace_id || newNotif.workspace_id === activeWorkspace?.id;
           
-          if (belongsToWorkspace) {
+          if (belongsToWorkspace && !newNotif.is_deleted) {
             setNotifications((prev) => {
               if (prev.some(n => n.id === newNotif.id)) return prev;
               return [newNotif, ...prev].slice(0, 10);
@@ -94,7 +95,7 @@ export function NotificationBell() {
             setUnreadCount((prev) => prev + 1);
             
             // Respect Notification Preferences for Chat/Message types
-            const isChatRelated = newNotif.type === 'chat' || newNotif.type === 'message' || !!newNotif.related_message_id;
+            const isChatRelated = newNotif.type === 'chat' || newNotif.type === 'message' || newNotif.type === 'chat_message' || !!newNotif.related_message_id;
             const channelId = newNotif.related_channel_id || newNotif.channel_id;
             
             if (isChatRelated) {
@@ -150,7 +151,11 @@ export function NotificationBell() {
         },
         (payload) => {
           const updatedNotif = payload.new;
-          setNotifications(prev => prev.map(n => n.id === updatedNotif.id ? updatedNotif : n));
+          if (updatedNotif.is_deleted) {
+            setNotifications(prev => prev.filter(n => n.id !== updatedNotif.id));
+          } else {
+            setNotifications(prev => prev.map(n => n.id === updatedNotif.id ? updatedNotif : n));
+          }
           fetchNotifications(); // Full refetch to ensure count is accurate
         }
       )
@@ -218,12 +223,12 @@ export function NotificationBell() {
 
     if (notification.type === 'app_update' && notification.related_app_update_id) {
       router.push(`/app-updates?id=${notification.related_app_update_id}`);
+    } else if (notification.type === 'chat_message' || notification.related_message_id) {
+      router.push(`/chat`);
     } else if (notification.related_task_id) {
       router.push(`/tasks?taskId=${notification.related_task_id}`);
     } else if (notification.related_note_id) {
       router.push(`/notes?noteId=${notification.related_note_id}`);
-    } else if (notification.related_message_id) {
-      router.push(`/chat`);
     } else if (notification.related_reminder_id || notification.related_leave_request_id) {
       router.push(`/dashboard`);
     }
@@ -303,22 +308,19 @@ export function NotificationBell() {
                       {notification.message}
                     </p>
                     <div className="flex items-center gap-2 mt-2">
-                      {notification.type && (
-                        <Badge variant="outline" className="text-[8px] h-4 py-0 px-1.5 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
-                          {notification.type.replace('_', ' ')}
-                        </Badge>
-                      )}
+                      <Badge variant="outline" className="text-[8px] h-4 py-0 px-1.5 font-bold uppercase tracking-widest bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
+                        {notification.type === 'chat_message' ? 'Chat' : (notification.type || 'System').replace('_', ' ')}
+                      </Badge>
                     </div>
                   </div>
-                  {!notification.is_read && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleMarkAsRead(e, notification.id); }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-primary p-1 hover:bg-primary/10 rounded-lg shrink-0 h-fit"
-                      title="Mark as read"
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </button>
-                  )}
+                  <div className={cn(
+                    "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                    !notification.is_read ? "bg-primary/10 text-primary" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
+                  )}>
+                    {notification.type === 'app_update' ? <Sparkles className="w-4 h-4" /> : 
+                     (notification.type === 'chat_message' || !!notification.related_message_id) ? <MessageSquare className="w-4 h-4" /> : 
+                     <Bell className="w-4 h-4" />}
+                  </div>
                 </div>
               ))}
             </div>
