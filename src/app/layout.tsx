@@ -6,6 +6,10 @@ export const metadata: Metadata = {
   title: 'WorkspaceZ | Modern Task Management',
   description: 'Streamline your team productivity with WorkspaceZ.',
   manifest: '/manifest.json',
+  icons: {
+    icon: '/brand/logomark.png',
+    apple: '/brand/logomark.png',
+  },
 };
 
 export default function RootLayout({
@@ -26,9 +30,6 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="WorkspaceZ" />
         <meta name="theme-color" content="#3b82f6" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
-        
-        {/* iOS Touch Icon */}
-        <link rel="apple-touch-icon" href="https://picsum.photos/seed/wsz/180/180" />
       </head>
       <body className="font-body antialiased bg-background text-foreground">
         {children}
