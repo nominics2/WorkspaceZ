@@ -21,7 +21,8 @@ import {
   ChevronLeft,
   Plus,
   Sparkles,
-  ShieldCheck
+  ShieldCheck,
+  PlaneTakeoff
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ const navItems = [
   { label: "Tasks", icon: CheckSquare, href: "/tasks" },
   { label: "Chat", icon: MessageSquare, href: "/chat" },
   { label: "Calendar", icon: Calendar, href: "/calendar" },
+  { label: "Leave", icon: PlaneTakeoff, href: "/leave" },
   { label: "Notes", icon: StickyNote, href: "/notes" },
   { label: "Updates", icon: Sparkles, href: "/app-updates" },
 ];

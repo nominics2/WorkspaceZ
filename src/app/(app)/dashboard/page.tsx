@@ -164,14 +164,10 @@ export default function DashboardPage() {
       setWorkload(workloadRes.data || []); 
       setMembers(membersRes.data || []);
 
-      // Leave categorization
       const allLeaves = leavesRes.data || [];
       setLeaveRequests(allLeaves.filter(l => l.user_id === userProfile.id));
-      
-      // Approved leaves for team presence
       setTeamPresence(allLeaves.filter(l => l.status === 'approved' && new Date(l.return_date) >= new Date()));
       
-      // Pending leaves for admins
       if (userRole === 'superadmin' || userRole === 'admin' || hasPermission('approve_leave_requests')) {
         setLeaveApprovals(allLeaves.filter(l => l.status === 'pending' && l.user_id !== userProfile.id));
       }
@@ -232,32 +228,16 @@ export default function DashboardPage() {
     } catch (err) {}
   };
 
-  const openLeaveModal = (leave: any = null) => {
-    if (leave) {
-      setEditingLeave(leave);
-      setLeaveForm({ startDate: leave.start_date.split('T')[0], days: leave.number_of_days.toString(), type: leave.leave_type, reason: leave.reason || "" });
-    } else {
-      setEditingLeave(null);
-      setLeaveForm({ startDate: new Date().toISOString().split('T')[0], days: "1", type: "annual_leave", reason: "" });
-    }
-    setIsLeaveModalOpen(true);
-  };
-
-  const handleSaveLeave = async (e: React.FormEvent) => {
+  const handleReviewLeave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeWorkspace || !userProfile) return;
+    if (!reviewingLeave || !reviewForm.reason.trim()) return;
     setSaving(true);
     try {
-      if (editingLeave) {
-        const { error } = await supabase.rpc('update_leave_request', { p_leave_request_id: editingLeave.id, p_start_date: leaveForm.startDate, p_number_of_days: parseInt(leaveForm.days), p_leave_type: leaveForm.type, p_reason: leaveForm.reason });
-        if (error) throw error;
-        toast({ title: "Leave request updated" });
-      } else {
-        const { error } = await supabase.rpc('create_leave_request', { p_workspace_id: activeWorkspace.id, p_start_date: leaveForm.startDate, p_number_of_days: parseInt(leaveForm.days), p_leave_type: leaveForm.type, p_reason: leaveForm.reason });
-        if (error) throw error;
-        toast({ title: "Leave request submitted", description: "Your manager will review it shortly." });
-      }
-      setIsLeaveModalOpen(false);
+      const { error } = await supabase.rpc('review_leave_request', { p_leave_request_id: reviewingLeave.id, p_status: reviewForm.status, p_manager_reason: reviewForm.reason });
+      if (error) throw error;
+      toast({ title: `Leave request ${reviewForm.status}` });
+      setIsReviewModalOpen(false);
+      setReviewingLeave(null);
       fetchDashboardData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
@@ -275,25 +255,6 @@ export default function DashboardPage() {
       fetchDashboardData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
-    }
-  };
-
-  const handleReviewLeave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reviewingLeave) return;
-    setSaving(true);
-    try {
-      const { error } = await supabase.rpc('review_leave_request', { p_leave_request_id: reviewingLeave.id, p_status: reviewForm.status, p_manager_reason: reviewForm.reason });
-      if (error) throw error;
-      toast({ title: `Leave request ${reviewForm.status}` });
-      setIsReviewModalOpen(false);
-      setReviewingLeave(null);
-      fetchDashboardData();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message });
-    } finally {
-      setSaving(false);
-      forceUnlockUI();
     }
   };
 
@@ -358,7 +319,7 @@ export default function DashboardPage() {
                 { label: "New Task", icon: CheckSquare, href: "/tasks", color: "from-blue-500 to-blue-600", shadow: "shadow-blue-500/20" }, 
                 { label: "Shared Note", icon: StickyNote, href: "/notes", color: "from-amber-500 to-amber-600", shadow: "shadow-amber-500/20" }, 
                 { label: "Workspace Chat", icon: MessageSquare, href: "/chat", color: "from-emerald-500 to-emerald-600", shadow: "shadow-emerald-500/20" }, 
-                { label: "Plan Leave", icon: PlaneTakeoff, onClick: () => openLeaveModal(), color: "from-violet-500 to-violet-600", shadow: "shadow-violet-500/20" }, 
+                { label: "Plan Leave", icon: PlaneTakeoff, href: "/leave", color: "from-violet-500 to-violet-600", shadow: "shadow-violet-500/20" }, 
               ].map((action) => { 
                 const content = (
                   <div className={cn("flex flex-col items-center justify-center p-5 rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 hover:border-primary/50 transition-all group cursor-pointer shadow-sm active:scale-95", action.shadow)}>
@@ -373,7 +334,6 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          {/* Admin Approvals Section */}
           {isManager && leaveApprovals.length > 0 && (
             <section className="space-y-4">
               <div className="flex items-center justify-between">
@@ -381,7 +341,7 @@ export default function DashboardPage() {
                   <div className="p-2 bg-rose-50 dark:bg-rose-500/10 rounded-lg"><Shield className="w-5 h-5 text-rose-500" /></div>
                   Pending Approvals
                 </h2>
-                <Badge className="bg-rose-500 text-white rounded-full px-3">{leaveApprovals.length}</Badge>
+                <Link href="/leave"><Badge className="bg-rose-500 text-white rounded-full px-3 cursor-pointer">{leaveApprovals.length}</Badge></Link>
               </div>
               <div className="space-y-3">
                 {leaveApprovals.map(leave => (
@@ -413,12 +373,14 @@ export default function DashboardPage() {
             </section>
           )}
 
-          {/* Team Presence Section */}
           <section className="space-y-4">
-            <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
-              <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 rounded-lg"><Palmtree className="w-5 h-5 text-emerald-500" /></div>
-              Team Presence
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
+                <div className="p-2 bg-emerald-50 dark:bg-emerald-500/10 rounded-lg"><Palmtree className="w-5 h-5 text-emerald-500" /></div>
+                Team Presence
+              </h2>
+              <Link href="/leave"><Button variant="ghost" size="sm" className="text-primary font-bold">Full Schedule</Button></Link>
+            </div>
             <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
               <CardContent className="p-6">
                 {teamPresence.length === 0 ? (
@@ -463,87 +425,6 @@ export default function DashboardPage() {
               ) : (todaysTasks.map(task => (<TaskDashboardCard key={task.id} task={task} />)))}
             </div>
           </section>
-
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
-                <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg"><Users className="w-5 h-5 text-indigo-500" /></div>
-                Active Team
-              </h2>
-              <Link href="/workspace"><Button variant="ghost" size="sm" className="text-primary font-bold">Manage Members</Button></Link>
-            </div>
-            <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
-              <CardContent className="p-6">
-                <div className="flex flex-wrap gap-6 items-center justify-center sm:justify-start">
-                  {members.map((m) => { 
-                    const p = m.profiles; 
-                    const avatar = p?.avatar_preset ? `/avatars/${p.avatar_preset}.png` : p?.avatar_url; 
-                    return (
-                      <DropdownMenu key={m.user_id} onOpenChange={(open) => !open && forceUnlockUI()}>
-                        <DropdownMenuTrigger asChild>
-                          <div className="flex flex-col items-center gap-2 group cursor-pointer">
-                            <div className="relative">
-                              <Avatar className="w-14 h-14 border-2 border-white dark:border-slate-800 shadow-md group-hover:scale-110 transition-transform">
-                                <AvatarImage src={avatar} />
-                                <AvatarFallback className="font-bold bg-slate-100 text-slate-600">{p?.full_name?.[0]}</AvatarFallback>
-                              </Avatar>
-                              {m.is_verified && (<div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-900 rounded-full p-0.5 shadow-sm"><BadgeCheck className="w-4 h-4 text-primary fill-primary/10" /></div>)}
-                            </div>
-                            <span className="text-[11px] font-bold text-slate-500 truncate max-w-[70px]">{p?.full_name?.split(' ')[0]}</span>
-                          </div>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="center" className="w-56 rounded-xl shadow-2xl dark:bg-slate-900 dark:border-slate-800">
-                          <DropdownMenuLabel className="flex flex-col"><span className="font-bold">{p?.full_name}</span><span className="text-[10px] text-slate-500 font-normal uppercase tracking-wider">{m.role}</span></DropdownMenuLabel>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => router.push(`/tasks?assignedTo=${m.user_id}`)} className="gap-2 py-2.5"><UserPlus className="w-4 h-4 text-blue-500" /> Assign Task</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => router.push(`/chat?userId=${m.user_id}`)} className="gap-2 py-2.5"><Mail className="w-4 h-4 text-emerald-500" /> Private Chat</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => router.push(`/workspace?userId=${m.user_id}`)} className="gap-2 py-2.5"><ExternalLink className="w-4 h-4 text-slate-500" /> View Profile</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ); 
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-
-          <section className="space-y-4">
-            <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
-              <div className="p-2 bg-amber-50 dark:bg-amber-500/10 rounded-lg"><Zap className="w-5 h-5 text-amber-500" /></div>
-              Real-time Feed
-            </h2>
-            <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
-              <CardContent className="p-0">
-                <div className="divide-y divide-slate-50 dark:divide-slate-800">
-                  {activity.length === 0 ? (
-                    <p className="text-sm text-slate-500 italic text-center py-16">No recent activity detected.</p>
-                  ) : (activity.map((log) => { 
-                    const config = activityConfig[log.action] || { label: "performed an action", icon: TrendingUp, color: "text-slate-500", bg: "bg-slate-100" }; 
-                    const ActionIcon = config.icon; 
-                    const actorName = log.actor_full_name || "Someone"; 
-                    const avatarSrc = log.actor_avatar_preset ? `/avatars/${log.actor_avatar_preset}.png` : log.actor_avatar_url; 
-                    return (
-                      <div key={log.id} className="p-5 flex gap-4 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-                        <div className="relative shrink-0 pt-1">
-                          <Avatar className="w-10 h-10 border dark:border-slate-800 shadow-sm">
-                            <AvatarImage src={avatarSrc} />
-                            <AvatarFallback className="font-bold text-xs">{actorName[0]}</AvatarFallback>
-                          </Avatar>
-                          <div className={cn("absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 shadow-sm", config.bg)}>
-                            <ActionIcon className="w-2.5 h-2.5 text-white" />
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm text-slate-700 dark:text-slate-300"><span className="font-bold text-slate-950 dark:text-white">{actorName}</span><span className="mx-1.5 opacity-80">{config.label}</span>{log.task_title && <span className="font-bold text-primary underline decoration-primary/30 underline-offset-2">"{log.task_title}"</span>}</div>
-                          <div className="mt-2 flex items-center gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest"><span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {new Date(log.created_at).toLocaleString([], { hour: '2-digit', minute: '2-digit', month: 'short', day: 'numeric' })}</span>{log.sub_workspace_name && <span className="flex items-center gap-1 text-violet-500"><Layout className="w-3 h-3" /> {log.sub_workspace_name}</span>}</div>
-                        </div>
-                      </div>
-                    ); 
-                  }))}
-                </div>
-              </CardContent>
-            </Card>
-          </section>
         </div>
 
         <div className="lg:col-span-4 space-y-10">
@@ -564,10 +445,9 @@ export default function DashboardPage() {
               ) : (reminders.map((r) => (
                 <div key={r.id} className="bg-white/10 hover:bg-white/20 backdrop-blur-md p-4 rounded-2xl border border-white/10 flex items-center justify-between group/item transition-colors">
                   <div className="min-w-0 mr-3"><p className="text-sm font-bold truncate leading-tight">{r.title}</p><p className="text-[10px] opacity-70 mt-1 uppercase font-bold tracking-widest">{new Date(r.remind_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(r.remind_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}</p></div>
-                  <button onClick={() => handleCompleteReminder(r.id)} className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg transform scale-0 group-hover/item:scale-100 transition-transform hover:scale-110 active:scale-95"><Check className="w-4 h-4 text-white" /></button>
+                  <button onClick={() => handleCompleteReminder(r.id)} className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg transform scale-0 group-hover/item:scale-100 transition-transform hover:scale-110 active:scale-95"><CheckSquare className="w-4 h-4 text-white" /></button>
                 </div>
               )))}
-              {isAdmin && <Button variant="ghost" onClick={() => setIsReminderModalOpen(true)} className="w-full text-white hover:bg-white/10 h-10 font-bold border border-white/20 rounded-xl mt-2">Add Reminder</Button>}
             </CardContent>
           </Card>
 
@@ -593,7 +473,6 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* My Absence Overview */}
           <Card className="border-none shadow-md dark:bg-slate-900 rounded-[2rem] overflow-hidden">
             <CardHeader className="p-6 pb-2">
               <div className="flex items-center gap-3">
@@ -628,36 +507,13 @@ export default function DashboardPage() {
                   ))}
                 </div>
               )}
-              <Button variant="outline" className="w-full rounded-xl text-xs h-9 border-slate-200 dark:border-slate-800" onClick={() => openLeaveModal()}>
-                Request Leave
-              </Button>
+              <Link href="/leave" className="block w-full">
+                <Button variant="outline" className="w-full rounded-xl text-xs h-9 border-slate-200 dark:border-slate-800">
+                  Manage Leave
+                </Button>
+              </Link>
             </CardContent>
           </Card>
-
-          {workload.length > 0 && (
-            <Card className="border-none shadow-md dark:bg-slate-900 rounded-[2rem] overflow-hidden">
-              <CardHeader className="p-6 pb-2">
-                <div className="flex items-center gap-3">
-                  <TrendingUp className="w-5 h-5 text-primary" />
-                  <CardTitle className="text-lg">Member Load</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="p-6 pt-2 space-y-5">
-                {workload.map((w, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold dark:text-white truncate max-w-[100px]">{w.full_name?.split(' ')[0]}</span>
-                        <Badge variant="outline" className="text-[8px] h-3.5 px-1 py-0 border-slate-200 dark:border-slate-800">{w.active_tasks} Active</Badge>
-                      </div>
-                      {w.overdue_tasks > 0 && <Badge className="bg-rose-500 h-4 text-[8px] py-0">{w.overdue_tasks} late</Badge>}
-                    </div>
-                    <Progress value={(w.completed_tasks / (w.active_tasks + w.completed_tasks || 1)) * 100} className="h-1.5" />
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
         </div>
       </div>
 
@@ -684,41 +540,6 @@ export default function DashboardPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isLeaveModalOpen} onOpenChange={(open) => { if (!saving) { setIsLeaveModalOpen(open); if (!open) forceUnlockUI(); } }}>
-        <DialogContent className="sm:max-w-md p-8 rounded-[2rem] dark:bg-slate-950 border-none shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold tracking-tight">{editingLeave ? 'Update Leave' : 'Plan Absence'}</DialogTitle>
-            <DialogDescription>Submit your time-off request for manager approval.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveLeave} className="space-y-5 pt-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5"><Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Starts On</Label><Input type="date" value={leaveForm.startDate} onChange={e => setLeaveForm({...leaveForm, startDate: e.target.value})} required className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Duration (Days)</Label><Input type="number" min="1" max="30" value={leaveForm.days} onChange={e => setLeaveForm({...leaveForm, days: e.target.value})} required className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800" /></div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Type of Leave</Label>
-              <Select value={leaveForm.type} onValueChange={v => setLeaveForm({...leaveForm, type: v})}>
-                <SelectTrigger className="h-11 rounded-xl dark:bg-slate-900 dark:border-slate-800"><SelectValue /></SelectTrigger>
-                <SelectContent className="dark:bg-slate-900 rounded-xl">
-                  <SelectItem value="annual_leave">Annual Holiday</SelectItem>
-                  <SelectItem value="sick_leave">Medical Leave</SelectItem>
-                  <SelectItem value="frl">FRL Request</SelectItem>
-                  <SelectItem value="other">Compassionate/Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Optional Reason</Label>
-              <Textarea value={leaveForm.reason} onChange={e => setLeaveForm({...leaveForm, reason: e.target.value})} placeholder="Briefly explain..." rows={3} className="rounded-xl dark:bg-slate-900 dark:border-slate-800" />
-            </div>
-            <DialogFooter className="pt-2 gap-3 flex-row">
-              <Button type="button" variant="ghost" onClick={() => setIsLeaveModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancel</Button>
-              <Button type="submit" className="flex-1 h-12 rounded-xl shadow-lg" disabled={saving}>{saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : editingLeave ? 'Update' : 'Request Leave'}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={isReviewModalOpen} onOpenChange={(open) => { if (!saving) { setIsReviewModalOpen(open); if (!open) { setReviewingLeave(null); forceUnlockUI(); } } }}>
         <DialogContent className="sm:max-w-md p-8 rounded-[2rem] dark:bg-slate-950 border-none shadow-2xl">
           <DialogHeader>
@@ -728,7 +549,7 @@ export default function DashboardPage() {
           <form onSubmit={handleReviewLeave} className="space-y-5 pt-4">
             <div className="p-5 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border dark:border-slate-800 text-sm space-y-2">
               <div className="flex justify-between font-medium"><span>Duration:</span> <span className="font-bold text-primary">{reviewingLeave?.number_of_days} Days</span></div>
-              <div className="flex justify-between font-medium"><span>Dates:</span> <span className="font-bold">{new Date(reviewingLeave?.start_date).toLocaleDateString()} - {new Date(reviewingLeave?.end_date).toLocaleDateString()}</span></div>
+              <div className="flex justify-between font-medium"><span>Dates:</span> <span className="font-bold">{new Date(reviewingLeave?.start_date || new Date()).toLocaleDateString()} - {new Date(reviewingLeave?.end_date || new Date()).toLocaleDateString()}</span></div>
               {reviewingLeave?.reason && <div className="mt-3 text-xs italic text-slate-500 border-t pt-2 opacity-80">"{reviewingLeave.reason}"</div>}
             </div>
             <div className="space-y-1.5">
@@ -737,7 +558,7 @@ export default function DashboardPage() {
             </div>
             <DialogFooter className="pt-2 gap-3 flex-row">
               <Button type="button" variant="ghost" onClick={() => setIsReviewModalOpen(false)} className="flex-1 h-12 rounded-xl">Cancel</Button>
-              <Button type="submit" className={cn("flex-1 h-12 rounded-xl shadow-lg", reviewForm.status === 'approved' ? 'bg-emerald-500' : 'bg-rose-500')} disabled={saving}>
+              <Button type="submit" className={cn("flex-1 h-12 rounded-xl shadow-lg text-white", reviewForm.status === 'approved' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-rose-500 hover:bg-rose-600')} disabled={saving || !reviewForm.reason.trim()}>
                 {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : reviewForm.status === 'approved' ? 'Confirm Approval' : 'Submit Rejection'}
               </Button>
             </DialogFooter>

@@ -29,7 +29,8 @@ import {
   Share,
   PlusSquare,
   Layout,
-  MessageSquare
+  MessageSquare,
+  PlaneTakeoff
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { usePushNotifications } from "@/components/providers/PushNotificationProvider";
@@ -225,9 +226,9 @@ export default function SettingsPage() {
       router.push(`/tasks?taskId=${n.related_task_id}`);
     } else if (n.related_note_id) {
       router.push(`/notes?noteId=${n.related_note_id}`);
-    } else if (n.related_message_id) {
-      router.push(`/chat`);
-    } else if (n.related_reminder_id || n.related_leave_request_id) {
+    } else if (n.type?.startsWith('leave_request') || n.related_leave_request_id) {
+      router.push(`/leave?id=${n.related_leave_request_id || ''}`);
+    } else if (n.related_reminder_id) {
       router.push(`/dashboard`);
     }
 
@@ -349,7 +350,7 @@ export default function SettingsPage() {
                           {currentDisplayAvatar ? (
                             <img src={currentDisplayAvatar} alt="Profile" className="w-full h-full object-cover" />
                           ) : (
-                            <span className="text-primary font-bold text-3xl">{userProfile?.full_name?.[0]}</span>
+                            <span className="text-primary font-bold text-3xl">{userProfile?.full_name?.[0] || 'U'}</span>
                           )}
                         </div>
                       </div>
@@ -700,7 +701,10 @@ export default function SettingsPage() {
                           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
                           !n.is_read ? "bg-primary text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-400"
                         )}>
-                          {n.type === 'app_update' ? <Sparkles className="w-5 h-5" /> : (n.type === 'chat_message' || !!n.related_message_id) ? <MessageSquare className="w-5 h-5" /> : n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                          {n.type === 'app_update' ? <Sparkles className="w-5 h-5" /> : 
+                           (n.type === 'chat_message' || !!n.related_message_id) ? <MessageSquare className="w-5 h-5" /> : 
+                           n.type?.startsWith('leave_request') ? <PlaneTakeoff className="w-5 h-5" /> :
+                           n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
                         </div>
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-2">

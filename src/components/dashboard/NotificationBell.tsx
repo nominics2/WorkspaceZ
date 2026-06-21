@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Bell, Loader2, Check, MessageSquare, Sparkles } from "lucide-react";
+import { Bell, Loader2, Check, MessageSquare, Sparkles, PlaneTakeoff } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,6 +96,7 @@ export function NotificationBell() {
             
             // Respect Notification Preferences for Chat/Message types
             const isChatRelated = newNotif.type === 'chat' || newNotif.type === 'message' || newNotif.type === 'chat_message' || !!newNotif.related_message_id;
+            const isLeaveRelated = newNotif.type?.startsWith('leave_request');
             const channelId = newNotif.related_channel_id || newNotif.channel_id;
             
             if (isChatRelated) {
@@ -229,7 +230,9 @@ export function NotificationBell() {
       router.push(`/tasks?taskId=${notification.related_task_id}`);
     } else if (notification.related_note_id) {
       router.push(`/notes?noteId=${notification.related_note_id}`);
-    } else if (notification.related_reminder_id || notification.related_leave_request_id) {
+    } else if (notification.type?.startsWith('leave_request') || notification.related_leave_request_id) {
+      router.push(`/leave?id=${notification.related_leave_request_id || ''}`);
+    } else if (notification.related_reminder_id) {
       router.push(`/dashboard`);
     }
   };
@@ -319,6 +322,7 @@ export function NotificationBell() {
                   )}>
                     {notification.type === 'app_update' ? <Sparkles className="w-4 h-4" /> : 
                      (notification.type === 'chat_message' || !!notification.related_message_id) ? <MessageSquare className="w-4 h-4" /> : 
+                     notification.type?.startsWith('leave_request') ? <PlaneTakeoff className="w-4 h-4" /> :
                      <Bell className="w-4 h-4" />}
                   </div>
                 </div>
