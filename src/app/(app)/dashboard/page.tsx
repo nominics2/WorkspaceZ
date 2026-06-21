@@ -34,7 +34,8 @@ import {
   Mail,
   ExternalLink,
   Layout,
-  Palmtree
+  Palmtree,
+  Circle
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { createClient } from "@/lib/supabase/client";
@@ -66,17 +67,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRouter } from "next/navigation";
 
 const activityConfig: Record<string, { label: string; icon: any; color: string; bg: string }> = {
-  task_created: { label: "created task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-500" },
-  task_updated: { label: "updated task", icon: RefreshCw, color: "text-slate-500", bg: "bg-slate-500" },
-  task_completed: { label: "completed task", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500" },
-  subtask_created: { label: "added subtask to", icon: CheckSquare, color: "text-blue-400", bg: "bg-blue-400" },
-  subtask_completed: { label: "completed subtask in", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-400" },
-  comment_added: { label: "commented on", icon: MessageSquare, color: "text-indigo-500", bg: "bg-indigo-500" },
-  attachment_uploaded: { label: "attached file to", icon: Paperclip, color: "text-slate-500", bg: "bg-slate-500" },
-  note_created: { label: "created note", icon: StickyNote, color: "text-amber-500", bg: "bg-amber-500" },
-  note_updated: { label: "updated note", icon: StickyNote, color: "text-amber-600", bg: "bg-amber-600" },
-  task_moved_to_trash: { label: "deleted task", icon: Trash2, color: "text-rose-500", bg: "bg-rose-500" },
-  task_restored_from_trash: { label: "restored task", icon: RefreshCw, color: "text-emerald-500", bg: "bg-emerald-500" },
+  task_created: { label: "created a task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-500" },
+  task_updated: { label: "updated a task", icon: RefreshCw, color: "text-slate-500", bg: "bg-slate-500" },
+  task_status_changed: { label: "changed task status", icon: RefreshCw, color: "text-blue-400", bg: "bg-blue-400" },
+  task_completed: { label: "completed a task", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500" },
+  task_cancelled: { label: "cancelled a task", icon: XCircle, color: "text-rose-400", bg: "bg-rose-400" },
+  task_priority_changed: { label: "changed task priority", icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-500" },
+  task_assigned: { label: "assigned a task", icon: UserPlus, color: "text-indigo-500", bg: "bg-indigo-500" },
+  task_due_date_changed: { label: "changed due date", icon: CalendarIcon, color: "text-violet-500", bg: "bg-violet-500" },
+  task_deleted: { label: "deleted a task", icon: Trash2, color: "text-rose-500", bg: "bg-rose-500" },
+  task_restored: { label: "restored a task", icon: RefreshCw, color: "text-emerald-500", bg: "bg-emerald-500" },
+  subtask_created: { label: "added a subtask", icon: CheckSquare, color: "text-blue-300", bg: "bg-blue-300" },
+  subtask_completed: { label: "completed a subtask", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-400" },
+  subtask_reopened: { label: "reopened a subtask", icon: Circle, color: "text-slate-400", bg: "bg-slate-400" },
+  task_comment_added: { label: "commented on a task", icon: MessageSquare, color: "text-indigo-500", bg: "bg-indigo-500" },
+  attachment_uploaded: { label: "attached a file", icon: Paperclip, color: "text-slate-500", bg: "bg-slate-500" },
+  note_created: { label: "created a note", icon: StickyNote, color: "text-amber-500", bg: "bg-amber-500" },
+  note_updated: { label: "updated a note", icon: StickyNote, color: "text-amber-600", bg: "bg-amber-600" },
 };
 
 export default function DashboardPage() {
