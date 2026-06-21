@@ -70,10 +70,12 @@ const activityConfig: Record<string, { label: string; icon: any; color: string; 
   task_created: { label: "created a task", icon: CheckSquare, color: "text-blue-500", bg: "bg-blue-500" },
   task_updated: { label: "updated a task", icon: RefreshCw, color: "text-slate-500", bg: "bg-slate-500" },
   task_status_changed: { label: "changed task status", icon: RefreshCw, color: "text-blue-400", bg: "bg-blue-400" },
+  status_changed: { label: "changed task status", icon: RefreshCw, color: "text-blue-400", bg: "bg-blue-400" },
   task_completed: { label: "completed a task", icon: CheckCircle2, color: "text-emerald-500", bg: "bg-emerald-500" },
   task_cancelled: { label: "cancelled a task", icon: XCircle, color: "text-rose-400", bg: "bg-rose-400" },
-  task_priority_changed: { label: "changed task priority", icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-500" },
+  task_priority_changed: { label: "changed priority", icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-500" },
   task_assigned: { label: "assigned a task", icon: UserPlus, color: "text-indigo-500", bg: "bg-indigo-500" },
+  assignee_changed: { label: "changed assignee", icon: UserPlus, color: "text-indigo-500", bg: "bg-indigo-500" },
   task_due_date_changed: { label: "changed due date", icon: CalendarIcon, color: "text-violet-500", bg: "bg-violet-500" },
   task_deleted: { label: "deleted a task", icon: Trash2, color: "text-rose-500", bg: "bg-rose-500" },
   task_restored: { label: "restored a task", icon: RefreshCw, color: "text-emerald-500", bg: "bg-emerald-500" },
@@ -81,6 +83,7 @@ const activityConfig: Record<string, { label: string; icon: any; color: string; 
   subtask_completed: { label: "completed a subtask", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-400" },
   subtask_reopened: { label: "reopened a subtask", icon: Circle, color: "text-slate-400", bg: "bg-slate-400" },
   task_comment_added: { label: "commented on a task", icon: MessageSquare, color: "text-indigo-500", bg: "bg-indigo-500" },
+  progress_updated: { label: "updated progress", icon: TrendingUp, color: "text-emerald-500", bg: "bg-emerald-500" },
   attachment_uploaded: { label: "attached a file", icon: Paperclip, color: "text-slate-500", bg: "bg-slate-500" },
   note_created: { label: "created a note", icon: StickyNote, color: "text-amber-500", bg: "bg-amber-500" },
   note_updated: { label: "updated a note", icon: StickyNote, color: "text-amber-600", bg: "bg-amber-600" },
@@ -134,13 +137,22 @@ export default function DashboardPage() {
     try {
       const [tasksRes, activityRes, notifsRes, remindersRes, workloadRes, leavesRes, membersRes] = await Promise.all([
         supabase.from('my_tasks_view').select('id, title, status, priority, due_date, is_overdue, progress_mode, manual_progress, calculated_progress').eq('workspace_id', activeWorkspace.id).eq('is_deleted', false).order('due_date', { ascending: true }),
-        supabase.from('recent_activity_view').select('id, actor_full_name, actor_avatar_url, actor_avatar_preset, actor_is_verified, action, task_title, created_at, sub_workspace_name').eq('workspace_id', activeWorkspace.id).order('created_at', { ascending: false }).limit(10),
+        supabase.rpc('get_recent_workspace_activity', { p_workspace_id: activeWorkspace.id, p_limit: 20 }),
         supabase.from('notifications').select('id, title, message, type, is_read, created_at, related_app_update_id, related_task_id, related_note_id, related_message_id').eq('user_id', userProfile.id).eq('is_read', false).eq('is_deleted', false).order('created_at', { ascending: false }).limit(5),
         supabase.from('reminders').select('id, title, remind_at').eq('remind_to', userProfile.id).eq('is_completed', false).order('remind_at', { ascending: true }).limit(5),
         supabase.from('member_workload_view').select('full_name, active_tasks, completed_tasks, overdue_tasks').eq('workspace_id', activeWorkspace.id).order('active_tasks', { ascending: false }),
         supabase.from('leave_requests_view').select('*').eq('workspace_id', activeWorkspace.id).order('start_date', { ascending: true }),
         supabase.from('workspace_members').select('user_id, role, is_verified, profiles:user_id(full_name, avatar_url, avatar_preset, email)').eq('workspace_id', activeWorkspace.id).eq('status', 'active').limit(12)
       ]);
+
+      if (activityRes.error) {
+        console.error("[Dashboard] Activity Fetch Failed:", {
+          message: activityRes.error.message,
+          details: activityRes.error.details,
+          hint: activityRes.error.hint,
+          code: activityRes.error.code
+        });
+      }
 
       const myTasks = tasksRes.data || [];
       const activeTasks = myTasks.filter(t => t.status !== 'completed');
@@ -439,7 +451,7 @@ export default function DashboardPage() {
             <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
               <CardContent className="p-0">
                 {activity.length === 0 ? (
-                  <p className="text-sm text-slate-500 italic text-center py-12">No recent workspace activity recorded.</p>
+                  <p className="text-sm text-slate-500 italic text-center py-12">No recent activity yet.</p>
                 ) : (
                   <div className="divide-y dark:divide-slate-800">
                     {activity.map((item) => {
