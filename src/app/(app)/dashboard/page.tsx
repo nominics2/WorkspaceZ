@@ -146,7 +146,7 @@ export default function DashboardPage() {
       ]);
 
       if (activityRes.error) {
-        console.error("[Dashboard] Activity Fetch Failed:", {
+        console.error("[Dashboard Recent Activity Error]", {
           message: activityRes.error.message,
           details: activityRes.error.details,
           hint: activityRes.error.hint,
@@ -202,7 +202,7 @@ export default function DashboardPage() {
     } catch (err: any) {
       toast({ variant: "destructive", title: "Error", description: err.message });
     } finally {
-      setIsRunningChecks(false);
+      isRunningChecks && setIsRunningChecks(false);
       forceUnlockUI();
     }
   };
@@ -472,10 +472,10 @@ export default function DashboardPage() {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm dark:text-slate-200">
                               <span className="font-bold text-slate-900 dark:text-white mr-1 flex items-center gap-1">
-                                {item.actor_full_name}
+                                {item.actor_full_name || "Someone"}
                               </span>
                               <span className="text-muted-foreground">{config.label}</span>
-                              <span className="font-bold ml-1 text-primary">{item.task_title}</span>
+                              <span className="font-bold ml-1 text-primary">{item.task_title || "a task"}</span>
                             </p>
                             <div className="flex items-center gap-3 mt-1.5">
                               <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter flex items-center gap-1">
