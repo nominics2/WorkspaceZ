@@ -274,7 +274,6 @@ export default function SettingsPage() {
     } else if (n.related_reminder_id) {
       router.push(`/dashboard`);
     } else if (n.type === 'bug_report') {
-      // If they click a bug report notification, they likely are a dev, but let's just go to console
       router.push(`/app-updates/admin`);
     }
 
@@ -554,7 +553,9 @@ export default function SettingsPage() {
                         "p-4 rounded-xl bg-white shadow-sm border",
                         themePreference === 'light' ? "text-blue-500 border-blue-500/20" : "text-slate-400 border-slate-200"
                       )}>
-                        <Sun className="w-8 h-8" />
+                        <div className="p-4 rounded-xl bg-white shadow-sm border">
+                          <Sun className="w-8 h-8" />
+                        </div>
                       </div>
                       <div className="text-center">
                         <p className={cn("font-bold text-sm", themePreference === 'light' ? "text-blue-600" : "text-slate-900 dark:text-slate-100")}>Light</p>
@@ -764,7 +765,7 @@ export default function SettingsPage() {
                         <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <div className="flex items-center gap-2">
-                              {!notification.is_read && (
+                              {!n.is_read && (
                                 <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
                               )}
                               <span className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">
