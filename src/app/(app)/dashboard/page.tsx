@@ -127,7 +127,7 @@ export default function DashboardPage() {
     try {
       const [tasksRes, activityRes, notifsRes, remindersRes, workloadRes, leavesRes, membersRes] = await Promise.all([
         supabase.from('my_tasks_view').select('id, title, status, priority, due_date, is_overdue, progress_mode, manual_progress, calculated_progress').eq('workspace_id', activeWorkspace.id).eq('is_deleted', false).order('due_date', { ascending: true }),
-        supabase.from('recent_activity_view').select('id, actor_full_name, actor_avatar_url, actor_avatar_preset, action, task_title, created_at, sub_workspace_name').eq('workspace_id', activeWorkspace.id).order('created_at', { ascending: false }).limit(6),
+        supabase.from('recent_activity_view').select('id, actor_full_name, actor_avatar_url, actor_avatar_preset, actor_is_verified, action, task_title, created_at, sub_workspace_name').eq('workspace_id', activeWorkspace.id).order('created_at', { ascending: false }).limit(10),
         supabase.from('notifications').select('id, title, message, type, is_read, created_at, related_app_update_id, related_task_id, related_note_id, related_message_id').eq('user_id', userProfile.id).eq('is_read', false).eq('is_deleted', false).order('created_at', { ascending: false }).limit(5),
         supabase.from('reminders').select('id, title, remind_at').eq('remind_to', userProfile.id).eq('is_completed', false).order('remind_at', { ascending: true }).limit(5),
         supabase.from('member_workload_view').select('full_name, active_tasks, completed_tasks, overdue_tasks').eq('workspace_id', activeWorkspace.id).order('active_tasks', { ascending: false }),
@@ -439,13 +439,22 @@ export default function DashboardPage() {
                       const config = activityConfig[item.action] || { label: item.action, icon: Zap, color: "text-slate-400", bg: "bg-slate-400" };
                       return (
                         <div key={item.id} className="p-5 flex items-start gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                          <Avatar className="h-10 w-10 border dark:border-slate-800 shadow-sm">
-                            <AvatarImage src={item.actor_avatar_preset ? `/avatars/${item.actor_avatar_preset}.png` : item.actor_avatar_url} />
-                            <AvatarFallback className="text-[10px]">{item.actor_full_name?.[0]}</AvatarFallback>
-                          </Avatar>
+                          <div className="relative shrink-0">
+                            <Avatar className="h-10 w-10 border dark:border-slate-800 shadow-sm">
+                              <AvatarImage src={item.actor_avatar_preset ? `/avatars/${item.actor_avatar_preset}.png` : item.actor_avatar_url} />
+                              <AvatarFallback className="text-[10px]">{item.actor_full_name?.[0]}</AvatarFallback>
+                            </Avatar>
+                            {item.actor_is_verified && (
+                              <div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-950 rounded-full p-0.5 shadow-sm border dark:border-slate-800">
+                                <BadgeCheck className="w-3.5 h-3.5 text-primary fill-primary/10" />
+                              </div>
+                            )}
+                          </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm dark:text-slate-200">
-                              <span className="font-bold text-slate-900 dark:text-white mr-1">{item.actor_full_name}</span>
+                              <span className="font-bold text-slate-900 dark:text-white mr-1 flex items-center gap-1">
+                                {item.actor_full_name}
+                              </span>
                               <span className="text-muted-foreground">{config.label}</span>
                               <span className="font-bold ml-1 text-primary">{item.task_title}</span>
                             </p>
