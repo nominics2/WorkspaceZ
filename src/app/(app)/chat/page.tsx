@@ -322,11 +322,8 @@ export default function ChatPage() {
 
   const forceUnlockUI = useCallback(() => {
     if (typeof document !== 'undefined') {
-      // Immediate reset to override any active locks
       document.body.style.pointerEvents = "auto";
       document.body.style.overflow = "auto";
-      
-      // Secondary cleanup after delay to catch Radix exit transitions
       setTimeout(() => {
         document.body.style.pointerEvents = "";
         document.body.style.overflow = "";
@@ -515,7 +512,6 @@ export default function ChatPage() {
     setLoadingChats(true);
     setError(null);
     try {
-      // 1. Get user's workspace memberships
       const { data: memberData, error: memberError } = await supabase
         .from('workspace_members')
         .select('workspace_id')
@@ -527,16 +523,11 @@ export default function ChatPage() {
         return;
       }
       const workspaceIds = memberData.map(m => m.workspace_id);
-
-      // 2. Get user's channel memberships to filter valid Direct/Group chats
       const { data: myMemberships } = await supabase
         .from('chat_channel_members')
         .select('channel_id')
         .eq('user_id', userProfile.id);
-      
       const memberChannelIds = (myMemberships || []).map(m => m.channel_id);
-
-      // 3. Fetch all active channels in those workspaces
       const { data: channelsData, error: channelsError } = await supabase
         .from('chat_channels')
         .select('id, workspace_id, sub_workspace_id, name, type, created_at, archived_at, archived_by')
@@ -544,36 +535,27 @@ export default function ChatPage() {
         .is('archived_at', null)
         .order('created_at', { ascending: false });
       if (channelsError) throw channelsError;
-
       const filteredChannels = (channelsData || []).filter(channel => {
         if (channel.name.toLowerCase() === 'general') return true;
         return memberChannelIds.includes(channel.id);
       });
-
       const channelIds = filteredChannels.map(c => c.id);
       if (channelIds.length === 0) {
         setChats([]);
         setLoadingChats(false);
         return;
       }
-
-      // 4. Fetch all participants for these channels to resolve names/avatars
       const { data: participants, error: participantsError } = await supabase
         .from('chat_channel_members')
         .select('channel_id, user_id')
         .in('channel_id', channelIds);
-      
       if (participantsError) throw participantsError;
-
-      // 5. Fetch all relevant profiles in one batch
       const allUserIdsInChannels = Array.from(new Set((participants || []).map(p => p.user_id)));
       const { data: allProfiles, error: profilesError } = await supabase
         .from('profiles')
         .select('id, full_name, username, email, avatar_url, avatar_preset, last_seen_at')
         .in('id', allUserIdsInChannels);
-      
       if (profilesError) throw profilesError;
-
       const [messagesRes] = await Promise.all([
         supabase
           .from('chat_messages')
@@ -584,23 +566,18 @@ export default function ChatPage() {
         fetchUnreadCounts(),
         fetchMuteStates()
       ]);
-
       const lastMessages = messagesRes.data || [];
-
       const formattedChats: Chat[] = filteredChannels.map(channel => {
         const lastMsg = lastMessages.find(m => m.channel_id === channel.id);
         const channelParticipants = (participants || []).filter(p => p.channel_id === channel.id);
-        
         let displayName = channel.name;
         let displayAvatar = null;
         let displayAvatarPreset = null;
         let otherUserId = undefined;
         let otherUserLastSeen = undefined;
-
         if (channel.type === 'direct') {
           const otherMember = channelParticipants.find(p => p.user_id !== userProfile.id);
           const otherProfile = allProfiles?.find(p => p.id === otherMember?.user_id);
-          
           if (otherProfile) {
             displayName = otherProfile.full_name || otherProfile.username || otherProfile.email || 'Unknown User';
             displayAvatar = otherProfile.avatar_url;
@@ -613,7 +590,6 @@ export default function ChatPage() {
         } else if (channel.name.toLowerCase() === 'general') {
           displayName = "General Chat";
         }
-
         return {
           id: channel.id,
           name: channel.name,
@@ -639,9 +615,7 @@ export default function ChatPage() {
         const timeB = new Date(b.last_message_at || b.created_at || 0).getTime();
         return timeB - timeA;
       });
-
       setChats(formattedChats);
-      
       if (!selectedChatId && formattedChats.length > 0 && !showConversation) {
         setSelectedChatId(formattedChats[0].id);
       }
@@ -1085,35 +1059,20 @@ export default function ChatPage() {
     if (!selectedChatId || isDeletingChat) return;
     setIsDeletingChat(true);
     try {
-      // Optimistic cleanup
       const deletedId = selectedChatId;
       const currentWorkspaceId = chats.find(c => c.id === deletedId)?.workspace_id;
-      
       const { error } = await supabase.rpc("delete_direct_chat_for_me", { p_channel_id: deletedId });
-      
-      // If error is "not a member", treat as stale UI success
-      if (error && !error.message.toLowerCase().includes("not a member")) {
-        throw error;
-      }
-      
+      if (error && !error.message.toLowerCase().includes("not a member")) { throw error; }
       toast({ title: "Conversation removed" });
       setIsDeleteChatDialogOpen(false);
       removeBubble(deletedId);
-      
-      // Select General if possible
       const generalChat = chats.find(c => c.name.toLowerCase() === 'general' && c.workspace_id === currentWorkspaceId && c.id !== deletedId);
-      
       setSelectedChatId(null);
       setShowConversation(false);
-      
-      // Force local refresh
       setChats(prev => prev.filter(c => c.id !== deletedId));
       await fetchChats();
       await fetchUnreadCounts();
-      
-      if (generalChat) {
-        handleSelectChat(generalChat.id);
-      }
+      if (generalChat) { handleSelectChat(generalChat.id); }
     } catch (err: any) {
       toast({ variant: "destructive", title: "Deletion failed", description: err.message });
     } finally {
@@ -1429,22 +1388,13 @@ export default function ChatPage() {
         if (error) throw error;
         channelId = data;
       }
-
-      // 1. Close modal and clear inputs
       setIsNewChatOpen(false);
       setSelectedMemberId(null);
       setSelectedMemberIds([]);
       setGroupName("");
       setMemberSearchQuery("");
-
-      // 2. Immediate data sync to resolve participant names
       await fetchChats();
-
-      // 3. Selection and navigation
-      if (channelId) {
-        handleSelectChat(channelId);
-      }
-      
+      if (channelId) { handleSelectChat(channelId); }
       toast({ title: chatMode === 'group' ? "Focus group created" : "Direct chat initialized" });
     } catch (err: any) {
       toast({ variant: "destructive", title: "Handshake Failed", description: err.message });
@@ -1522,7 +1472,7 @@ export default function ChatPage() {
               ) : filteredChats.map((chat) => {
                   const isActive = selectedChatId === chat.id;
                   const unreadCount = unreadCounts[chat.id] || 0;
-                  const isMuted = muteStates[chat.id]?.is_muted && (!muteStates[chat.id].muted_until || new Date(muteStates[chat.id].muted_until!) > new Date());
+                  const isMuted = muteStates[chat.id]?.is_muted && (!muteStates[chat.id].muted_until || new Date(muteStates[currId].muted_until!) > new Date());
                   const isUserOnline = chat.type === 'direct' && chat.other_user_id ? !!onlineUsers[chat.other_user_id] : false;
                   return (
                     <button key={chat.id} onClick={() => handleSelectChat(chat.id)} className={cn("w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all hover:bg-slate-50 dark:hover:bg-slate-800", isActive && "bg-primary/10")}>
@@ -1569,23 +1519,71 @@ export default function ChatPage() {
                 <div className="flex items-center gap-3 w-full"><Button variant="ghost" size="icon" aria-label="Close Search" onClick={() => { setIsSearchOpen(false); setInChatSearchQuery(""); setInChatSearchResults([]); forceUnlockUI(); }}><ChevronLeft className="w-5 h-5" /></Button><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input placeholder="Filter this thread..." className="pl-10 h-10 bg-slate-100 dark:bg-slate-800 border-none rounded-xl" value={inChatSearchQuery} onChange={(e) => setInChatSearchQuery(e.target.value)} autoFocus />{inChatSearchQuery && <button className="absolute right-3 top-1/2 -translate-y-1/2" aria-label="Clear Query" onClick={() => { setInChatSearchQuery(""); setInChatSearchResults([]); }}><X className="w-4 h-4 text-slate-400" /></button>}</div></div>
               ) : (
                 <>
-                  <div className="flex items-center gap-4 min-w-0"><Button variant="ghost" size="icon" aria-label="Back" className="md:hidden rounded-xl h-10 w-10" onClick={() => setShowConversation(false)}><ChevronLeft className="w-6 h-6" /></Button><Avatar className="w-10 h-10 cursor-pointer" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}><AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} /><AvatarFallback className="bg-primary/10 text-primary font-bold uppercase">{selectedChat.display_name?.[0] || 'C'}</AvatarFallback></Avatar><div className="min-w-0"><div className="flex items-center gap-2"><p className="font-bold text-sm md:text-base dark:text-white truncate">{selectedChat.display_name}</p>{isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}</div><p className={cn("text-[10px] md:text-xs font-medium flex items-center gap-1.5", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "text-emerald-500" : "text-slate-400")}>
-                    <span className={cn("w-1.5 h-1.5 rounded-full", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "bg-emerald-500" : "bg-slate-300")} />
-                    {selectedChat.type === 'direct' ? (
-                      selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id] ? "Online" : 
-                      (selectedChat.other_user_last_seen ? `Last seen ${formatLastSeen(selectedChat.other_user_last_seen)}` : "Offline")
-                    ) : `${onlineCount} online`}
-                  </p></div></div>
-                  <div className="flex items-center gap-1">
-                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Chat Info" className="rounded-xl text-slate-400" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}><Info className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Conversation details</TooltipContent></Tooltip></TooltipProvider>
-                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Detach" className="rounded-xl text-slate-400 hover:text-primary" onClick={() => addBubble(selectedChat)}><MessageCircle className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Open as floating window</TooltipContent></Tooltip></TooltipProvider>
-                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Media & Files" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}><Files className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Shared assets</TooltipContent></Tooltip></TooltipProvider>
-                    <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Search" className="rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}><Search className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Search thread</TooltipContent></Tooltip></TooltipProvider>
+                  <div className="flex items-center gap-3 md:gap-4 min-w-0">
+                    <Button variant="ghost" size="icon" aria-label="Back" className="md:hidden rounded-xl h-9 w-9" onClick={() => setShowConversation(false)}>
+                      <ChevronLeft className="w-5 h-5" />
+                    </Button>
+                    <Avatar className="w-9 h-9 md:w-10 md:h-10 cursor-pointer" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}>
+                      <AvatarImage src={selectedChat.display_avatar_preset ? `/avatars/${selectedChat.display_avatar_preset}.png` : selectedChat.display_avatar} />
+                      <AvatarFallback className="bg-primary/10 text-primary font-bold uppercase text-xs md:text-sm">
+                        {selectedChat.display_name?.[0] || 'C'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 md:gap-2">
+                        <p className="font-bold text-xs md:text-base dark:text-white truncate">
+                          {selectedChat.display_name}
+                        </p>
+                        {isCurrentChatMuted && <BellOff className="w-3 h-3 text-slate-400" />}
+                      </div>
+                      <p className={cn("text-[9px] md:text-xs font-medium flex items-center gap-1", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "text-emerald-500" : "text-slate-400")}>
+                        <span className={cn("w-1.5 h-1.5 rounded-full", (selectedChat.type === 'direct' && selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id]) || (selectedChat.type !== 'direct' && onlineCount > 0) ? "bg-emerald-500" : "bg-slate-300")} />
+                        {selectedChat.type === 'direct' ? (
+                          selectedChat.other_user_id && onlineUsers[selectedChat.other_user_id] ? "Online" : 
+                          (selectedChat.other_user_last_seen ? `Last seen ${formatLastSeen(selectedChat.other_user_last_seen)}` : "Offline")
+                        ) : `${onlineCount} online`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-0.5 md:gap-1">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" aria-label="Search" className="h-8 w-8 md:h-10 md:w-10 rounded-xl text-slate-400" onClick={() => setIsSearchOpen(true)}>
+                            <Search className="w-4 h-4 md:w-5 md:h-5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Search thread</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button variant="ghost" size="icon" aria-label="Chat Info" className="h-8 w-8 md:h-10 md:w-10 rounded-xl text-slate-400" onClick={() => { setIsInfoSheetOpen(true); fetchInfoMembers(); }}>
+                            <Info className="w-4 h-4 md:w-5 md:h-5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Conversation details</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
                     <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label="More Options" className="rounded-xl text-slate-400"><MoreVertical className="w-5 h-5" /></Button>
+                        <Button variant="ghost" size="icon" aria-label="More Options" className="h-8 w-8 md:h-10 md:w-10 rounded-xl text-slate-400">
+                          <MoreVertical className="w-4 h-4 md:w-5 md:h-5" />
+                        </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-56 dark:bg-slate-900 dark:border-slate-800">
+                        {/* Hidden on desktop header but useful on mobile menu */}
+                        <DropdownMenuItem onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }} className="gap-2 md:hidden">
+                          <Files className="w-4 h-4" /> Media & Shared Assets
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => addBubble(selectedChat)} className="gap-2 md:hidden">
+                          <MessageCircle className="w-4 h-4" /> Open as floating window
+                        </DropdownMenuItem>
+                        
+                        <DropdownMenuSeparator className="md:hidden dark:bg-slate-800" />
                         <DropdownMenuLabel className="dark:text-slate-100">Notification Settings</DropdownMenuLabel>
                         <DropdownMenuItem onClick={() => setIsNotificationSettingsOpen(true)} className="gap-2"><Settings className="w-4 h-4" /> Global Preferences</DropdownMenuItem>
                         <DropdownMenuSeparator className="dark:bg-slate-800" />
@@ -1602,6 +1600,11 @@ export default function ChatPage() {
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    
+                    <div className="hidden md:flex items-center gap-1">
+                      <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Detach" className="rounded-xl text-slate-400 hover:text-primary" onClick={() => addBubble(selectedChat)}><MessageCircle className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Open as floating window</TooltipContent></Tooltip></TooltipProvider>
+                      <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label="Media & Files" className="rounded-xl text-slate-400" onClick={() => { setIsMediaSheetOpen(true); fetchMedia(); }}><Files className="w-5 h-5" /></Button></TooltipTrigger><TooltipContent>Shared assets</TooltipContent></Tooltip></TooltipProvider>
+                    </div>
                   </div>
                 </>
               )}
@@ -1622,7 +1625,7 @@ export default function ChatPage() {
                   const imageAttachments = msg.attachments?.filter(a => a.file_type?.startsWith('image/')) || [];
                   const otherAttachments = msg.attachments?.filter(a => !a.file_type?.startsWith('image/')) || [];
                   return (
-                    <div key={msg.id} id={`message-${msg.id}`} className={cn("group flex gap-3 max-w-[85%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
+                    <div key={msg.id} id={`message-${msg.id}`} className={cn("group flex gap-3 max-w-[90%] md:max-w-[70%] transition-all", isMe ? "ml-auto flex-row-reverse" : "mr-auto", isHighlighted && "scale-105")}>
                       {!isMe && <Avatar className="w-8 h-8 shrink-0 mt-1"><AvatarImage src={msg.profiles?.avatar_preset ? `/avatars/${msg.profiles.avatar_preset}.png` : msg.profiles?.avatar_url} /><AvatarFallback className="text-[10px]">{msg.profiles?.full_name?.[0]}</AvatarFallback></Avatar>}
                       <div className={cn("flex flex-col relative", isMe ? "items-end" : "items-start", isEditing && "w-full")}>
                         {!isMe && <span className="text-[10px] font-bold text-slate-400 mb-1 ml-1">{msg.profiles?.full_name}</span>}
@@ -1654,7 +1657,7 @@ export default function ChatPage() {
                                            <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full bg-white/20 backdrop-blur-md border-none text-white hover:bg-white/30" onClick={() => setSelectedImageForLightbox(att)}><Maximize2 className="w-4 h-4" /></Button>
                                            <Button size="icon" variant="secondary" className="h-8 w-8 rounded-full bg-white/20 backdrop-blur-md border-none text-white hover:bg-white/30" onClick={() => window.open(att.signed_url, '_blank')}><Download className="w-4 h-4" /></Button>
                                         </div>
-                                        <div className="absolute top-2 right-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                                        <div className="absolute top-2 right-2 md:opacity-0 group-hover/img:opacity-100 transition-opacity">
                                            <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                                               <DropdownMenuTrigger asChild>
                                                 <Button size="icon" variant="secondary" className="h-6 w-6 rounded-lg bg-black/40 backdrop-blur-sm border-none text-white"><MoreVertical className="w-3 h-3" /></Button>
@@ -1703,10 +1706,12 @@ export default function ChatPage() {
                             )}
                             <div className={cn("flex items-center gap-1.5 mt-1.5 justify-end opacity-70 text-[9px] font-bold", isMe ? "text-white/80" : "text-slate-400")}>{wasEdited && <span className="italic mr-1">(edited)</span>}<span>{new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>{isMe && <CheckCheck className="w-3 h-3" />}</div>
                             {!isEditing && (
-                              <div className={cn("absolute top-0 opacity-0 md:group-hover:opacity-100 transition-opacity", isMe ? "-left-10" : "-right-10")}>
+                              <div className={cn("absolute top-0 md:opacity-0 md:group-hover:opacity-100 transition-opacity", isMe ? "-left-8 md:-left-10" : "-right-8 md:-right-10")}>
                                 <DropdownMenu onOpenChange={(open) => !open && forceUnlockUI()}>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" aria-label="Message actions" className="h-8 w-8 rounded-full dark:text-slate-400 dark:hover:text-white"><MoreVertical className="h-4 w-4" /></Button>
+                                    <Button variant="ghost" size="icon" aria-label="Message actions" className="h-7 w-7 md:h-8 md:w-8 rounded-full dark:text-slate-400 dark:hover:text-white">
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align={isMe ? "end" : "start"} className="w-48 dark:bg-slate-900 dark:border-slate-800">
                                      <DropdownMenuItem onClick={() => setReplyingToMessage(msg)} className="gap-2"><Reply className="h-4 w-4" /> Reply</DropdownMenuItem>
@@ -1748,11 +1753,11 @@ export default function ChatPage() {
                   ))}
                 </div>
               )}
-              <div className="flex items-center gap-3 bg-slate-100 dark:bg-slate-950 p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
+              <div className="flex items-center gap-2 md:gap-3 bg-slate-100 dark:bg-slate-950 p-1.5 md:p-2 rounded-2xl border dark:border-slate-800 transition-all focus-within:ring-2 focus-within:ring-primary/20">
                 <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} multiple />
-                <Button variant="ghost" size="icon" aria-label="Attach File" className="text-slate-400 hover:text-primary rounded-xl shrink-0" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip className="w-5 h-5" /></Button>
-                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-base flex-1 dark:text-white" placeholder={isSending ? "Uploading files..." : "Compose message..."} value={messageInput} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} disabled={isSending} />
-                <Button size="icon" aria-label="Send" onClick={handleSendMessage} className={cn("rounded-xl transition-all", (messageInput.trim() || selectedFiles.length > 0) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && selectedFiles.length === 0) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
+                <Button variant="ghost" size="icon" aria-label="Attach File" className="text-slate-400 hover:text-primary rounded-xl shrink-0 h-9 w-9 md:h-10 md:w-10" onClick={() => fileInputRef.current?.click()} disabled={isSending}><Paperclip className="w-5 h-5" /></Button>
+                <Input className="border-none shadow-none bg-transparent focus-visible:ring-0 text-sm md:text-base flex-1 dark:text-white h-9 md:h-11" placeholder={isSending ? "Uploading..." : "Message..."} value={messageInput} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); } }} disabled={isSending} />
+                <Button size="icon" aria-label="Send" onClick={handleSendMessage} className={cn("rounded-xl transition-all h-9 w-9 md:h-10 md:w-10 shrink-0", (messageInput.trim() || selectedFiles.length > 0) && !isSending ? "bg-primary" : "bg-slate-300 dark:bg-slate-700")} disabled={(!messageInput.trim() && selectedFiles.length === 0) || isSending}>{isSending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}</Button>
               </div>
             </div>
           </>
