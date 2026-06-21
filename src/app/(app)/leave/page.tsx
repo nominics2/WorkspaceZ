@@ -20,7 +20,8 @@ import {
   ShieldCheck,
   Stethoscope,
   Activity,
-  FilterX
+  FilterX,
+  Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -58,6 +59,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useSearchParams } from "next/navigation";
 
 const LEAVE_TYPES = [
@@ -91,10 +103,16 @@ export default function LeavePage() {
   const [reviewRemark, setReviewRemark] = useState("");
   const [reviewing, setReviewing] = useState(false);
 
+  // Deletion state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [leaveToDelete, setLeaveToDelete] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
+
   const supabase = createClient();
   const { toast } = useToast();
 
   const isAdmin = userRole === 'superadmin' || userRole === 'admin';
+  const isSuperAdmin = userRole === 'superadmin';
   const canApprove = isAdmin || hasPermission('approve_leave_requests');
 
   const forceUnlockUI = useCallback(() => {
@@ -199,6 +217,8 @@ export default function LeavePage() {
       fetchData();
     } catch (err: any) {
       toast({ variant: "destructive", title: "Action Failed", description: err.message });
+    } finally {
+      forceUnlockUI();
     }
   };
 
@@ -224,6 +244,41 @@ export default function LeavePage() {
       toast({ variant: "destructive", title: "Review Failed", description: err.message });
     } finally {
       setReviewing(false);
+      forceUnlockUI();
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!leaveToDelete) return;
+    setDeleting(true);
+    try {
+      const { error } = await supabase.rpc("delete_leave_request", {
+        p_leave_request_id: leaveToDelete.id
+      });
+
+      if (error) {
+        console.error("[Leave Delete] Error:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
+
+      toast({ title: "Leave request deleted." });
+      setIsDeleteDialogOpen(false);
+      setLeaveToDelete(null);
+      setIsDetailOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast({ 
+        variant: "destructive", 
+        title: "Deletion Failed", 
+        description: err.message || "An unexpected error occurred." 
+      });
+    } finally {
+      setDeleting(false);
       forceUnlockUI();
     }
   };
@@ -265,7 +320,13 @@ export default function LeavePage() {
               <EmptyState message="You haven't applied for any leave yet." />
             ) : (
               myLeaves.map(leave => (
-                <LeaveCard key={leave.id} leave={leave} onOpen={() => handleOpenDetail(leave)} isMe />
+                <LeaveCard 
+                  key={leave.id} 
+                  leave={leave} 
+                  onOpen={() => handleOpenDetail(leave)} 
+                  onDelete={() => { setLeaveToDelete(leave); setIsDeleteDialogOpen(true); }}
+                  isMe 
+                />
               ))
             )}
           </div>
@@ -392,7 +453,19 @@ export default function LeavePage() {
                       <AvatarFallback className="font-bold bg-primary/10 text-primary">{selectedLeave.full_name?.[0]}</AvatarFallback>
                     </Avatar>
                     <div className="text-left">
-                      <DialogTitle className="text-xl font-bold">{selectedLeave.full_name}</DialogTitle>
+                      <div className="flex items-center gap-2">
+                        <DialogTitle className="text-xl font-bold">{selectedLeave.full_name}</DialogTitle>
+                        {isSuperAdmin && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-6 w-6 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20" 
+                            onClick={() => { setLeaveToDelete(selectedLeave); setIsDeleteDialogOpen(true); }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground">{selectedLeave.email}</p>
                     </div>
                     <Badge className={cn("ml-auto uppercase text-[9px] font-black tracking-widest",
@@ -465,7 +538,7 @@ export default function LeavePage() {
                   )}
 
                   {selectedLeave.status === 'pending' && selectedLeave.user_id === userProfile?.id && (
-                    <Button variant="outline" className="w-full h-11 rounded-xl text-rose-500 hover:bg-rose-50 border-rose-100" onClick={() => { handleCancel(selectedLeave.id); setIsDetailOpen(false); }}>
+                    <Button variant="outline" className="w-full h-11 rounded-xl text-rose-500 hover:bg-rose-50 border-rose-100" onClick={() => handleCancel(selectedLeave.id)}>
                       Cancel Request
                     </Button>
                   )}
@@ -475,11 +548,34 @@ export default function LeavePage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={(open) => { if (!open) { setLeaveToDelete(null); forceUnlockUI(); } setIsDeleteDialogOpen(open); }}>
+        <AlertDialogContent className="dark:bg-slate-950 dark:border-slate-800">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="dark:text-white text-xl">Delete leave request?</AlertDialogTitle>
+            <AlertDialogDescription className="dark:text-slate-400">
+              This will permanently remove this leave request.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-3 sm:gap-0">
+            <AlertDialogCancel className="dark:bg-slate-900 dark:text-white dark:border-slate-800" disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={(e) => { e.preventDefault(); handleDelete(); }} 
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+              disabled={deleting}
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+              Delete Permanently
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function LeaveCard({ leave, onOpen, isMe, isManagement }: { leave: any, onOpen: () => void, isMe?: boolean, isManagement?: boolean }) {
+function LeaveCard({ leave, onOpen, onDelete, isMe, isManagement }: { leave: any, onOpen: () => void, onDelete?: () => void, isMe?: boolean, isManagement?: boolean }) {
   const type = LEAVE_TYPES.find(t => t.id === leave.leave_type) || LEAVE_TYPES[3];
   const TypeIcon = type.icon;
 
@@ -506,8 +602,19 @@ function LeaveCard({ leave, onOpen, isMe, isManagement }: { leave: any, onOpen: 
           </p>
         </div>
 
-        <div className="text-right shrink-0">
-          <p className="text-xs font-black text-slate-900 dark:text-slate-100">{leave.number_of_days}d</p>
+        <div className="text-right shrink-0 flex flex-col items-end gap-1">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-black text-slate-900 dark:text-slate-100">{leave.number_of_days}d</p>
+            {isMe && onDelete && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                className="text-slate-400 hover:text-rose-500 transition-colors p-1"
+                title="Delete request"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           <p className="text-[9px] font-bold text-primary uppercase tracking-tighter">Return: {format(parseISO(leave.return_date), "MMM d")}</p>
         </div>
       </div>
