@@ -38,7 +38,9 @@ import {
   AlertTriangle,
   ShieldAlert,
   BadgeCheck,
-  UserCircle
+  UserCircle,
+  Bug,
+  Monitor
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -95,6 +97,7 @@ export default function AppUpdatesAdminPage() {
   const [updates, setUpdates] = useState<any[]>([]);
   const [features, setFeatures] = useState<any[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
+  const [bugReports, setBugReports] = useState<any[]>([]);
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -135,6 +138,13 @@ export default function AppUpdatesAdminPage() {
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [reviewingRequest, setReviewingRequest] = useState<any>(null);
   const [reviewForm, setReviewForm] = useState({
+    status: "new",
+    developer_note: ""
+  });
+
+  const [isBugReviewModalOpen, setIsBugReviewModalOpen] = useState(false);
+  const [reviewingBug, setReviewingBug] = useState<any>(null);
+  const [bugReviewForm, setBugReviewForm] = useState({
     status: "new",
     developer_note: ""
   });
@@ -186,12 +196,13 @@ export default function AppUpdatesAdminPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [updatesRes, featuresRes, requestsRes, wsRes, usersRes] = await Promise.all([
+      const [updatesRes, featuresRes, requestsRes, wsRes, usersRes, bugRes] = await Promise.all([
         supabase.from('app_updates').select('*').order('published_at', { ascending: false }),
         supabase.from('app_features').select('*').order('category', { ascending: true }).order('sort_order', { ascending: true }),
         supabase.from('app_feature_requests').select('*, profiles(full_name, email), workspaces(name)').order('created_at', { ascending: false }),
         supabase.from('workspaces').select('id, name, icon_preset').order('name', { ascending: true }),
-        supabase.rpc('get_developer_global_users')
+        supabase.rpc('get_developer_global_users'),
+        supabase.from('app_bug_reports').select('*, profiles(full_name, email), workspaces(name)').order('created_at', { ascending: false })
       ]);
 
       setUpdates(updatesRes.data || []);
@@ -199,6 +210,7 @@ export default function AppUpdatesAdminPage() {
       setRequests(requestsRes.data || []);
       setWorkspaces(wsRes.data || []);
       setUsers(usersRes.data || []);
+      setBugReports(bugRes.data || []);
     } catch (err) {
       console.error("[Admin] Fetch failed:", err);
     } finally {
@@ -392,6 +404,31 @@ export default function AppUpdatesAdminPage() {
     }
   };
 
+  const handleSaveBugReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewingBug || submitting) return;
+
+    setSubmitting(true);
+    try {
+      const { error } = await supabase.rpc("update_app_bug_report_status", {
+        p_bug_report_id: reviewingBug.id,
+        p_status: bugReviewForm.status,
+        p_developer_note: bugReviewForm.developer_note
+      });
+
+      if (error) throw error;
+
+      toast({ title: "Bug report updated" });
+      setIsBugReviewModalOpen(false);
+      fetchData();
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Update Failed", description: err.message });
+    } finally {
+      setSubmitting(false);
+      forceUnlockUI();
+    }
+  };
+
   const handleDeleteUpdate = async (id: string) => {
     try {
       const { error } = await supabase.from('app_updates').delete().eq('id', id);
@@ -508,6 +545,9 @@ export default function AppUpdatesAdminPage() {
           <TabsTrigger value="features" className="rounded-lg px-6 font-bold flex-1 md:flex-none">Feature Catalog</TabsTrigger>
           <TabsTrigger value="requests" className="rounded-lg px-6 font-bold flex items-center gap-2 flex-1 md:flex-none">
             Feedback {requests.filter(r => r.status === 'new').length > 0 && <Badge className="h-4 px-1 bg-rose-500 text-[10px]">{requests.filter(r => r.status === 'new').length}</Badge>}
+          </TabsTrigger>
+          <TabsTrigger value="bug_reports" className="rounded-lg px-6 font-bold flex items-center gap-2 flex-1 md:flex-none">
+            Bug Reports {bugReports.filter(b => b.status === 'new').length > 0 && <Badge className="h-4 px-1 bg-primary text-[10px]">{bugReports.filter(b => b.status === 'new').length}</Badge>}
           </TabsTrigger>
           <TabsTrigger value="updates" className="rounded-lg px-6 font-bold flex-1 md:flex-none">Announcements</TabsTrigger>
           <TabsTrigger value="users" className="rounded-lg px-6 font-bold flex-1 md:flex-none flex items-center gap-2">
@@ -633,6 +673,85 @@ export default function AppUpdatesAdminPage() {
                            <DropdownMenuItem onClick={() => { /* Toggle archived etc */ }} className="text-rose-500"><Trash2 className="w-4 h-4 mr-2" /> Delete</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="bug_reports" className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            {bugReports.length === 0 ? (
+              <div className="text-center py-20 text-slate-400 italic bg-slate-50 dark:bg-slate-900/40 rounded-3xl border-2 border-dashed dark:border-slate-800">
+                <Bug className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                <p>No bug reports received yet.</p>
+              </div>
+            ) : (
+              bugReports.map((bug) => (
+                <Card key={bug.id} className="border-none shadow-sm dark:bg-slate-900">
+                  <CardContent className="p-5 flex flex-col md:flex-row gap-6">
+                    <div className="flex-1 space-y-3 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className={cn("text-[9px] font-bold uppercase", 
+                          bug.status === 'new' ? "border-rose-500 text-rose-500 bg-rose-50/50" :
+                          bug.status === 'reviewing' ? "border-amber-500 text-amber-500 bg-amber-50/50" :
+                          bug.status === 'fixed' ? "border-emerald-500 text-emerald-500 bg-emerald-50/50" :
+                          "border-slate-500 text-slate-500"
+                        )}>{bug.status}</Badge>
+                        <h3 className="font-bold text-base dark:text-slate-100 truncate">{bug.title}</h3>
+                      </div>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{bug.description}</p>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border dark:border-slate-800 space-y-2">
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Globe className="w-3 h-3" /> Page URL</p>
+                           <p className="text-[10px] font-mono text-slate-500 truncate">{bug.page_url}</p>
+                        </div>
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border dark:border-slate-800 space-y-2">
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Monitor className="w-3 h-3" /> Device Info</p>
+                           <p className="text-[10px] font-mono text-slate-500 line-clamp-1">{bug.device_info}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 flex-wrap pt-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-5 w-5"><AvatarFallback className="text-[8px]">{bug.profiles?.full_name?.[0]}</AvatarFallback></Avatar>
+                          <span className="text-[11px] font-medium text-slate-500">{bug.profiles?.full_name} <span className="opacity-60">({bug.profiles?.email})</span></span>
+                        </div>
+                        <span className="text-slate-300 dark:text-slate-800">|</span>
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <Layout className="w-3.5 h-3.5" />
+                          {bug.workspaces?.name || 'Global'}
+                        </div>
+                        <span className="text-slate-300 dark:text-slate-800">|</span>
+                        <span className="text-[11px] text-slate-500 font-medium">{format(new Date(bug.created_at), "MMM d, yyyy HH:mm")}</span>
+                      </div>
+
+                      {bug.developer_note && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border dark:border-slate-800 mt-2">
+                          <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                            <ShieldCheck className="w-3 h-3" /> Dev Response
+                          </p>
+                          <p className="text-xs italic text-slate-500 dark:text-slate-400">"{bug.developer_note}"</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="flex md:flex-col items-center justify-end gap-2 shrink-0">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="rounded-xl h-9 px-4 gap-2 dark:border-slate-800"
+                        onClick={() => {
+                          setReviewingBug(bug);
+                          setBugReviewForm({ status: bug.status, developer_note: bug.developer_note || "" });
+                          setIsBugReviewModalOpen(true);
+                        }}
+                      >
+                        <Wrench className="w-4 h-4" /> Manage
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -902,7 +1021,7 @@ export default function AppUpdatesAdminPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Review Modal */}
+      {/* Request Review Modal */}
       <Dialog open={isReviewModalOpen} onOpenChange={(open) => { setIsReviewModalOpen(open); if (!open) { setReviewingRequest(null); forceUnlockUI(); } }}>
         <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] p-0 overflow-hidden">
           <div className="p-8">
@@ -944,6 +1063,54 @@ export default function AppUpdatesAdminPage() {
                 <Button type="submit" disabled={submitting} className="rounded-xl shadow-lg shadow-primary/20 px-8">
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Check className="w-4 h-4 mr-2" />}
                   Save Status
+                </Button>
+              </DialogFooter>
+            </form>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bug Review Modal */}
+      <Dialog open={isBugReviewModalOpen} onOpenChange={(open) => { setIsBugReviewModalOpen(open); if (!open) { setReviewingBug(null); forceUnlockUI(); } }}>
+        <DialogContent className="max-w-md dark:bg-slate-950 dark:border-slate-800 rounded-[2rem] p-0 overflow-hidden">
+          <div className="p-8">
+            <DialogHeader className="mb-6">
+              <DialogTitle className="text-2xl font-bold">Manage Bug Report</DialogTitle>
+              <DialogDescription>Update resolution status for this issue.</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSaveBugReview} className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Update Status</Label>
+                <Select value={bugReviewForm.status} onValueChange={v => setBugReviewForm({...bugReviewForm, status: v})} onOpenChange={(open) => !open && forceUnlockUI()}>
+                  <SelectTrigger className="rounded-xl h-11 dark:bg-slate-900 border-none">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="dark:bg-slate-900">
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="reviewing">Reviewing</SelectItem>
+                    <SelectItem value="fixed">Fixed</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                    <SelectItem value="wont_fix">Won't Fix</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Developer Note</Label>
+                <Textarea 
+                  value={bugReviewForm.developer_note} 
+                  onChange={e => setBugReviewForm({...bugReviewForm, developer_note: e.target.value})} 
+                  placeholder="Steps taken or reason for closure..."
+                  rows={4} 
+                  className="rounded-xl dark:bg-slate-900 border-none resize-none" 
+                />
+              </div>
+
+              <DialogFooter className="pt-4 border-t dark:border-slate-800">
+                <Button type="button" variant="ghost" onClick={() => setIsBugReviewModalOpen(false)} disabled={submitting} className="rounded-xl">Cancel</Button>
+                <Button type="submit" disabled={submitting} className="rounded-xl shadow-lg shadow-rose-600/20 bg-rose-600 hover:bg-rose-700 text-white px-8">
+                  {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Check className="w-4 h-4 mr-2" />}
+                  Save Update
                 </Button>
               </DialogFooter>
             </form>

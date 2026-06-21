@@ -30,7 +30,9 @@ import {
   PlusSquare,
   Layout,
   MessageSquare,
-  PlaneTakeoff
+  PlaneTakeoff,
+  Bug,
+  Globe
 } from "lucide-react";
 import { useWorkspace } from "@/components/providers/WorkspaceProvider";
 import { usePushNotifications } from "@/components/providers/PushNotificationProvider";
@@ -53,9 +55,10 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useRouter } from "next/navigation";
 
-type TabType = 'profile' | 'appearance' | 'notifications' | 'install';
+type TabType = 'profile' | 'appearance' | 'notifications' | 'install' | 'bug-report';
 
 const AVATAR_PRESETS = Array.from({ length: 10 }, (_, i) => `character_${i + 1}`);
 
@@ -76,6 +79,12 @@ export default function SettingsPage() {
     username: "",
     avatar_preset: "" as string | null
   });
+
+  const [bugForm, setBugForm] = useState({
+    title: "",
+    description: ""
+  });
+  const [submittingBug, setSubmittingBug] = useState(false);
 
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'read'>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -180,6 +189,40 @@ export default function SettingsPage() {
     }
   };
 
+  const handleBugSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bugForm.title.trim() || !bugForm.description.trim()) return;
+
+    setSubmittingBug(true);
+    try {
+      const { error } = await supabase.rpc("submit_app_bug_report", {
+        p_workspace_id: activeWorkspace?.id || null,
+        p_title: bugForm.title.trim(),
+        p_description: bugForm.description.trim(),
+        p_page_url: window.location.href,
+        p_device_info: navigator.userAgent,
+      });
+
+      if (error) throw error;
+
+      toast({ 
+        title: "Bug report submitted.", 
+        description: "Thank you, the developer has been notified." 
+      });
+      setBugForm({ title: "", description: "" });
+    } catch (err: any) {
+      console.error("[Bug Report] Submission Error:", {
+        message: err.message,
+        details: err.details,
+        hint: err.hint,
+        code: err.code
+      });
+      toast({ variant: "destructive", title: "Unable to submit bug report.", description: "An error occurred while communicating with the server." });
+    } finally {
+      setSubmittingBug(false);
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/';
@@ -230,6 +273,9 @@ export default function SettingsPage() {
       router.push(`/leave?id=${n.related_leave_request_id || ''}`);
     } else if (n.related_reminder_id) {
       router.push(`/dashboard`);
+    } else if (n.type === 'bug_report') {
+      // If they click a bug report notification, they likely are a dev, but let's just go to console
+      router.push(`/app-updates/admin`);
     }
 
     if (!n.is_read) {
@@ -305,6 +351,15 @@ export default function SettingsPage() {
             )}
           >
             <Smartphone className="w-5 h-5" /> Install App
+          </button>
+          <button 
+            onClick={() => setActiveTab('bug-report')}
+            className={cn(
+              "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-all",
+              activeTab === 'bug-report' ? "bg-rose-500/10 text-rose-600 font-bold shadow-sm" : "hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-600 dark:text-slate-400"
+            )}
+          >
+            <Bug className="w-5 h-5" /> Bug Report
           </button>
           
           <Separator className="my-4 dark:border-slate-800" />
@@ -707,10 +762,15 @@ export default function SettingsPage() {
                            n.is_read ? <Check className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
                         </div>
                         <div className="flex-1 min-w-0 space-y-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <h4 className={cn("text-sm font-bold truncate", !n.is_read ? "text-slate-900 dark:text-slate-100" : "text-slate-500 dark:text-slate-400")}>
-                              {n.title}
-                            </h4>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <div className="flex items-center gap-2">
+                              {!notification.is_read && (
+                                <div className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                              )}
+                              <span className="text-xs font-bold truncate text-slate-900 dark:text-slate-100">
+                                {n.title || "New Notification"}
+                              </span>
+                            </div>
                             <span className="text-[9px] text-muted-foreground whitespace-nowrap flex items-center gap-1">
                               <Clock className="w-3 h-3" /> {new Date(n.created_at).toLocaleDateString()}
                             </span>
@@ -773,7 +833,7 @@ export default function SettingsPage() {
                     </div>
                     <Badge variant="outline" className={cn(
                       "text-[10px] uppercase font-bold px-2 py-0.5",
-                      isStandalone ? "border-emerald-500 text-emerald-500 bg-emerald-50 dark:bg-emerald-500/10" : "border-slate-200 dark:border-slate-800 text-slate-500"
+                      isStandalone ? "Installed" : "Browser Mode"
                     )}>
                       {isStandalone ? "Installed" : "Browser Mode"}
                     </Badge>
@@ -872,6 +932,77 @@ export default function SettingsPage() {
                       </div>
                     </>
                   )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {activeTab === 'bug-report' && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+              <Card className="border-none shadow-sm overflow-hidden bg-white dark:bg-slate-900 dark:border dark:border-slate-800">
+                <CardHeader className="bg-white dark:bg-slate-900 border-b dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-rose-50 dark:bg-rose-500/10 rounded-lg">
+                      <Bug className="w-5 h-5 text-rose-500" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-lg">Report a Problem</CardTitle>
+                      <CardDescription>Something not working? Let our developers know.</CardDescription>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <form onSubmit={handleBugSubmit} className="space-y-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="bug_title" className="text-slate-950 dark:text-slate-100">Short Title</Label>
+                      <Input 
+                        id="bug_title"
+                        value={bugForm.title}
+                        onChange={(e) => setBugForm(f => ({ ...f, title: e.target.value }))}
+                        placeholder="e.g. Chat window doesn't load on mobile"
+                        required
+                        disabled={submittingBug}
+                        className="rounded-xl h-11 dark:bg-slate-900 border-slate-200 dark:border-slate-800"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="bug_desc" className="text-slate-950 dark:text-slate-100">What happened?</Label>
+                      <Textarea 
+                        id="bug_desc"
+                        value={bugForm.description}
+                        onChange={(e) => setBugForm(f => ({ ...f, description: e.target.value }))}
+                        placeholder="Describe the issue and steps to reproduce..."
+                        rows={6}
+                        required
+                        disabled={submittingBug}
+                        className="rounded-2xl dark:bg-slate-900 border-slate-200 dark:border-slate-800 resize-none"
+                      />
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border dark:border-slate-800 space-y-3">
+                       <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                          <span className="flex items-center gap-1.5"><Globe className="w-3 h-3" /> Page URL</span>
+                          <Badge variant="outline" className="h-4 py-0 text-[8px]">AUTO-CAPTURED</Badge>
+                       </div>
+                       <p className="text-xs text-slate-600 dark:text-slate-400 font-mono truncate">{typeof window !== 'undefined' ? window.location.href : 'Loading...'}</p>
+                       
+                       <Separator className="dark:border-slate-800" />
+                       
+                       <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                          <span className="flex items-center gap-1.5"><Smartphone className="w-3 h-3" /> Device Info</span>
+                          <Badge variant="outline" className="h-4 py-0 text-[8px]">AUTO-CAPTURED</Badge>
+                       </div>
+                       <p className="text-xs text-slate-600 dark:text-slate-400 font-mono line-clamp-2 leading-relaxed">{typeof navigator !== 'undefined' ? navigator.userAgent : 'Loading...'}</p>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <Button type="submit" disabled={submittingBug || !bugForm.title.trim() || !bugForm.description.trim()} className="gap-2 h-11 px-8 rounded-xl shadow-lg shadow-rose-500/20 bg-rose-600 hover:bg-rose-700 text-white border-none">
+                        {submittingBug ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                        Submit Report
+                      </Button>
+                    </div>
+                  </form>
                 </CardContent>
               </Card>
             </div>

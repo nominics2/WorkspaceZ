@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Bell, Loader2, Check, MessageSquare, Sparkles, PlaneTakeoff } from "lucide-react";
+import { Bell, Loader2, Check, MessageSquare, Sparkles, PlaneTakeoff, Bug } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,7 +96,6 @@ export function NotificationBell() {
             
             // Respect Notification Preferences for Chat/Message types
             const isChatRelated = newNotif.type === 'chat' || newNotif.type === 'message' || newNotif.type === 'chat_message' || !!newNotif.related_message_id;
-            const isLeaveRelated = newNotif.type?.startsWith('leave_request');
             const channelId = newNotif.related_channel_id || newNotif.channel_id;
             
             if (isChatRelated) {
@@ -234,6 +233,8 @@ export function NotificationBell() {
       router.push(`/leave?id=${notification.related_leave_request_id || ''}`);
     } else if (notification.related_reminder_id) {
       router.push(`/dashboard`);
+    } else if (notification.type === 'bug_report') {
+      router.push(`/app-updates/admin`);
     }
   };
 
@@ -323,6 +324,7 @@ export function NotificationBell() {
                     {notification.type === 'app_update' ? <Sparkles className="w-4 h-4" /> : 
                      (notification.type === 'chat_message' || !!notification.related_message_id) ? <MessageSquare className="w-4 h-4" /> : 
                      notification.type?.startsWith('leave_request') ? <PlaneTakeoff className="w-4 h-4" /> :
+                     notification.type === 'bug_report' ? <Bug className="w-4 h-4" /> :
                      <Bell className="w-4 h-4" />}
                   </div>
                 </div>
