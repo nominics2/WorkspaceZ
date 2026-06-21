@@ -314,9 +314,8 @@ export function SidebarNav() {
           {!isCollapsed && (
             <div className="mt-4 pt-4 border-t dark:border-slate-800 flex flex-col items-center">
                <p className="text-[9px] text-slate-400 font-extrabold tracking-[0.2em] uppercase leading-relaxed text-center">
-                 Powered by Eos Studios
+                 Powered by Eos
                </p>
-               <span className="text-[7px] text-slate-400 opacity-50 uppercase font-medium mt-0.5">Creation of Maldives</span>
             </div>
           )}
         </div>

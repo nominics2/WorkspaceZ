@@ -207,7 +207,7 @@ export default function LoginPage() {
       
       <div className="mt-8 text-center animate-in fade-in slide-in-from-bottom-2 duration-1000">
          <p className="text-[10px] text-slate-400 dark:text-slate-600 font-bold uppercase tracking-[0.2em]">
-           Powered by Eos Studios | Creation of Maldives
+           Powered by Eos
          </p>
       </div>
     </div>
