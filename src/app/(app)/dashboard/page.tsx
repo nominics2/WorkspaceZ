@@ -87,9 +87,9 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [reminders, setReminders] = useState<any[]>([]);
   const [workload, setWorkload] = useState<any[]>([]);
-  const [leaveRequests, setLeaveRequests] = useState<any[]>([]); // Personal leaves
-  const [teamPresence, setTeamPresence] = useState<any[]>([]); // Approved leaves for all
-  const [leaveApprovals, setLeaveApprovals] = useState<any[]>([]); // Pending for admins
+  const [leaveRequests, setLeaveRequests] = useState<any[]>([]); 
+  const [teamPresence, setTeamPresence] = useState<any[]>([]); 
+  const [leaveApprovals, setLeaveApprovals] = useState<any[]>([]); 
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -97,10 +97,6 @@ export default function DashboardPage() {
   
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [newReminder, setNewReminder] = useState({ title: "", remindAt: "" });
-
-  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [editingLeave, setEditingLeave] = useState<any>(null);
-  const [leaveForm, setLeaveForm] = useState({ startDate: "", days: "1", type: "annual_leave", reason: "" });
 
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [reviewingLeave, setReviewingLeave] = useState<any>(null);
@@ -425,6 +421,56 @@ export default function DashboardPage() {
               ) : (todaysTasks.map(task => (<TaskDashboardCard key={task.id} task={task} />)))}
             </div>
           </section>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-extrabold flex items-center gap-3 text-slate-900 dark:text-white">
+                <div className="p-2 bg-blue-50 dark:bg-blue-500/10 rounded-lg"><History className="w-5 h-5 text-blue-500" /></div>
+                Recent Activity
+              </h2>
+            </div>
+            <Card className="border-none shadow-md bg-white dark:bg-slate-900 rounded-[2rem] overflow-hidden">
+              <CardContent className="p-0">
+                {activity.length === 0 ? (
+                  <p className="text-sm text-slate-500 italic text-center py-12">No recent workspace activity recorded.</p>
+                ) : (
+                  <div className="divide-y dark:divide-slate-800">
+                    {activity.map((item) => {
+                      const config = activityConfig[item.action] || { label: item.action, icon: Zap, color: "text-slate-400", bg: "bg-slate-400" };
+                      return (
+                        <div key={item.id} className="p-5 flex items-start gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                          <Avatar className="h-10 w-10 border dark:border-slate-800 shadow-sm">
+                            <AvatarImage src={item.actor_avatar_preset ? `/avatars/${item.actor_avatar_preset}.png` : item.actor_avatar_url} />
+                            <AvatarFallback className="text-[10px]">{item.actor_full_name?.[0]}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm dark:text-slate-200">
+                              <span className="font-bold text-slate-900 dark:text-white mr-1">{item.actor_full_name}</span>
+                              <span className="text-muted-foreground">{config.label}</span>
+                              <span className="font-bold ml-1 text-primary">{item.task_title}</span>
+                            </p>
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter flex items-center gap-1">
+                                <Clock className="w-3 h-3" /> {new Date(item.created_at).toLocaleDateString()} {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {item.sub_workspace_name && (
+                                <Badge variant="secondary" className="text-[9px] px-1.5 h-4 border-none bg-blue-50 dark:bg-blue-500/10 text-blue-600">
+                                  {item.sub_workspace_name}
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div className={cn("p-2 rounded-lg shrink-0 opacity-40", config.color)}>
+                            <config.icon className="w-4 h-4" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </section>
         </div>
 
         <div className="lg:col-span-4 space-y-10">
@@ -510,6 +556,47 @@ export default function DashboardPage() {
               <Link href="/leave" className="block w-full">
                 <Button variant="outline" className="w-full rounded-xl text-xs h-9 border-slate-200 dark:border-slate-800">
                   Manage Leave
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card className="border-none shadow-md dark:bg-slate-900 rounded-[2rem] overflow-hidden">
+            <CardHeader className="p-6 pb-2">
+              <div className="flex items-center gap-3">
+                <Users className="w-5 h-5 text-primary" />
+                <CardTitle className="text-lg">Workspace Team</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="p-6 pt-2">
+              <div className="grid grid-cols-4 gap-4">
+                {members.map((member) => (
+                  <div key={member.user_id} className="flex flex-col items-center gap-2 group/member">
+                    <div className="relative">
+                      <Avatar className="h-12 w-12 border-2 border-white dark:border-slate-800 shadow-sm transition-transform group-hover/member:scale-110">
+                        <AvatarImage src={member.profiles?.avatar_preset ? `/avatars/${member.profiles.avatar_preset}.png` : member.profiles?.avatar_url} />
+                        <AvatarFallback className="text-[10px] bg-primary/5 text-primary font-bold">{member.profiles?.full_name?.[0]}</AvatarFallback>
+                      </Avatar>
+                      {member.is_verified && (
+                        <div className="absolute -bottom-1 -right-1 bg-white dark:bg-slate-950 rounded-full p-0.5 shadow-sm">
+                          <BadgeCheck className="w-3.5 h-3.5 text-primary fill-primary/10" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-center min-w-0 w-full">
+                      <p className="text-[9px] font-bold truncate dark:text-slate-300 leading-tight">
+                        {member.profiles?.full_name?.split(' ')[0]}
+                      </p>
+                      <p className="text-[8px] text-muted-foreground uppercase tracking-tighter opacity-60">
+                        {member.role}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Link href="/workspace" className="block w-full mt-6">
+                <Button variant="ghost" className="w-full rounded-xl text-[10px] font-bold uppercase tracking-widest text-slate-400 hover:text-primary">
+                  View All Members
                 </Button>
               </Link>
             </CardContent>
